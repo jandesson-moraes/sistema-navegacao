@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+.expo
+.vercel
+.env
+.env.local
+.env.production
+functions/node_modules
+functions/lib
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

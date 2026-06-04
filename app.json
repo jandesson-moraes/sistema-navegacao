@@ -1,30 +1,37 @@
 {
   "expo": {
-    "name": "sistema-navegacao",
-    "slug": "sistema-navegacao",
+    "name": "Cadê o meu barco?",
+    "slug": "cade-o-meu-barco",
     "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "icon": "./src/assets/icon.png",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./src/assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#020617"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "com.jandessonmoraes.navprovessel",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+        "foregroundImage": "./src/assets/adaptive-icon.png",
+        "backgroundColor": "#020617"
+      }
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./src/assets/logo_notificacao.png",
+          "color": "#06b6d4"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8e6a0344-3876-4b25-bb1c-faffe2afb9f3"
+      }
     }
   }
 }

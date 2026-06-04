@@ -1,0 +1,519 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+} from "firebase/firestore";
+import { db } from "../config/firebase";
+import { useAppModal } from "../components/AppModal";
+
+type Rastreador = {
+  id: string;
+  deviceId?: string;
+  barcoId?: string;
+  embarcacaoNome?: string;
+  nomeNaRede?: string;
+  wifiNome?: string;
+  status?: string;
+  ultimoSinal?: string;
+  ipLocal?: string;
+  rssi?: number;
+  satelites?: number;
+  versaoFirmware?: string;
+  ativo?: boolean;
+  apelido?: string;
+  observacoes?: string;
+  barcoIdAdmin?: string;
+  ultima_posicao?: { latitude?: number; longitude?: number };
+};
+
+type Editando = {
+  id: string;
+  apelido: string;
+  barcoIdAdmin: string;
+  observacoes: string;
+  ativo: boolean;
+};
+
+function statusRastreador(r: Rastreador) {
+  const data = new Date(String(r.ultimoSinal || "")).getTime();
+
+  if (!r.ultimoSinal || Number.isNaN(data)) {
+    return { label: "Sem horário", tone: "slate", ordem: 3 };
+  }
+
+  const diff = (Date.now() - data) / 1000;
+
+  if (diff <= 120) return { label: "Online", tone: "emerald", ordem: 0 };
+  if (diff <= 600) return { label: "Sem sinal", tone: "amber", ordem: 1 };
+
+  return { label: "Offline", tone: "red", ordem: 2 };
+}
+
+function formatarData(valor?: string) {
+  if (!valor) return "—";
+
+  const data = new Date(valor);
+
+  if (Number.isNaN(data.getTime())) return valor;
+
+  return data.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function qualidadeWifi(rssi?: number) {
+  const valor = Number(rssi || 0);
+
+  if (!valor) return "—";
+  if (valor >= -55) return "Excelente";
+  if (valor >= -67) return "Bom";
+  if (valor >= -75) return "Fraco";
+
+  return "Muito fraco";
+}
+
+function Badge({ status }: { status: ReturnType<typeof statusRastreador> }) {
+  const classes: Record<string, string> = {
+    emerald: "border-emerald-300/70 bg-emerald-100 text-emerald-800",
+    amber: "border-amber-300/70 bg-amber-100 text-amber-800",
+    red: "border-red-300/70 bg-red-100 text-red-800",
+    slate: "border-slate-300 bg-slate-100 text-slate-700",
+  };
+
+  return (
+    <span
+      className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${classes[status.tone]}`}
+    >
+      {status.label}
+    </span>
+  );
+}
+
+function InfoMini({
+  label,
+  valor,
+  tom = "blue",
+}: {
+  label: string;
+  valor: any;
+  tom?: "blue" | "green" | "amber" | "red";
+}) {
+  const estilos = {
+    blue: "border-[#7ba6d4]/30 bg-[#123761] text-sky-100",
+    green: "border-emerald-400/25 bg-emerald-400/10 text-emerald-100",
+    amber: "border-amber-400/25 bg-amber-400/10 text-amber-100",
+    red: "border-red-400/25 bg-red-400/10 text-red-100",
+  };
+
+  return (
+    <div className={`rounded-2xl border p-4 shadow-sm ${estilos[tom]}`}>
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/55">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-black text-white">{valor}</p>
+    </div>
+  );
+}
+
+function CampoInfo({ label, value }: { label: string; value: any }) {
+  return (
+    <div className="rounded-2xl border border-[#9db9d8]/20 bg-[#0d0c2c]/55 p-4">
+      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-sky-100/45">
+        {label}
+      </p>
+      <p className="mt-1 break-words text-sm font-bold text-sky-50">{value}</p>
+    </div>
+  );
+}
+
+export default function Rastreadores() {
+  const modal = useAppModal();
+
+  const [rastreadores, setRastreadores] = useState<Rastreador[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [busca, setBusca] = useState("");
+  const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [detalhe, setDetalhe] = useState<Rastreador | null>(null);
+  const [editando, setEditando] = useState<Editando | null>(null);
+  const [salvando, setSalvando] = useState(false);
+
+  useEffect(() => {
+    const q = query(collection(db, "rastreadores"), orderBy("ultimoSinal", "desc"));
+
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setRastreadores(
+          snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...docSnap.data(),
+          })) as Rastreador[],
+        );
+        setCarregando(false);
+      },
+      (error) => {
+        console.error("Erro ao carregar rastreadores:", error);
+        setCarregando(false);
+      },
+    );
+
+    return () => unsub();
+  }, []);
+
+  const dados = useMemo(() => {
+    const texto = busca.trim().toLowerCase();
+
+    const lista = rastreadores
+      .map((r) => ({ ...r, _status: statusRastreador(r) }))
+      .filter((r: any) => {
+        if (filtroStatus !== "todos") {
+          const s = String(r._status.label).toLowerCase();
+
+          if (filtroStatus === "online" && s !== "online") return false;
+          if (filtroStatus === "sem_sinal" && s !== "sem sinal") return false;
+          if (filtroStatus === "offline" && s !== "offline") return false;
+        }
+
+        if (!texto) return true;
+
+        return [
+          r.id,
+          r.deviceId,
+          r.barcoId,
+          r.barcoIdAdmin,
+          r.nomeNaRede,
+          r.wifiNome,
+          r.apelido,
+          r.ipLocal,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(texto);
+      })
+      .sort((a: any, b: any) => a._status.ordem - b._status.ordem);
+
+    return {
+      lista,
+      total: rastreadores.length,
+      online: rastreadores.filter((r) => statusRastreador(r).label === "Online").length,
+      semSinal: rastreadores.filter((r) => statusRastreador(r).label === "Sem sinal")
+        .length,
+      offline: rastreadores.filter((r) => statusRastreador(r).label === "Offline").length,
+    };
+  }, [rastreadores, busca, filtroStatus]);
+
+  const abrirEdicao = (r: Rastreador) => {
+    setEditando({
+      id: r.id,
+      apelido: r.apelido || "",
+      barcoIdAdmin: r.barcoIdAdmin || r.barcoId || "",
+      observacoes: r.observacoes || "",
+      ativo: r.ativo !== false,
+    });
+  };
+
+  const salvarEdicao = async () => {
+    if (!editando) return;
+
+    setSalvando(true);
+
+    try {
+      await updateDoc(doc(db, "rastreadores", editando.id), {
+        apelido: editando.apelido.trim(),
+        barcoIdAdmin: editando.barcoIdAdmin.trim(),
+        observacoes: editando.observacoes.trim(),
+        ativo: editando.ativo,
+        atualizadoPeloSistemaEm: new Date().toISOString(),
+      });
+
+      setEditando(null);
+      await modal.sucesso(
+        "Rastreador atualizado",
+        "As informações do rastreador foram salvas com sucesso.",
+      );
+    } catch (error: any) {
+      console.error(error);
+      await modal.erro(
+        "Erro ao salvar",
+        error?.message || "Não foi possível salvar o rastreador.",
+      );
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <div className="min-h-full bg-[#0d0c2c] p-4 text-slate-100 lg:p-6">
+      <div className="mb-5 overflow-hidden rounded-[26px] border border-[#1d426b] bg-gradient-to-r from-[#0f2240] to-[#13345d] shadow-sm">
+        <div className="flex flex-col gap-4 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-300">
+              Controle técnico
+            </p>
+            <h1 className="mt-2 text-2xl font-black text-white">Rastreadores</h1>
+            <p className="mt-1 text-sm font-medium text-sky-100/70">
+              Monitore sinal, Wi‑Fi, GPS e vínculo dos dispositivos instalados.
+            </p>
+          </div>
+
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-xl border border-sky-300/20 bg-sky-300/10 px-4 py-2.5 text-xs font-black uppercase text-sky-100 transition hover:bg-sky-300/20"
+          >
+            Atualizar
+          </button>
+        </div>
+
+        <div className="grid gap-3 border-t border-white/10 bg-[#0d0c2c]/35 p-4 md:grid-cols-4">
+          <InfoMini label="Total" valor={dados.total} tom="blue" />
+          <InfoMini label="Online" valor={dados.online} tom="green" />
+          <InfoMini label="Sem sinal" valor={dados.semSinal} tom="amber" />
+          <InfoMini label="Offline" valor={dados.offline} tom="red" />
+        </div>
+      </div>
+
+      <div className="mb-4 grid gap-3 lg:grid-cols-[1fr_220px]">
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar rastreador, barco, Wi‑Fi ou IP"
+          className="rounded-2xl border border-[#7ba6d4]/20 bg-[#143760] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60"
+        />
+
+        <select
+          value={filtroStatus}
+          onChange={(e) => setFiltroStatus(e.target.value)}
+          className="rounded-2xl border border-[#7ba6d4]/20 bg-[#143760] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none focus:border-sky-300/60"
+        >
+          <option value="todos">Todos</option>
+          <option value="online">Online</option>
+          <option value="sem_sinal">Sem sinal</option>
+          <option value="offline">Offline</option>
+        </select>
+      </div>
+
+      <div className="overflow-hidden rounded-[26px] border border-[#1d426b] bg-[#0f2240] shadow-sm">
+        <div className="grid grid-cols-[1.3fr_1fr_1fr_0.8fr_0.9fr_120px] gap-4 border-b border-white/10 bg-[#143760] px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-sky-100/60">
+          <span>Placa</span>
+          <span>Barco</span>
+          <span>Wi‑Fi</span>
+          <span>GPS</span>
+          <span>Último sinal</span>
+          <span className="text-right">Ações</span>
+        </div>
+
+        {carregando ? (
+          <div className="p-8 text-center text-sm text-sky-100/60">
+            Carregando rastreadores...
+          </div>
+        ) : dados.lista.length === 0 ? (
+          <div className="p-8 text-center text-sm text-sky-100/60">
+            Nenhum rastreador encontrado.
+          </div>
+        ) : (
+          dados.lista.map((r: any) => {
+            const st = statusRastreador(r);
+
+            return (
+              <div
+                key={r.id}
+                className="grid grid-cols-[1.3fr_1fr_1fr_0.8fr_0.9fr_120px] items-center gap-4 border-b border-white/10 bg-[#0f2240] px-5 py-4 text-sm last:border-b-0 hover:bg-[#17345e]"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Badge status={st} />
+                    {r.ativo === false && (
+                      <span className="rounded-full border border-red-300/40 bg-red-500/15 px-2 py-1 text-[10px] font-black uppercase text-red-100">
+                        Inativo
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-2 truncate font-black text-white">
+                    {r.apelido || r.nomeNaRede || r.deviceId || r.id}
+                  </p>
+                  <p className="mt-0.5 truncate font-mono text-[11px] text-sky-100/45">
+                    {r.deviceId || r.id}
+                  </p>
+                </div>
+
+                <div className="min-w-0">
+                  <p className="truncate font-bold text-sky-50">
+                    {r.barcoIdAdmin || r.barcoId || "—"}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-sky-100/45">
+                    Placa: {r.barcoId || "—"}
+                  </p>
+                </div>
+
+                <div className="min-w-0">
+                  <p className="truncate font-bold text-sky-50">{r.wifiNome || "—"}</p>
+                  <p className="mt-0.5 text-[11px] text-sky-100/45">
+                    {qualidadeWifi(r.rssi)} {r.rssi ? `• ${r.rssi} dBm` : ""}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="font-bold text-sky-50">{Number(r.satelites || 0)}</p>
+                  <p className="text-[11px] text-sky-100/45">satélites</p>
+                </div>
+
+                <div>
+                  <p className="font-bold text-sky-50">{formatarData(r.ultimoSinal)}</p>
+                  <p className="text-[11px] text-sky-100/45">IP {r.ipLocal || "—"}</p>
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setDetalhe(r)}
+                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[11px] font-black uppercase text-sky-100 transition hover:bg-white/10"
+                  >
+                    Ver
+                  </button>
+                  <button
+                    onClick={() => abrirEdicao(r)}
+                    className="rounded-lg border border-sky-300/30 bg-sky-300/15 px-3 py-2 text-[11px] font-black uppercase text-sky-100 transition hover:bg-sky-300/25"
+                  >
+                    Editar
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {detalhe && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-2xl rounded-[28px] border border-[#315b88] bg-gradient-to-br from-[#0f2240] to-[#13345d] p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-300">
+                  Detalhes técnicos
+                </p>
+                <h2 className="mt-1 text-xl font-black text-white">
+                  {detalhe.apelido || detalhe.nomeNaRede || detalhe.id}
+                </h2>
+              </div>
+              <button
+                onClick={() => setDetalhe(null)}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-sky-100 hover:bg-white/10"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              {[
+                ["Device ID", detalhe.deviceId || detalhe.id],
+                ["Barco", detalhe.barcoId || "—"],
+                ["Nome na rede", detalhe.nomeNaRede || "—"],
+                ["Wi‑Fi", detalhe.wifiNome || "—"],
+                ["RSSI", detalhe.rssi ? `${detalhe.rssi} dBm` : "—"],
+                ["IP local", detalhe.ipLocal || "—"],
+                ["Firmware", detalhe.versaoFirmware || "—"],
+                ["Último sinal", formatarData(detalhe.ultimoSinal)],
+                [
+                  "Latitude",
+                  detalhe.ultima_posicao?.latitude
+                    ? String(detalhe.ultima_posicao.latitude)
+                    : "—",
+                ],
+                [
+                  "Longitude",
+                  detalhe.ultima_posicao?.longitude
+                    ? String(detalhe.ultima_posicao.longitude)
+                    : "—",
+                ],
+              ].map(([label, value]) => (
+                <CampoInfo key={label} label={label} value={value} />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editando && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-[28px] border border-[#315b88] bg-gradient-to-br from-[#0f2240] to-[#13345d] p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-300">
+                  Editar rastreador
+                </p>
+                <h2 className="mt-1 text-xl font-black text-white">{editando.id}</h2>
+              </div>
+              <button
+                onClick={() => setEditando(null)}
+                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-sky-100 hover:bg-white/10"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <input
+                value={editando.apelido}
+                onChange={(e) => setEditando({ ...editando, apelido: e.target.value })}
+                placeholder="Apelido interno"
+                className="w-full rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] px-4 py-3 text-sm text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/50"
+              />
+
+              <input
+                value={editando.barcoIdAdmin}
+                onChange={(e) =>
+                  setEditando({ ...editando, barcoIdAdmin: e.target.value })
+                }
+                placeholder="Barco vinculado"
+                className="w-full rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] px-4 py-3 text-sm text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/50"
+              />
+
+              <textarea
+                value={editando.observacoes}
+                onChange={(e) =>
+                  setEditando({ ...editando, observacoes: e.target.value })
+                }
+                placeholder="Observações"
+                rows={4}
+                className="w-full resize-none rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] px-4 py-3 text-sm text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/50"
+              />
+
+              <label className="flex items-center gap-3 rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] px-4 py-3 text-sm text-sky-100">
+                <input
+                  type="checkbox"
+                  checked={editando.ativo}
+                  onChange={(e) => setEditando({ ...editando, ativo: e.target.checked })}
+                  className="h-4 w-4 accent-sky-400"
+                />
+                Rastreador ativo
+              </label>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setEditando(null)}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-black text-sky-100 hover:bg-white/10"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarEdicao}
+                disabled={salvando}
+                className="rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-black text-white hover:bg-emerald-400 disabled:opacity-60"
+              >
+                {salvando ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

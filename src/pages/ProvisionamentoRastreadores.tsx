@@ -1,0 +1,494 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import { db } from "../config/firebase";
+import { useAppModal } from "../components/AppModal";
+
+type Rastreador = {
+  id: string;
+  deviceId?: string;
+  barcoId?: string;
+  nomeNaRede?: string;
+  wifiNome?: string;
+  wifiSSIDAtual?: string;
+  status?: string;
+  ultimoSinal?: any;
+  ipLocal?: string;
+  rssi?: number;
+  satelites?: number;
+  versaoFirmware?: string;
+  precisaProvisionar?: boolean;
+  provisionamentoStatus?: any;
+  provisionamentoPendente?: any;
+};
+
+function formatarData(valor: any) {
+  try {
+    const data =
+      typeof valor?.toDate === "function"
+        ? valor.toDate()
+        : valor
+          ? new Date(valor)
+          : null;
+
+    if (!data || Number.isNaN(data.getTime())) return "—";
+
+    return data.toLocaleString("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
+function limparBarcoId(valor: string) {
+  return String(valor || "")
+    .trim()
+    .replace(/[\\/\s]+/g, "_")
+    .toUpperCase();
+}
+
+export default function ProvisionamentoRastreadores() {
+  const modal = useAppModal();
+  const alert = (mensagem: any) => {
+    void modal.aviso("Aviso do sistema", String(mensagem));
+  };
+
+  const [rastreadores, setRastreadores] = useState<Rastreador[]>([]);
+  const [deviceSelecionado, setDeviceSelecionado] = useState("");
+  const [busca, setBusca] = useState("");
+
+  const [barcoId, setBarcoId] = useState("");
+  const [nomeNaRede, setNomeNaRede] = useState("");
+  const [wifiSsid, setWifiSsid] = useState("RoteadorTeste");
+  const [wifiSenha, setWifiSenha] = useState("12341234");
+  const [enviando, setEnviando] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "rastreadores"), (snapshot) => {
+      const lista = snapshot.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as Rastreador)
+        .sort((a, b) => {
+          const aPrecisa = a.precisaProvisionar ? 0 : 1;
+          const bPrecisa = b.precisaProvisionar ? 0 : 1;
+
+          if (aPrecisa !== bPrecisa) return aPrecisa - bPrecisa;
+
+          return String(a.barcoId || a.id).localeCompare(String(b.barcoId || b.id));
+        });
+
+      setRastreadores(lista);
+
+      if (!deviceSelecionado && lista.length > 0) {
+        const preferido = lista.find((item) => item.precisaProvisionar) || lista[0];
+        selecionarRastreador(preferido, false);
+      }
+    });
+
+    return () => unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deviceSelecionado]);
+
+  const rastreadoresFiltrados = useMemo(() => {
+    const texto = busca.trim().toLowerCase();
+
+    if (!texto) return rastreadores;
+
+    return rastreadores.filter((item) =>
+      [
+        item.id,
+        item.deviceId,
+        item.barcoId,
+        item.nomeNaRede,
+        item.wifiNome,
+        item.wifiSSIDAtual,
+        item.versaoFirmware,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(texto),
+    );
+  }, [rastreadores, busca]);
+
+  const rastreadorSelecionado = useMemo(
+    () => rastreadores.find((item) => item.id === deviceSelecionado) || null,
+    [rastreadores, deviceSelecionado],
+  );
+
+  function selecionarRastreador(item: Rastreador, limparSenha = true) {
+    setDeviceSelecionado(item.id);
+    setBarcoId(item.barcoId && item.barcoId !== "SEM_BARCO" ? item.barcoId : "");
+    setNomeNaRede(item.nomeNaRede || "");
+    setWifiSsid(item.wifiSSIDAtual || item.wifiNome || "RoteadorTeste");
+
+    if (limparSenha) {
+      setWifiSenha("");
+    }
+  }
+
+  function modeloInstalacao() {
+    setWifiSsid("RoteadorTeste");
+    setWifiSenha("12341234");
+    setNomeNaRede(barcoId ? `CMB_${limparBarcoId(barcoId)}` : "CMB_CONFIG");
+  }
+
+  async function enviarProvisionamento() {
+    try {
+      if (!rastreadorSelecionado) {
+        alert("Selecione um rastreador.");
+        return;
+      }
+
+      const novoBarcoId = limparBarcoId(barcoId);
+
+      if (!novoBarcoId) {
+        alert("Informe o ID do barco.");
+        return;
+      }
+
+      if (!wifiSsid.trim()) {
+        alert("Informe a rede Wi-Fi.");
+        return;
+      }
+
+      const confirmou = await modal.confirmar({
+        tipo: "warning",
+        titulo: "Enviar provisionamento?",
+        mensagem: `Provisionar o rastreador ${rastreadorSelecionado.id} para o barco ${novoBarcoId}?`,
+        confirmarTexto: "Provisionar",
+        cancelarTexto: "Cancelar",
+      });
+
+      if (!confirmou) return;
+
+      setEnviando(true);
+
+      const comandoId = `prov_${Date.now()}`;
+
+      await setDoc(
+        doc(db, "rastreadores", rastreadorSelecionado.id),
+        {
+          provisionamentoPendente: {
+            aplicar: true,
+            barcoId: novoBarcoId,
+            ssid: wifiSsid.trim(),
+            senha: wifiSenha,
+            nomeNaRede: nomeNaRede.trim() || `CMB_${novoBarcoId}`,
+            comandoId,
+            criadoEm: serverTimestamp(),
+          },
+          provisionamentoStatus: {
+            status: "pendente",
+            mensagem: "Provisionamento enviado. Aguardando rastreador ler o Firebase.",
+            novoBarcoId,
+            ssidTentado: wifiSsid.trim(),
+            nomeNaRede: nomeNaRede.trim() || `CMB_${novoBarcoId}`,
+            comandoId,
+            atualizadoEm: serverTimestamp(),
+          },
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      await modal.sucesso(
+        "Provisionamento enviado",
+        "Aguarde o rastreador testar a configuração e atualizar o status.",
+      );
+
+      setWifiSenha("");
+    } catch (error: any) {
+      await modal.erro(
+        "Erro ao enviar provisionamento",
+        error?.message || "Erro ao enviar provisionamento.",
+      );
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  async function cancelarPendente() {
+    if (!rastreadorSelecionado) return;
+
+    const confirmou = await modal.confirmar({
+      tipo: "warning",
+      titulo: "Cancelar provisionamento?",
+      mensagem: "O provisionamento pendente será marcado como cancelado no Firebase.",
+      confirmarTexto: "Cancelar pendente",
+      cancelarTexto: "Voltar",
+    });
+
+    if (!confirmou) return;
+
+    await setDoc(
+      doc(db, "rastreadores", rastreadorSelecionado.id),
+      {
+        provisionamentoPendente: {
+          ...(rastreadorSelecionado.provisionamentoPendente || {}),
+          aplicar: false,
+          canceladoPeloSistema: true,
+          canceladoEm: serverTimestamp(),
+        },
+        provisionamentoStatus: {
+          ...(rastreadorSelecionado.provisionamentoStatus || {}),
+          status: "cancelado",
+          mensagem: "Provisionamento pendente cancelado pelo sistema.",
+          atualizadoEm: serverTimestamp(),
+        },
+      },
+      { merge: true },
+    );
+
+    await modal.sucesso(
+      "Provisionamento cancelado",
+      "Provisionamento pendente cancelado.",
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#0d0c2c] p-5 text-white">
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.25em]">
+            Instalação de rastreadores
+          </p>
+          <h1 className="mt-2 text-2xl font-black tracking-tight">Provisionamento GPS</h1>
+        </div>
+
+        <input
+          value={busca}
+          onChange={(e) => setBusca(e.target.value)}
+          placeholder="Buscar device, barco ou Wi‑Fi..."
+          className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60 xl:w-[320px]"
+        />
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
+        <section className="rounded-3xl bg-[#0d0c2c] p-4 shadow-sm">
+          <h2 className="px-1 text-lg font-black">Rastreadores online</h2>
+          <p className="mt-1 px-1 text-xs text-sky-100/55">
+            Dispositivos disponíveis para provisionamento.
+          </p>
+
+          <div className="mt-4 max-h-[calc(100vh-235px)] overflow-y-auto overflow-x-hidden scrollbar-none pr-1">
+            {rastreadoresFiltrados.map((item) => {
+              const ativo = item.id === deviceSelecionado;
+
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => selecionarRastreador(item)}
+                  className={[
+                    "mb-2 w-full rounded-2xl border p-3 text-left transition shadow-sm",
+                    ativo
+                      ? "border-sky-300/45 bg-[#2b5b91]/45 ring-1 ring-sky-300/20"
+                      : "border-[#7ba6d4]/25 bg-[#143760] hover:border-sky-300/30 hover:bg-[#17345e]/40",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-black text-white">
+                        {item.barcoId || "SEM_BARCO"}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-sky-100/55">{item.id}</p>
+                    </div>
+
+                    {item.precisaProvisionar && (
+                      <span className="shrink-0 rounded-full border border-amber-300/35 bg-amber-500/10 px-2 py-1 text-[9px] font-black uppercase text-amber-200">
+                        novo
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Mini label="Status" valor={item.status || "—"} />
+                    <Mini
+                      label="Wi‑Fi"
+                      valor={item.wifiSSIDAtual || item.wifiNome || "—"}
+                    />
+                  </div>
+                </button>
+              );
+            })}
+
+            {rastreadoresFiltrados.length === 0 && (
+              <div className="rounded-2xl border border-dashed border-[#7ba6d4]/25 bg-[#143760] p-6 text-center text-sm text-sky-100/55">
+                Nenhum rastreador encontrado.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-[#7ba6d4]/25 bg-[#0d0c2c] p-5 shadow-sm">
+          <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <h2 className="text-lg font-black">
+                {rastreadorSelecionado?.id || "Selecione um rastreador"}
+              </h2>
+              <p className="mt-1 text-xs text-sky-100/55">
+                Atual: {rastreadorSelecionado?.barcoId || "—"} • Firmware:{" "}
+                {rastreadorSelecionado?.versaoFirmware || "—"}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={modeloInstalacao}
+                className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/20"
+              >
+                Padrão instalação
+              </button>
+
+              <button
+                onClick={enviarProvisionamento}
+                disabled={enviando || !rastreadorSelecionado}
+                className="rounded-xl border border-emerald-300/35 bg-emerald-500/10 px-4 py-3 text-xs font-black uppercase text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60"
+              >
+                {enviando ? "Enviando..." : "Enviar provisionamento"}
+              </button>
+            </div>
+          </div>
+
+          <div className="mb-5 rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3">
+            <p className="text-sm text-sky-100/75">
+              Use o padrão de instalação para acelerar o cadastro e depois envie o
+              provisionamento.
+            </p>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Campo
+              label="ID do barco no Firebase"
+              descricao="Exemplo: OBDENSE_V"
+              value={barcoId}
+              onChange={(v) => {
+                const id = limparBarcoId(v);
+                setBarcoId(id);
+                if (!nomeNaRede || nomeNaRede === "CMB_CONFIG") {
+                  setNomeNaRede(id ? `CMB_${id}` : "");
+                }
+              }}
+            />
+
+            <Campo
+              label="Nome da placa na rede"
+              descricao="Exemplo: CMB_OBDENSE_V"
+              value={nomeNaRede}
+              onChange={setNomeNaRede}
+            />
+
+            <Campo
+              label="Wi‑Fi definitivo"
+              descricao="Starlink/roteador da embarcação ou hotspot de instalação"
+              value={wifiSsid}
+              onChange={setWifiSsid}
+            />
+
+            <Campo
+              label="Senha do Wi‑Fi"
+              descricao="Senha que será testada pelo rastreador"
+              value={wifiSenha}
+              onChange={setWifiSenha}
+            />
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button
+              onClick={() => {
+                setWifiSsid("");
+                setWifiSenha("");
+                setNomeNaRede(barcoId ? `CMB_${limparBarcoId(barcoId)}` : "");
+              }}
+              className="rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-xs font-black uppercase text-sky-100 hover:bg-[#2b5b91]"
+            >
+              Digitar Starlink
+            </button>
+
+            <button
+              onClick={cancelarPendente}
+              disabled={!rastreadorSelecionado}
+              className="rounded-xl border border-red-300/35 bg-red-500/10 px-4 py-3 text-xs font-black uppercase text-red-200 hover:bg-red-500/20 disabled:opacity-60"
+            >
+              Cancelar pendente
+            </button>
+          </div>
+
+          <section className="mt-6 rounded-3xl border border-[#7ba6d4]/25 bg-[#143760] p-5 shadow-sm">
+            <h3 className="text-lg font-black">Status do provisionamento</h3>
+
+            <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+              <Mini
+                label="Status"
+                valor={rastreadorSelecionado?.provisionamentoStatus?.status || "—"}
+              />
+              <Mini
+                label="Mensagem"
+                valor={rastreadorSelecionado?.provisionamentoStatus?.mensagem || "—"}
+              />
+              <Mini
+                label="Novo barco"
+                valor={rastreadorSelecionado?.provisionamentoStatus?.novoBarcoId || "—"}
+              />
+              <Mini
+                label="SSID tentado"
+                valor={rastreadorSelecionado?.provisionamentoStatus?.ssidTentado || "—"}
+              />
+            </div>
+          </section>
+
+          <section className="mt-6 rounded-3xl border border-[#7ba6d4]/25 bg-[#143760] p-5 shadow-sm">
+            <h3 className="text-lg font-black">Dados técnicos</h3>
+
+            <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+              <Mini
+                label="Último sinal"
+                valor={formatarData(rastreadorSelecionado?.ultimoSinal)}
+              />
+              <Mini label="IP local" valor={rastreadorSelecionado?.ipLocal || "—"} />
+              <Mini label="RSSI" valor={rastreadorSelecionado?.rssi ?? "—"} />
+              <Mini label="Satélites" valor={rastreadorSelecionado?.satelites ?? "—"} />
+            </div>
+          </section>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function Campo({
+  label,
+  descricao,
+  value,
+  onChange,
+}: {
+  label: string;
+  descricao: string;
+  value: string;
+  onChange: (valor: string) => void;
+}) {
+  return (
+    <label>
+      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">{label}</p>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60"
+      />
+      <p className="mt-1 text-[11px] text-sky-100/55">{descricao}</p>
+    </label>
+  );
+}
+
+function Mini({ label, valor }: { label: string; valor: any }) {
+  return (
+    <div className="rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] p-3">
+      <p className="text-[9px] font-black uppercase tracking-[0.16em] text-sky-100/55">
+        {label}
+      </p>
+      <p className="mt-1 truncate text-sm font-black text-white">{valor}</p>
+    </div>
+  );
+}

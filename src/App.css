@@ -1,0 +1,26 @@
+/* Ajustes globais para o novo layout claro/profissional */
+html,
+body,
+#root {
+  min-height: 100%;
+  background: #f4f7fb;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}

@@ -30,3 +30,5 @@ functions/lib
 *.njsproj
 *.sln
 *.sw?
+functions/.runtimeconfig.json
+firebase-debug.log

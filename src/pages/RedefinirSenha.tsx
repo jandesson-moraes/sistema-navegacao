@@ -41,8 +41,9 @@ export default function RedefinirSenha() {
       });
 
       setSucesso(true);
+
       setMensagem(
-        "Enviamos o link de redefinição para seu e-mail. Verifique também o spam.",
+        "Enviamos um link seguro para seu e-mail. Abra o e-mail mais recente e siga as instruções para criar sua nova senha.",
       );
     } catch {
       setSucesso(false);
@@ -237,13 +238,22 @@ export default function RedefinirSenha() {
               </div>
             )}
 
-            <button
-              onClick={salvarNovaSenha}
-              disabled={carregando || !senhaMinima || !senhasIguais}
-              className="mt-4 rounded-2xl bg-sky-500 px-5 py-4 text-xs font-black uppercase tracking-wide text-white hover:bg-sky-600 disabled:opacity-50"
-            >
-              {carregando ? "Salvando..." : "Salvar nova senha"}
-            </button>
+            <div className="text-center">
+              <div className="mb-5 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-5 text-sm text-emerald-300">
+                <CheckCircle className="mx-auto mb-3" size={38} />
+                <p className="font-black">Senha alterada com sucesso!</p>
+                <p className="mt-2 text-emerald-200/80">
+                  Agora abra o app Cadê o Meu Barco e entre com sua nova senha.
+                </p>
+              </div>
+
+              <a
+                href="cadeomeubarco://login"
+                className="block w-full rounded-2xl bg-sky-500 px-5 py-4 text-xs font-black uppercase tracking-wide text-white hover:bg-sky-600"
+              >
+                Abrir login do app
+              </a>
+            </div>
           </div>
         )}
       </div>

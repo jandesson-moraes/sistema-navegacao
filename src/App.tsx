@@ -21,6 +21,7 @@ import Terminais from "../src/pages/Terminais";
 import CentralFinanceira from "../src/pages/CentralFinanceira";
 import ChecklistRastreadorGPS from "../src/pages/ChecklistRastreadorGPS";
 import RedefinirSenha from "../src/pages/RedefinirSenha";
+import LoginApp from "../src/pages/LoginApp";
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
@@ -211,6 +212,7 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/alterar-senha" element={<AlterarSenha />} />
           <Route path="/redefinir-senha" element={<RedefinirSenha />} />
+          <Route path="/login-app" element={<LoginApp />} />
           <Route
             path="/"
             element={

@@ -36,7 +36,7 @@ export default function RedefinirSenha() {
       setCarregando(true);
 
       await sendPasswordResetEmail(auth, email.trim().toLowerCase(), {
-        url: "cadeomeubarco://login",
+        url: "https://sistema-navegacao.vercel.app/login-app",
         handleCodeInApp: false,
       });
 

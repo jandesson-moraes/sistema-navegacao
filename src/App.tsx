@@ -211,7 +211,6 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/alterar-senha" element={<AlterarSenha />} />
           <Route path="/redefinir-senha" element={<RedefinirSenha />} />
-
           <Route
             path="/"
             element={

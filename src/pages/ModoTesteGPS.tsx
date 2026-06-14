@@ -62,8 +62,12 @@ function numeroLongitude(valor: any) {
 function extrairCoordenadasTerminal(dados: any) {
   const c = dados?.coordenadas || dados?.coordenada || {};
 
-  let lat = numeroLatitude(c.lat ?? c.latitude ?? dados?.lat ?? dados?.latitude);
-  let lng = numeroLongitude(c.lng ?? c.longitude ?? dados?.lng ?? dados?.longitude);
+  let lat = numeroLatitude(
+    c.lat ?? c.latitude ?? dados?.lat ?? dados?.latitude,
+  );
+  let lng = numeroLongitude(
+    c.lng ?? c.longitude ?? dados?.lng ?? dados?.longitude,
+  );
 
   // Recupera o caso que apareceu no seu Firebase:
   // coordenadas.lng recebeu latitude e coordenadas.longitude recebeu longitude sem ponto.
@@ -90,7 +94,12 @@ function pontoValido(ponto: PontoTeste) {
   return ponto.nome.trim() && lat !== null && lng !== null;
 }
 
-function calcularDistanciaKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+function calcularDistanciaKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+) {
   const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
@@ -134,7 +143,10 @@ export default function ModoTesteGPS() {
     const unsubscribe = onSnapshot(collection(db, "terminais"), (snapshot) => {
       const pontosTeste = snapshot.docs
         .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-        .filter((dados: any) => dados.modoTeste === true || dados.tipo === "teste_gps")
+        .filter(
+          (dados: any) =>
+            dados.modoTeste === true || dados.tipo === "teste_gps",
+        )
         .map((dados: any) => {
           const coordenadas = extrairCoordenadasTerminal(dados);
 
@@ -190,7 +202,11 @@ export default function ModoTesteGPS() {
     return (distanciaTotalKm / velocidade) * 60;
   }, [distanciaTotalKm, velocidadeMediaKmh]);
 
-  const atualizarPonto = (index: number, campo: keyof PontoTeste, valor: string) => {
+  const atualizarPonto = (
+    index: number,
+    campo: keyof PontoTeste,
+    valor: string,
+  ) => {
     setPontos((atuais) =>
       atuais.map((ponto, i) =>
         i === index
@@ -458,19 +474,26 @@ export default function ModoTesteGPS() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0d0c2c] p-4 text-slate-900 xl:p-5">
-      <section className="mb-5 overflow-hidden rounded-[22px] bg-[#363636] shadow-sm">
-        <div className="flex flex-col gap-4  bg-[#0d0c2c] from-[#0f2240] to-[#17345e] px-5 py-5 text-white xl:flex-row xl:items-center xl:justify-between xl:px-6">
+    <div className="min-h-full bg-[#0d0c2c] p-3 text-slate-900 sm:p-4 xl:p-5">
+      <section className="mb-4 overflow-hidden rounded-2xl bg-[#363636] shadow-sm sm:mb-5 sm:rounded-[22px]">
+        <div className="flex flex-col gap-4 bg-[#0d0c2c] from-[#0f2240] to-[#17345e] px-4 py-4 text-white sm:px-5 sm:py-5 xl:flex-row xl:items-center xl:justify-between xl:px-6">
           <div>
-            <h1 className="text-2xl font-black tracking-tight">Modo Teste GPS</h1>
+            <h1 className="text-2xl font-black tracking-tight">
+              Modo Teste GPS
+            </h1>
             <p className="mt-1 text-sm text-blue-100/90">
-              Configure o trajeto de teste e valide o rastreador antes da instalação
-              final.
+              Configure o trajeto de teste e valide o rastreador antes da
+              instalação final.
             </p>
           </div>
 
-          <div className="grid grid-cols-4 gap-2 xl:w-[600px]">
-            <Mini label="Pontos" valor={pontosValidos.length} destaque="azul" compacto />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:w-[600px]">
+            <Mini
+              label="Pontos"
+              valor={pontosValidos.length}
+              destaque="azul"
+              compacto
+            />
             <Mini
               label="Distância"
               valor={`${distanciaTotalKm.toFixed(1)} km`}
@@ -483,17 +506,26 @@ export default function ModoTesteGPS() {
               destaque="ambar"
               compacto
             />
-            <Mini label="Status" valor="modoTeste=true" destaque="slate" compacto />
+            <Mini
+              label="Status"
+              valor="modoTeste=true"
+              destaque="slate"
+              compacto
+            />
           </div>
         </div>
 
-        <div className="grid gap-3 bg-[#0d0c2c] p-4 md:grid-cols-2 xl:grid-cols-4 xl:px-5 xl:py-4">
+        <div className="grid gap-3 bg-[#0d0c2c] p-3 sm:p-4 md:grid-cols-2 xl:grid-cols-4 xl:px-5 xl:py-4">
           <Input
             label="ID do teste no rastreador"
             value={barcoId}
             onChange={setBarcoId}
           />
-          <Input label="Nome exibido" value={nomeBarco} onChange={setNomeBarco} />
+          <Input
+            label="Nome exibido"
+            value={nomeBarco}
+            onChange={setNomeBarco}
+          />
           <Input
             label="Raio de chegada (m)"
             value={raioChegadaMetros}
@@ -507,7 +539,7 @@ export default function ModoTesteGPS() {
         </div>
       </section>
 
-      <section className="rounded-[22px] bg-gradient-to-br from-[#0f2240] to-[#13345d] p-4 shadow-sm xl:p-4">
+      <section className="rounded-2xl bg-gradient-to-br from-[#0f2240] to-[#13345d] p-3 shadow-sm sm:rounded-[22px] sm:p-4 xl:p-4">
         <div className="mb-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-end">
           <button
             onClick={() =>
@@ -532,7 +564,7 @@ export default function ModoTesteGPS() {
                 ];
               })
             }
-            className="rounded-xl border border-[#8fb2da]/40 bg-[#3d6ca3] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d0c2c]/45"
+            className="min-h-11 w-full rounded-xl border border-[#8fb2da]/40 bg-[#3d6ca3] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.14em] text-white transition hover:bg-[#0d0c2c]/45 sm:w-auto"
           >
             Adicionar ponto
           </button>
@@ -542,7 +574,7 @@ export default function ModoTesteGPS() {
           {pontos.map((ponto, index) => (
             <div
               key={index}
-              className="grid gap-2 rounded-2xl   bg-[#2b5b91]/35 p-2.5 shadow-sm xl:grid-cols-[58px_1fr_1fr_1fr_1fr_132px]"
+              className="grid gap-3 rounded-2xl bg-[#2b5b91]/35 p-3 shadow-sm xl:grid-cols-[58px_1fr_1fr_1fr_1fr_150px] xl:gap-2 xl:p-2.5"
             >
               <div className="rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] px-2 py-2 text-center">
                 <p className="text-[9px] font-black uppercase tracking-[0.14em] text-sky-100/60">
@@ -552,7 +584,9 @@ export default function ModoTesteGPS() {
                       ? "Destino"
                       : "Ordem"}
                 </p>
-                <p className="mt-1 text-base font-black text-white">{index + 1}</p>
+                <p className="mt-1 text-base font-black text-white">
+                  {index + 1}
+                </p>
               </div>
 
               <Input
@@ -580,32 +614,34 @@ export default function ModoTesteGPS() {
                 compacto
               />
 
-              <div className="flex place-items-center mt-2.5 gap-1">
+              <div className="grid gap-2 sm:grid-cols-2 xl:mt-2.5 xl:flex xl:place-items-center xl:gap-1">
                 <button
                   onClick={() => usarLocalizacaoAtual(index)}
-                  className="w-full rounded-xl border border-emerald-300/35 bg-emerald-500/10 px-2.5 py-2 text-[9px] font-black uppercase tracking-[0.1em] text-emerald-200 transition hover:bg-emerald-500/20"
+                  className="min-h-10 w-full rounded-xl border border-emerald-300/35 bg-emerald-500/10 px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-emerald-200 transition hover:bg-emerald-500/20"
                 >
                   Localização
                 </button>
 
-                {pontos.length > 2 && index !== 0 && index !== pontos.length - 1 && (
-                  <button
-                    onClick={() => removerPonto(index)}
-                    className="rounded-xl border border-red-300/35 bg-red-500/10 px-2.5 py-2 text-[9px] font-black uppercase tracking-[0.1em] text-red-200 transition hover:bg-red-500/20"
-                  >
-                    X
-                  </button>
-                )}
+                {pontos.length > 2 &&
+                  index !== 0 &&
+                  index !== pontos.length - 1 && (
+                    <button
+                      onClick={() => removerPonto(index)}
+                      className="min-h-10 rounded-xl border border-red-300/35 bg-red-500/10 px-2.5 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-red-200 transition hover:bg-red-500/20"
+                    >
+                      X
+                    </button>
+                  )}
               </div>
             </div>
           ))}
         </div>
 
-        <div className="mt-4 flex flex-col gap-2 xl:flex-row">
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
           <button
             onClick={criarAmbienteTeste}
             disabled={salvando}
-            className="rounded-xl border border-emerald-300 bg-[#dff4e7] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-emerald-800 transition hover:bg-emerald-200 disabled:opacity-60"
+            className="min-h-11 rounded-xl border border-emerald-300 bg-[#dff4e7] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-emerald-800 transition hover:bg-emerald-200 disabled:opacity-60"
           >
             {salvando ? "Salvando..." : "Salvar / atualizar teste"}
           </button>
@@ -613,7 +649,7 @@ export default function ModoTesteGPS() {
           <button
             onClick={apagarAmbienteTeste}
             disabled={apagando}
-            className="rounded-xl border border-red-300 bg-[#f8e1e1] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-red-800 transition hover:bg-red-200 disabled:opacity-60"
+            className="min-h-11 rounded-xl border border-red-300 bg-[#f8e1e1] px-4 py-2.5 text-[11px] font-black uppercase tracking-[0.12em] text-red-800 transition hover:bg-red-200 disabled:opacity-60"
           >
             {apagando ? "Apagando..." : "Apagar ambiente de teste"}
           </button>
@@ -625,7 +661,8 @@ export default function ModoTesteGPS() {
           <div>
             <h2 className="text-sm font-black text-white">Fluxo de teste</h2>
             <p className="mt-1 text-xs text-sky-100/55">
-              Siga esta ordem para validar a rota antes de transformar em rota oficial.
+              Siga esta ordem para validar a rota antes de transformar em rota
+              oficial.
             </p>
           </div>
 
@@ -647,7 +684,9 @@ export default function ModoTesteGPS() {
             <div className="mt-3 space-y-2 text-sm leading-6 text-sky-100/75">
               <p>1. Crie a origem, as escalas e o destino.</p>
               <p>2. Salve ou atualize o ambiente de teste.</p>
-              <p>3. Configure o rastreador usando a identificação mostrada acima.</p>
+              <p>
+                3. Configure o rastreador usando a identificação mostrada acima.
+              </p>
             </div>
           </div>
 
@@ -657,7 +696,9 @@ export default function ModoTesteGPS() {
             </p>
             <div className="mt-3 space-y-2 text-sm leading-6 text-sky-100/75">
               <p>4. Faça o percurso de ida e depois o retorno.</p>
-              <p>5. Confira se o sistema reconhece origem, escalas e destino.</p>
+              <p>
+                5. Confira se o sistema reconhece origem, escalas e destino.
+              </p>
               <p>6. Depois salve a rota em Rotas como oficial.</p>
             </div>
           </div>
@@ -687,7 +728,9 @@ function Input({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className={`w-full rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] px-3 ${
-          compacto ? "py-2 text-[12px]" : "py-2.5 text-sm"
+          compacto
+            ? "min-h-11 py-2 text-base sm:text-[12px]"
+            : "min-h-12 py-3 text-base sm:py-2.5 sm:text-sm"
         } font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60 focus:bg-[#1d426b]`}
       />
     </label>
@@ -720,7 +763,7 @@ function Mini({
         {label}
       </p>
       <p
-        className={`truncate font-black text-white ${compacto ? "mt-0.5 text-[13px]" : "mt-1 text-sm"}`}
+        className={`break-words font-black text-white ${compacto ? "mt-0.5 text-[13px]" : "mt-1 text-sm"}`}
       >
         {valor}
       </p>

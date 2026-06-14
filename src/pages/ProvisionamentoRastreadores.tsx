@@ -1,5 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
 import { db } from "../config/firebase";
 import { useAppModal } from "../components/AppModal";
 
@@ -67,25 +73,33 @@ export default function ProvisionamentoRastreadores() {
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "rastreadores"), (snapshot) => {
-      const lista = snapshot.docs
-        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as Rastreador)
-        .sort((a, b) => {
-          const aPrecisa = a.precisaProvisionar ? 0 : 1;
-          const bPrecisa = b.precisaProvisionar ? 0 : 1;
+    const unsubscribe = onSnapshot(
+      collection(db, "rastreadores"),
+      (snapshot) => {
+        const lista = snapshot.docs
+          .map(
+            (docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as Rastreador,
+          )
+          .sort((a, b) => {
+            const aPrecisa = a.precisaProvisionar ? 0 : 1;
+            const bPrecisa = b.precisaProvisionar ? 0 : 1;
 
-          if (aPrecisa !== bPrecisa) return aPrecisa - bPrecisa;
+            if (aPrecisa !== bPrecisa) return aPrecisa - bPrecisa;
 
-          return String(a.barcoId || a.id).localeCompare(String(b.barcoId || b.id));
-        });
+            return String(a.barcoId || a.id).localeCompare(
+              String(b.barcoId || b.id),
+            );
+          });
 
-      setRastreadores(lista);
+        setRastreadores(lista);
 
-      if (!deviceSelecionado && lista.length > 0) {
-        const preferido = lista.find((item) => item.precisaProvisionar) || lista[0];
-        selecionarRastreador(preferido, false);
-      }
-    });
+        if (!deviceSelecionado && lista.length > 0) {
+          const preferido =
+            lista.find((item) => item.precisaProvisionar) || lista[0];
+          selecionarRastreador(preferido, false);
+        }
+      },
+    );
 
     return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -120,7 +134,9 @@ export default function ProvisionamentoRastreadores() {
 
   function selecionarRastreador(item: Rastreador, limparSenha = true) {
     setDeviceSelecionado(item.id);
-    setBarcoId(item.barcoId && item.barcoId !== "SEM_BARCO" ? item.barcoId : "");
+    setBarcoId(
+      item.barcoId && item.barcoId !== "SEM_BARCO" ? item.barcoId : "",
+    );
     setNomeNaRede(item.nomeNaRede || "");
     setWifiSsid(item.wifiSSIDAtual || item.wifiNome || "RoteadorTeste");
 
@@ -182,7 +198,8 @@ export default function ProvisionamentoRastreadores() {
           },
           provisionamentoStatus: {
             status: "pendente",
-            mensagem: "Provisionamento enviado. Aguardando rastreador ler o Firebase.",
+            mensagem:
+              "Provisionamento enviado. Aguardando rastreador ler o Firebase.",
             novoBarcoId,
             ssidTentado: wifiSsid.trim(),
             nomeNaRede: nomeNaRede.trim() || `CMB_${novoBarcoId}`,
@@ -216,7 +233,8 @@ export default function ProvisionamentoRastreadores() {
     const confirmou = await modal.confirmar({
       tipo: "warning",
       titulo: "Cancelar provisionamento?",
-      mensagem: "O provisionamento pendente será marcado como cancelado no Firebase.",
+      mensagem:
+        "O provisionamento pendente será marcado como cancelado no Firebase.",
       confirmarTexto: "Cancelar pendente",
       cancelarTexto: "Voltar",
     });
@@ -249,31 +267,33 @@ export default function ProvisionamentoRastreadores() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0d0c2c] p-5 text-white">
-      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <div className="min-h-full bg-[#0d0c2c] p-3 text-white sm:p-5">
+      <div className="mb-4 flex flex-col gap-4 xl:mb-6 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.25em]">
             Instalação de rastreadores
           </p>
-          <h1 className="mt-2 text-2xl font-black tracking-tight">Provisionamento GPS</h1>
+          <h1 className="mt-2 text-2xl font-black tracking-tight">
+            Provisionamento GPS
+          </h1>
         </div>
 
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           placeholder="Buscar device, barco ou Wi‑Fi..."
-          className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60 xl:w-[320px]"
+          className="min-h-12 w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-base font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60 sm:text-sm xl:w-[320px]"
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
-        <section className="rounded-3xl bg-[#0d0c2c] p-4 shadow-sm">
+      <div className="grid gap-4 xl:grid-cols-[360px_1fr] xl:gap-6">
+        <section className="rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] p-3 shadow-sm sm:rounded-3xl sm:p-4">
           <h2 className="px-1 text-lg font-black">Rastreadores online</h2>
           <p className="mt-1 px-1 text-xs text-sky-100/55">
             Dispositivos disponíveis para provisionamento.
           </p>
 
-          <div className="mt-4 max-h-[calc(100vh-235px)] overflow-y-auto overflow-x-hidden scrollbar-none pr-1">
+          <div className="mt-4 max-h-[360px] overflow-y-auto overflow-x-hidden pr-1 scrollbar-none xl:max-h-[calc(100vh-235px)]">
             {rastreadoresFiltrados.map((item) => {
               const ativo = item.id === deviceSelecionado;
 
@@ -293,7 +313,9 @@ export default function ProvisionamentoRastreadores() {
                       <p className="truncate text-sm font-black text-white">
                         {item.barcoId || "SEM_BARCO"}
                       </p>
-                      <p className="mt-1 truncate text-xs text-sky-100/55">{item.id}</p>
+                      <p className="mt-1 truncate text-xs text-sky-100/55">
+                        {item.id}
+                      </p>
                     </div>
 
                     {item.precisaProvisionar && (
@@ -322,7 +344,7 @@ export default function ProvisionamentoRastreadores() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-[#7ba6d4]/25 bg-[#0d0c2c] p-5 shadow-sm">
+        <section className="rounded-2xl border border-[#7ba6d4]/25 bg-[#0d0c2c] p-4 shadow-sm sm:rounded-3xl sm:p-5">
           <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <h2 className="text-lg font-black">
@@ -334,10 +356,10 @@ export default function ProvisionamentoRastreadores() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid gap-2 sm:flex sm:flex-wrap">
               <button
                 onClick={modeloInstalacao}
-                className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/20"
+                className="min-h-11 rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/20"
               >
                 Padrão instalação
               </button>
@@ -345,7 +367,7 @@ export default function ProvisionamentoRastreadores() {
               <button
                 onClick={enviarProvisionamento}
                 disabled={enviando || !rastreadorSelecionado}
-                className="rounded-xl border border-emerald-300/35 bg-emerald-500/10 px-4 py-3 text-xs font-black uppercase text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60"
+                className="min-h-11 rounded-xl border border-emerald-300/35 bg-emerald-500/10 px-4 py-3 text-xs font-black uppercase text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-60"
               >
                 {enviando ? "Enviando..." : "Enviar provisionamento"}
               </button>
@@ -354,8 +376,8 @@ export default function ProvisionamentoRastreadores() {
 
           <div className="mb-5 rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3">
             <p className="text-sm text-sky-100/75">
-              Use o padrão de instalação para acelerar o cadastro e depois envie o
-              provisionamento.
+              Use o padrão de instalação para acelerar o cadastro e depois envie
+              o provisionamento.
             </p>
           </div>
 
@@ -402,7 +424,7 @@ export default function ProvisionamentoRastreadores() {
                 setWifiSenha("");
                 setNomeNaRede(barcoId ? `CMB_${limparBarcoId(barcoId)}` : "");
               }}
-              className="rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-xs font-black uppercase text-sky-100 hover:bg-[#2b5b91]"
+              className="min-h-11 rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-xs font-black uppercase text-sky-100 hover:bg-[#2b5b91]"
             >
               Digitar Starlink
             </button>
@@ -410,7 +432,7 @@ export default function ProvisionamentoRastreadores() {
             <button
               onClick={cancelarPendente}
               disabled={!rastreadorSelecionado}
-              className="rounded-xl border border-red-300/35 bg-red-500/10 px-4 py-3 text-xs font-black uppercase text-red-200 hover:bg-red-500/20 disabled:opacity-60"
+              className="min-h-11 rounded-xl border border-red-300/35 bg-red-500/10 px-4 py-3 text-xs font-black uppercase text-red-200 hover:bg-red-500/20 disabled:opacity-60"
             >
               Cancelar pendente
             </button>
@@ -419,22 +441,32 @@ export default function ProvisionamentoRastreadores() {
           <section className="mt-6 rounded-3xl border border-[#7ba6d4]/25 bg-[#143760] p-5 shadow-sm">
             <h3 className="text-lg font-black">Status do provisionamento</h3>
 
-            <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Mini
                 label="Status"
-                valor={rastreadorSelecionado?.provisionamentoStatus?.status || "—"}
+                valor={
+                  rastreadorSelecionado?.provisionamentoStatus?.status || "—"
+                }
               />
               <Mini
                 label="Mensagem"
-                valor={rastreadorSelecionado?.provisionamentoStatus?.mensagem || "—"}
+                valor={
+                  rastreadorSelecionado?.provisionamentoStatus?.mensagem || "—"
+                }
               />
               <Mini
                 label="Novo barco"
-                valor={rastreadorSelecionado?.provisionamentoStatus?.novoBarcoId || "—"}
+                valor={
+                  rastreadorSelecionado?.provisionamentoStatus?.novoBarcoId ||
+                  "—"
+                }
               />
               <Mini
                 label="SSID tentado"
-                valor={rastreadorSelecionado?.provisionamentoStatus?.ssidTentado || "—"}
+                valor={
+                  rastreadorSelecionado?.provisionamentoStatus?.ssidTentado ||
+                  "—"
+                }
               />
             </div>
           </section>
@@ -442,14 +474,20 @@ export default function ProvisionamentoRastreadores() {
           <section className="mt-6 rounded-3xl border border-[#7ba6d4]/25 bg-[#143760] p-5 shadow-sm">
             <h3 className="text-lg font-black">Dados técnicos</h3>
 
-            <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Mini
                 label="Último sinal"
                 valor={formatarData(rastreadorSelecionado?.ultimoSinal)}
               />
-              <Mini label="IP local" valor={rastreadorSelecionado?.ipLocal || "—"} />
+              <Mini
+                label="IP local"
+                valor={rastreadorSelecionado?.ipLocal || "—"}
+              />
               <Mini label="RSSI" valor={rastreadorSelecionado?.rssi ?? "—"} />
-              <Mini label="Satélites" valor={rastreadorSelecionado?.satelites ?? "—"} />
+              <Mini
+                label="Satélites"
+                valor={rastreadorSelecionado?.satelites ?? "—"}
+              />
             </div>
           </section>
         </section>
@@ -471,11 +509,13 @@ function Campo({
 }) {
   return (
     <label>
-      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">{label}</p>
+      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">
+        {label}
+      </p>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60"
+        className="min-h-12 w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-base font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60 sm:text-sm"
       />
       <p className="mt-1 text-[11px] text-sky-100/55">{descricao}</p>
     </label>
@@ -484,11 +524,11 @@ function Campo({
 
 function Mini({ label, valor }: { label: string; valor: any }) {
   return (
-    <div className="rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] p-3">
+    <div className="rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] p-3 sm:p-4">
       <p className="text-[9px] font-black uppercase tracking-[0.16em] text-sky-100/55">
         {label}
       </p>
-      <p className="mt-1 truncate text-sm font-black text-white">{valor}</p>
+      <p className="mt-1 break-words text-sm font-black text-white">{valor}</p>
     </div>
   );
 }

@@ -73,16 +73,18 @@ function CardAtalho({
     <button
       type="button"
       onClick={onClick}
-      className="rounded-2xl border border-[#7ba6d4]/20 bg-[#143760] p-4 text-left transition hover:border-sky-300/40 hover:bg-[#17345e]"
+      className="min-h-[92px] w-full rounded-2xl border border-[#7ba6d4]/20 bg-[#143760] p-4 text-left transition active:scale-[0.99] hover:border-sky-300/40 hover:bg-[#17345e] sm:p-5"
     >
       <div className="flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-sky-300/20 bg-sky-400/10 text-lg font-black text-sky-100">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-sky-300/20 bg-sky-400/10 text-xl font-black text-sky-100">
           {icone}
         </span>
 
         <div className="min-w-0">
-          <h3 className="text-sm font-black text-white">{titulo}</h3>
-          <p className="mt-1 text-xs leading-5 text-sky-100/55">{descricao}</p>
+          <h3 className="text-base font-black leading-tight text-white">
+            {titulo}
+          </h3>
+          <p className="mt-1 text-sm leading-5 text-sky-100/65">{descricao}</p>
         </div>
       </div>
     </button>
@@ -106,7 +108,7 @@ function MiniResumo({
   }[tom];
 
   return (
-    <div className="rounded-2xl border border-[#7ba6d4]/20 bg-[#143760] p-4">
+    <div className="rounded-2xl border border-[#7ba6d4]/20 bg-[#143760] p-4 sm:p-5">
       <p className="text-[10px] font-black uppercase tracking-[0.16em] text-sky-100/45">
         {label}
       </p>
@@ -118,24 +120,29 @@ function MiniResumo({
 export default function GPS() {
   const [aba, setAba] = useState<AbaGPS>("visao");
 
-  const abaAtual = useMemo(() => ABAS.find((item) => item.id === aba) || ABAS[0], [aba]);
+  const abaAtual = useMemo(
+    () => ABAS.find((item) => item.id === aba) || ABAS[0],
+    [aba],
+  );
 
   return (
-    <div className="flex min-h-[calc(100vh-74px)] flex-col overflow-hidden bg-[#0d0c2c] p-4 text-white">
-      <header className="mb-3 shrink-0 rounded-2xl border border-[#7ba6d4]/20 bg-[#0f2240] p-3">
+    <div className="flex min-h-[calc(100vh-74px)] flex-col overflow-hidden bg-[#0d0c2c] p-2 text-white sm:p-4">
+      <header className="mb-2 shrink-0 rounded-2xl border border-[#7ba6d4]/20 bg-[#0f2240] p-3 sm:mb-3 sm:p-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-300">
               Central GPS
             </p>
-            <h1 className="mt-1 text-2xl font-black tracking-tight text-white">GPS</h1>
-            <p className="mt-1 text-xs text-sky-100/50">
-              Rastreadores, configuração, provisionamento, teste e suporte em uma única
-              área.
+            <h1 className="mt-1 text-2xl font-black tracking-tight text-white sm:text-3xl">
+              GPS
+            </h1>
+            <p className="mt-1 text-sm leading-5 text-sky-100/60">
+              Rastreadores, configuração, provisionamento, teste e suporte em
+              uma única área.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#7ba6d4]/15 bg-[#143760] p-1 md:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#7ba6d4]/15 bg-[#143760] p-2 sm:grid-cols-3 xl:grid-cols-6">
             {ABAS.map((item) => {
               const ativo = aba === item.id;
 
@@ -145,7 +152,7 @@ export default function GPS() {
                   type="button"
                   onClick={() => setAba(item.id)}
                   className={[
-                    "h-10 rounded-lg px-3 text-[10px] font-black uppercase transition",
+                    "min-h-12 rounded-xl px-2 text-[11px] font-black uppercase leading-tight transition sm:px-3",
                     ativo
                       ? "bg-sky-400/15 text-sky-100"
                       : "text-sky-100/45 hover:bg-[#17345e] hover:text-sky-100",
@@ -160,8 +167,8 @@ export default function GPS() {
       </header>
 
       {aba === "visao" && (
-        <main className="min-h-0 flex-1 overflow-y-auto scrollbar-none">
-          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <main className="min-h-0 flex-1 overflow-y-auto pb-4 scrollbar-none">
+          <section className="grid grid-cols-2 gap-3 md:grid-cols-2 xl:grid-cols-5">
             <MiniResumo label="Área principal" valor="GPS" />
             <MiniResumo label="Rastreadores" valor="Status" tom="green" />
             <MiniResumo label="Configuração" valor="Wi-Fi" tom="amber" />
@@ -170,9 +177,11 @@ export default function GPS() {
           </section>
 
           <section className="mt-3 rounded-2xl border border-[#7ba6d4]/20 bg-[#0f2240] p-3">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-base font-black text-white">Acessos rápidos</h2>
+                <h2 className="text-base font-black text-white">
+                  Acessos rápidos
+                </h2>
                 <p className="mt-1 text-xs text-sky-100/45">
                   Escolha a função que deseja usar na central de GPS.
                 </p>
@@ -183,7 +192,7 @@ export default function GPS() {
               </span>
             </div>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <CardAtalho
                 titulo="Rastreadores"
                 descricao="Veja dispositivos online, sem sinal, offline, Wi-Fi, satélites e vínculo com embarcação."
@@ -224,31 +233,31 @@ export default function GPS() {
       )}
 
       {aba === "rastreadores" && (
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[#7ba6d4]/20 scrollbar-none">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] pb-4 scrollbar-none">
           <Rastreadores />
         </div>
       )}
 
       {aba === "configuracao" && (
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[#7ba6d4]/20 scrollbar-none">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] pb-4 scrollbar-none">
           <ControleRastreadoresGPS />
         </div>
       )}
 
       {aba === "provisionamento" && (
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[#7ba6d4]/20 scrollbar-none">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] pb-4 scrollbar-none">
           <ProvisionamentoRastreadores />
         </div>
       )}
 
       {aba === "teste" && (
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[#7ba6d4]/20 scrollbar-none">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] pb-4 scrollbar-none">
           <ModoTesteGPS />
         </div>
       )}
 
       {aba === "checklist" && (
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[#7ba6d4]/20 scrollbar-none">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] pb-4 scrollbar-none">
           <ChecklistRastreadorGPS />
         </div>
       )}

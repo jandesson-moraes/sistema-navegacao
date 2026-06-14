@@ -210,26 +210,44 @@ function nomeUsuario(user: User | null) {
   return user.displayName || user.email || "Usuário logado";
 }
 
-function NavLink({ item }: { item: MenuItem }) {
+function itemAtivo(item: MenuItem, pathname: string) {
+  return item.match?.includes(pathname) || pathname === item.to;
+}
+
+function NavLink({
+  item,
+  onClick,
+  compacto = false,
+}: {
+  item: MenuItem;
+  onClick?: () => void;
+  compacto?: boolean;
+}) {
   const location = useLocation();
-  const ativo = item.match?.includes(location.pathname) || location.pathname === item.to;
+  const ativo = itemAtivo(item, location.pathname);
 
   return (
     <Link
       to={item.to}
+      onClick={onClick}
+      aria-current={ativo ? "page" : undefined}
       className={[
-        "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-semibold transition-all duration-200",
+        "group relative flex items-center gap-3 rounded-2xl font-semibold transition-all duration-200",
+        compacto
+          ? "min-h-[54px] px-3.5 py-3 text-[14px]"
+          : "min-h-[46px] px-3 py-2.5 text-[13px]",
         ativo
-          ? "bg-sky-500/[0.14] text-white shadow-[inset_3px_0_0_#38bdf8]"
-          : "text-slate-300/80 hover:bg-white/8 hover:text-white",
+          ? "bg-sky-500/[0.16] text-white shadow-[inset_4px_0_0_#38bdf8] ring-1 ring-sky-300/10"
+          : "text-slate-300/85 hover:bg-white/[0.08] hover:text-white",
       ].join(" ")}
     >
       <span
         className={[
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[13px] font-black transition",
+          "flex shrink-0 items-center justify-center rounded-xl font-black transition",
+          compacto ? "h-9 w-9 text-[15px]" : "h-7 w-7 text-[13px]",
           ativo
-            ? "bg-sky-400/[0.18] text-sky-200"
-            : "bg-white/5 text-slate-400 group-hover:text-sky-200",
+            ? "bg-sky-400/[0.2] text-sky-100"
+            : "bg-white/[0.06] text-slate-400 group-hover:text-sky-200",
         ].join(" ")}
       >
         {item.icon}
@@ -246,6 +264,39 @@ function NavLink({ item }: { item: MenuItem }) {
   );
 }
 
+function MobileBottomItem({ item }: { item: MenuItem }) {
+  const location = useLocation();
+  const ativo = itemAtivo(item, location.pathname);
+
+  return (
+    <Link
+      to={item.to}
+      aria-current={ativo ? "page" : undefined}
+      className={[
+        "relative flex min-w-0 flex-1 flex-col items-center justify-center rounded-2xl px-1 py-2 transition",
+        ativo ? "bg-sky-500/[0.16] text-sky-100" : "text-slate-300/70 active:bg-white/[0.08]",
+      ].join(" ")}
+    >
+      <span
+        className={[
+          "relative flex h-7 w-7 items-center justify-center rounded-xl text-[14px] font-black",
+          ativo ? "bg-sky-300/[0.16]" : "bg-white/[0.06]",
+        ].join(" ")}
+      >
+        {item.icon}
+        {item.badge && (
+          <span className="absolute -right-1 -top-1 h-4 min-w-4 rounded-full bg-blue-500 px-1 text-[9px] leading-4 text-white">
+            {item.badge}
+          </span>
+        )}
+      </span>
+      <span className="mt-1 w-full truncate text-center text-[10px] font-black leading-none">
+        {item.label}
+      </span>
+    </Link>
+  );
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -258,6 +309,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
     "visitante",
   );
   const [carregandoPermissoes, setCarregandoPermissoes] = useState(true);
+  const [menuMobileAberto, setMenuMobileAberto] = useState(false);
+
+  useEffect(() => {
+    setMenuMobileAberto(false);
+  }, [location.pathname]);
 
   useEffect(() => {
     const auth = getAuth();
@@ -375,14 +431,32 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return admin.filter((item) => permissaoAtiva(permissoesUsuario, item.permissao));
   }, [carregandoPermissoes, permissoesUsuario, usuario]);
 
+  const menuCompletoVisivel = useMemo(
+    () => [...principalVisivel, ...adminVisivel],
+    [principalVisivel, adminVisivel],
+  );
+
+  const atalhosMobile = useMemo(() => {
+    const prioridades = ["/gps", "/", "/embarcacoes", "/rotas"];
+    const priorizados = prioridades
+      .map((rota) => menuCompletoVisivel.find((item) => item.to === rota))
+      .filter((item): item is MenuItem => Boolean(item));
+    const restantes = menuCompletoVisivel.filter(
+      (item) => !priorizados.some((priorizado) => priorizado.to === item.to),
+    );
+
+    return [...priorizados, ...restantes].slice(0, 4);
+  }, [menuCompletoVisivel]);
+
   async function sair() {
     const auth = getAuth();
     await signOut(auth);
+    setMenuMobileAberto(false);
     navigate("/login");
   }
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[#000813] text-slate-900">
+    <div className="flex h-screen h-[100dvh] w-full overflow-hidden bg-[#000813] text-slate-900">
       <aside className="hidden w-[275px] shrink-0 bg-[#061b32] text-white shadow-2xl md:flex md:flex-col">
         <div className="px-6 pb-5 pt-6">
           <div className="flex items-center gap-3">
@@ -427,8 +501,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
           )}
         </nav>
 
-        <div className="px-4 pb-1 mt-auto">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.055] p-2 shadow-sm">
+        <div className="mt-auto px-4 pb-3">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.055] p-3 shadow-sm">
             <div className="flex items-center gap-2">
               <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.12)]" />
               <span className="text-[13px] font-black text-white">
@@ -446,19 +520,156 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-[74px] shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/95 px-5 shadow-sm backdrop-blur md:px-7">
-          <div className="flex min-w-0 items-center gap-4">
+      <div
+        className={[
+          "fixed inset-0 z-50 md:hidden",
+          menuMobileAberto ? "pointer-events-auto" : "pointer-events-none",
+        ].join(" ")}
+        aria-hidden={!menuMobileAberto}
+      >
+        <button
+          type="button"
+          aria-label="Fechar menu"
+          onClick={() => setMenuMobileAberto(false)}
+          className={[
+            "absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-200",
+            menuMobileAberto ? "opacity-100" : "opacity-0",
+          ].join(" ")}
+        />
+
+        <aside
+          className={[
+            "absolute left-0 top-0 flex h-full w-[92vw] max-w-[385px] flex-col overflow-hidden bg-[#061b32] text-white shadow-2xl transition-transform duration-300",
+            menuMobileAberto ? "translate-x-0" : "-translate-x-full",
+          ].join(" ")}
+        >
+          <div className="border-b border-white/10 px-4 pb-4 pt-[calc(18px+env(safe-area-inset-top))]">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/[0.08] text-2xl text-sky-200 ring-1 ring-white/10">
+                  ⚓
+                </div>
+                <div className="min-w-0">
+                  <h1 className="truncate text-[12px] font-black uppercase tracking-[0.16em] text-white">
+                    Cadê o Meu Barco
+                  </h1>
+                  <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-[0.09em] text-sky-200/70">
+                    Sistema de Navegação
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setMenuMobileAberto(false)}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] text-xl font-black text-white active:bg-white/[0.12]"
+                aria-label="Fechar menu"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mt-4 rounded-3xl border border-white/10 bg-white/[0.06] p-3">
+              {usuario ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-400/[0.16] text-sm font-black text-white ring-1 ring-sky-300/20">
+                    {iniciais}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-[14px] font-black text-white">
+                      {nomeUsuario(usuario)}
+                    </p>
+                    <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-wide text-sky-100/60">
+                      {tipoUsuario === "admin" ? "Administrador" : "Usuário"}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <Link
+                  to="/login"
+                  className="flex min-h-[48px] items-center justify-center rounded-2xl bg-sky-500 px-4 text-sm font-black uppercase tracking-wide text-white"
+                >
+                  Entrar no sistema
+                </Link>
+              )}
+            </div>
+          </div>
+
+          <nav className="flex-1 space-y-6 overflow-y-auto overflow-x-hidden px-4 py-5 pb-[calc(22px+env(safe-area-inset-bottom))] scrollbar-none">
+            {principalVisivel.length > 0 && (
+              <div>
+                <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.24em] text-slate-400/80">
+                  Operação
+                </p>
+                <div className="space-y-2">
+                  {principalVisivel.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      item={item}
+                      compacto
+                      onClick={() => setMenuMobileAberto(false)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {adminVisivel.length > 0 && (
+              <div>
+                <p className="mb-2 px-2 text-[10px] font-black uppercase tracking-[0.24em] text-slate-400/80">
+                  Gestão
+                </p>
+                <div className="space-y-2">
+                  {adminVisivel.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      item={item}
+                      compacto
+                      onClick={() => setMenuMobileAberto(false)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!carregandoPermissoes && menuCompletoVisivel.length === 0 && (
+              <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-4 text-sm font-semibold text-sky-100/75">
+                Nenhum menu liberado para este usuário.
+              </div>
+            )}
+          </nav>
+
+          {usuario && (
+            <div className="border-t border-white/10 p-4 pb-[calc(14px+env(safe-area-inset-bottom))]">
+              <button
+                onClick={sair}
+                className="flex min-h-[48px] w-full items-center justify-center rounded-2xl border border-red-300/20 bg-red-500/10 px-4 text-sm font-black uppercase tracking-wide text-red-100 active:bg-red-500/20"
+              >
+                Sair da conta
+              </button>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex min-h-[64px] shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white/95 px-3 py-2 shadow-sm backdrop-blur md:h-[74px] md:px-7 md:py-0">
+          <div className="flex min-w-0 items-center gap-3 md:gap-4">
             <button
               type="button"
-              className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-lg font-black text-slate-600 transition hover:bg-slate-50 lg:flex"
-              aria-label="Menu"
+              onClick={() => setMenuMobileAberto(true)}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-xl font-black text-[#0f2240] shadow-sm transition active:bg-slate-50 md:hidden"
+              aria-label="Abrir menu"
+              aria-expanded={menuMobileAberto}
             >
               ≡
             </button>
 
             <div className="min-w-0">
-              <h2 className="mt-0.5 truncate text-[22px] font-black tracking-tight text-[#0f2240] md:text-2xl">
+              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-sky-700 md:hidden">
+                Painel
+              </p>
+              <h2 className="mt-0.5 max-w-[52vw] truncate text-[18px] font-black tracking-tight text-[#0f2240] sm:max-w-[62vw] md:max-w-none md:text-2xl">
                 {tituloHeader}
               </h2>
               <p className="hidden text-[12px] font-medium text-slate-500 xl:block">
@@ -470,7 +681,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="flex shrink-0 items-center gap-2 md:gap-3">
             {usuario ? (
               <>
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#052a55] text-xs font-black text-white shadow-sm">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#052a55] text-xs font-black text-white shadow-sm ring-1 ring-slate-200/30">
                   {iniciais}
                 </div>
 
@@ -485,7 +696,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
                 <button
                   onClick={sair}
-                  className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-red-600 transition hover:bg-red-100"
+                  className="hidden rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-red-600 transition hover:bg-red-100 sm:inline-flex"
                 >
                   Sair
                 </button>
@@ -493,17 +704,40 @@ export function Layout({ children }: { children: React.ReactNode }) {
             ) : (
               <Link
                 to="/login"
-                className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-2 text-[12px] font-black uppercase tracking-wide text-blue-700 transition hover:bg-blue-100"
+                className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-blue-700 transition hover:bg-blue-100 sm:px-4 sm:text-[12px]"
               >
                 Entrar
               </Link>
             )}
           </div>
         </header>
-        <section className="flex-1 overflow-y-auto overflow-x-hidden bg-[#0d0c2c]">
+
+        <section className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain bg-[#0d0c2c] pb-[96px] md:pb-0">
           {children}
         </section>
       </main>
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#061b32]/95 px-2 pb-[calc(8px+env(safe-area-inset-bottom))] pt-2 shadow-[0_-18px_40px_rgba(0,0,0,0.35)] backdrop-blur md:hidden">
+        <div className="mx-auto flex max-w-[520px] items-stretch gap-1.5 rounded-[26px] border border-white/10 bg-white/[0.055] p-1.5">
+          {atalhosMobile.map((item) => (
+            <MobileBottomItem key={item.to} item={item} />
+          ))}
+
+          <button
+            type="button"
+            onClick={() => setMenuMobileAberto(true)}
+            className="flex min-w-0 flex-1 flex-col items-center justify-center rounded-2xl px-1 py-2 text-slate-300/75 transition active:bg-white/[0.08]"
+            aria-label="Abrir todos os menus"
+          >
+            <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-white/[0.06] text-[15px] font-black">
+              ☰
+            </span>
+            <span className="mt-1 w-full truncate text-center text-[10px] font-black leading-none">
+              Mais
+            </span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }

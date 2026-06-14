@@ -1,5 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+} from "firebase/firestore";
 import { db } from "../config/firebase";
 import { useAppModal } from "../components/AppModal";
 
@@ -56,19 +62,23 @@ function pegarConfig(barco: any): ConfigGPS {
       config.intervaloTesteSegundos ?? CONFIG_PADRAO.intervaloTesteSegundos,
     ),
     intervaloNavegandoSegundos: String(
-      config.intervaloNavegandoSegundos ?? CONFIG_PADRAO.intervaloNavegandoSegundos,
+      config.intervaloNavegandoSegundos ??
+        CONFIG_PADRAO.intervaloNavegandoSegundos,
     ),
     intervaloParadoSegundos: String(
       config.intervaloParadoSegundos ?? CONFIG_PADRAO.intervaloParadoSegundos,
     ),
     intervaloPertoPortoSegundos: String(
-      config.intervaloPertoPortoSegundos ?? CONFIG_PADRAO.intervaloPertoPortoSegundos,
+      config.intervaloPertoPortoSegundos ??
+        CONFIG_PADRAO.intervaloPertoPortoSegundos,
     ),
     distanciaPertoPortoMetros: String(
-      config.distanciaPertoPortoMetros ?? CONFIG_PADRAO.distanciaPertoPortoMetros,
+      config.distanciaPertoPortoMetros ??
+        CONFIG_PADRAO.distanciaPertoPortoMetros,
     ),
     atualizarConfigACadaSegundos: String(
-      config.atualizarConfigACadaSegundos ?? CONFIG_PADRAO.atualizarConfigACadaSegundos,
+      config.atualizarConfigACadaSegundos ??
+        CONFIG_PADRAO.atualizarConfigACadaSegundos,
     ),
   };
 }
@@ -98,7 +108,9 @@ function parseDataSistema(valor: any): Date | null {
 
     const numeroTexto = Number(texto);
     if (Number.isFinite(numeroTexto) && numeroTexto > 0) {
-      const data = new Date(numeroTexto < 10000000000 ? numeroTexto * 1000 : numeroTexto);
+      const data = new Date(
+        numeroTexto < 10000000000 ? numeroTexto * 1000 : numeroTexto,
+      );
       return Number.isNaN(data.getTime()) ? null : data;
     }
 
@@ -141,22 +153,26 @@ export default function ControleRastreadoresGPS() {
   const [enviandoWifi, setEnviandoWifi] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, "embarcacoes"), (snapshot) => {
-      const lista = snapshot.docs
-        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-        .sort((a: any, b: any) =>
-          String(a.nome || a.id).localeCompare(String(b.nome || b.id)),
-        );
+    const unsubscribe = onSnapshot(
+      collection(db, "embarcacoes"),
+      (snapshot) => {
+        const lista = snapshot.docs
+          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+          .sort((a: any, b: any) =>
+            String(a.nome || a.id).localeCompare(String(b.nome || b.id)),
+          );
 
-      setBarcos(lista);
+        setBarcos(lista);
 
-      if (!barcoId && lista.length > 0) {
-        const preferido = lista.find((item: any) => item.modoTeste === true) || lista[0];
+        if (!barcoId && lista.length > 0) {
+          const preferido =
+            lista.find((item: any) => item.modoTeste === true) || lista[0];
 
-        setBarcoId(preferido.id);
-        setConfig(pegarConfig(preferido));
-      }
-    });
+          setBarcoId(preferido.id);
+          setConfig(pegarConfig(preferido));
+        }
+      },
+    );
 
     return () => unsubscribe();
   }, [barcoId]);
@@ -193,7 +209,9 @@ export default function ControleRastreadoresGPS() {
           barco?.wifiNome ||
           "",
       );
-      setWifiNomeRede(barco?.nomeNaRede || barco?.rastreadorWifiStatus?.nomeNaRede || "");
+      setWifiNomeRede(
+        barco?.nomeNaRede || barco?.rastreadorWifiStatus?.nomeNaRede || "",
+      );
       setWifiSenha("");
     }
   };
@@ -257,10 +275,30 @@ export default function ControleRastreadoresGPS() {
       const payload = {
         rastreadorAtivo: config.rastreadorAtivo,
         modoEnvio: config.modoEnvio,
-        intervaloEnvioSegundos: numero(config.intervaloEnvioSegundos, 15, 3, 600),
-        intervaloTesteSegundos: numero(config.intervaloTesteSegundos, 5, 3, 600),
-        intervaloNavegandoSegundos: numero(config.intervaloNavegandoSegundos, 15, 3, 600),
-        intervaloParadoSegundos: numero(config.intervaloParadoSegundos, 60, 5, 1800),
+        intervaloEnvioSegundos: numero(
+          config.intervaloEnvioSegundos,
+          15,
+          3,
+          600,
+        ),
+        intervaloTesteSegundos: numero(
+          config.intervaloTesteSegundos,
+          5,
+          3,
+          600,
+        ),
+        intervaloNavegandoSegundos: numero(
+          config.intervaloNavegandoSegundos,
+          15,
+          3,
+          600,
+        ),
+        intervaloParadoSegundos: numero(
+          config.intervaloParadoSegundos,
+          60,
+          5,
+          1800,
+        ),
         intervaloPertoPortoSegundos: numero(
           config.intervaloPertoPortoSegundos,
           5,
@@ -341,7 +379,8 @@ export default function ControleRastreadoresGPS() {
           },
           rastreadorWifiStatus: {
             status: "pendente",
-            mensagem: "Troca remota enviada. Aguardando rastreador ler o Firebase.",
+            mensagem:
+              "Troca remota enviada. Aguardando rastreador ler o Firebase.",
             ssidTentado: wifiSsid.trim(),
             nomeNaRede: wifiNomeRede.trim() || `CMB_${barcoId}`,
             comandoId,
@@ -352,7 +391,9 @@ export default function ControleRastreadoresGPS() {
         { merge: true },
       );
 
-      alert("Troca de Wi-Fi enviada. Aguarde o rastreador testar e atualizar o status.");
+      alert(
+        "Troca de Wi-Fi enviada. Aguarde o rastreador testar e atualizar o status.",
+      );
       setWifiSenha("");
     } catch (error: any) {
       alert(error?.message || "Erro ao enviar troca de Wi-Fi.");
@@ -362,31 +403,33 @@ export default function ControleRastreadoresGPS() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0d0c2c] p-5 text-white">
-      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <div className="min-h-full bg-[#0d0c2c] p-3 text-white sm:p-5">
+      <div className="mb-4 flex flex-col gap-4 xl:mb-6 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.25em]">
             Rastreamento remoto
           </p>
-          <h1 className="mt-2 text-2xl font-black tracking-tight">Controle GPS</h1>
+          <h1 className="mt-2 text-2xl font-black tracking-tight">
+            Controle GPS
+          </h1>
         </div>
 
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
           placeholder="Buscar barco ou rastreador..."
-          className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60 xl:w-[320px]"
+          className="min-h-12 w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-base font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60 sm:text-sm xl:w-[320px]"
         />
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
-        <section className="rounded-3xl bg-[#0d0c2c] p-4 shadow-sm">
+      <div className="grid gap-4 xl:grid-cols-[360px_1fr] xl:gap-6">
+        <section className="rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] p-3 shadow-sm sm:rounded-3xl sm:p-4">
           <h2 className="px-1 text-lg font-black">Rastreadores</h2>
           <p className="mt-1 px-1 text-xs text-sky-100/55">
             Selecione o rastreador para editar.
           </p>
 
-          <div className="mt-4 max-h-[calc(100vh-230px)] overflow-hidden pr-1">
+          <div className="mt-4 max-h-[360px] overflow-y-auto overflow-x-hidden pr-1 xl:max-h-[calc(100vh-230px)]">
             {barcosFiltrados.map((barco) => {
               const ativo = barco.id === barcoId;
 
@@ -406,11 +449,13 @@ export default function ControleRastreadoresGPS() {
                       <p className="truncate text-sm font-black text-white">
                         {barco.nome || barco.id}
                       </p>
-                      <p className="mt-1 truncate text-xs text-sky-100/55">{barco.id}</p>
+                      <p className="mt-1 truncate text-xs text-sky-100/55">
+                        {barco.id}
+                      </p>
                     </div>
 
                     {barco.modoTeste && (
-                      <span className="shrink-0 rounded-full border border-amber-300/35 bg-amber-500/100/10 px-2 py-1 text-[9px] font-black uppercase text-amber-200">
+                      <span className="shrink-0 rounded-full border border-amber-300/35 bg-amber-500/10 px-2 py-1 text-[9px] font-black uppercase text-amber-200">
                         teste
                       </span>
                     )}
@@ -429,7 +474,7 @@ export default function ControleRastreadoresGPS() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-[#7ba6d4]/25 bg-[#0d0c2c] p-5 shadow-sm">
+        <section className="rounded-2xl border border-[#7ba6d4]/25 bg-[#0d0c2c] p-4 shadow-sm sm:rounded-3xl sm:p-5">
           <div className="mb-5 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <h2 className="text-lg font-black">
@@ -440,17 +485,17 @@ export default function ControleRastreadoresGPS() {
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="grid gap-2 sm:flex sm:flex-wrap">
               <button
                 onClick={aplicarModoTeste}
-                className="rounded-xl border border-amber-300/35 bg-amber-500/100/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/100/20"
+                className="min-h-11 rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/20"
               >
                 Modo teste 5s
               </button>
 
               <button
                 onClick={aplicarModoProducao}
-                className="rounded-xl border border-emerald-300/35 bg-emerald-500/100/10 px-4 py-3 text-xs font-black uppercase text-emerald-200 hover:bg-emerald-500/100/20"
+                className="min-h-11 rounded-xl border border-emerald-300/35 bg-emerald-500/10 px-4 py-3 text-xs font-black uppercase text-emerald-200 hover:bg-emerald-500/20"
               >
                 Modo produção
               </button>
@@ -458,7 +503,7 @@ export default function ControleRastreadoresGPS() {
               <button
                 onClick={salvarConfig}
                 disabled={salvando || !barcoId}
-                className="rounded-xl border border-sky-300/30 bg-[#17345e] px-4 py-3 text-xs font-black uppercase text-sky-100 hover:bg-[#2b5b91] disabled:opacity-60"
+                className="min-h-11 rounded-xl border border-sky-300/30 bg-[#17345e] px-4 py-3 text-xs font-black uppercase text-sky-100 hover:bg-[#2b5b91] disabled:opacity-60"
               >
                 {salvando ? "Salvando..." : "Salvar"}
               </button>
@@ -467,8 +512,8 @@ export default function ControleRastreadoresGPS() {
 
           <div className="mb-5 rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3">
             <p className="text-sm text-sky-100/75">
-              As alterações desta tela passam a valer pelo Firebase para o rastreador
-              selecionado.
+              As alterações desta tela passam a valer pelo Firebase para o
+              rastreador selecionado.
             </p>
           </div>
 
@@ -555,22 +600,23 @@ export default function ControleRastreadoresGPS() {
             />
           </div>
 
-          <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-500/100/10 p-5">
+          <section className="mt-6 rounded-2xl border border-amber-200 bg-amber-500/10 p-4 sm:rounded-3xl sm:p-5">
             <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <h3 className="text-lg font-black text-amber-200">
                   Troca remota de Wi-Fi
                 </h3>
                 <p className="mt-1 max-w-3xl text-xs leading-5 text-sky-100/55">
-                  Funciona quando o rastreador ainda está online na rede atual. O ESP32
-                  testa a nova rede e, se falhar, tenta voltar para a rede anterior.
+                  Funciona quando o rastreador ainda está online na rede atual.
+                  O ESP32 testa a nova rede e, se falhar, tenta voltar para a
+                  rede anterior.
                 </p>
               </div>
 
               <button
                 onClick={enviarTrocaWifiRemota}
                 disabled={enviandoWifi || !barcoId}
-                className="rounded-xl border border-amber-300/35 bg-amber-500/100/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/100/20 disabled:opacity-60"
+                className="min-h-11 rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/20 disabled:opacity-60"
               >
                 {enviandoWifi ? "Enviando..." : "Enviar troca Wi-Fi"}
               </button>
@@ -599,7 +645,7 @@ export default function ControleRastreadoresGPS() {
               />
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Mini
                 label="Status Wi-Fi"
                 valor={barcoSelecionado?.rastreadorWifiStatus?.status || "—"}
@@ -619,12 +665,14 @@ export default function ControleRastreadoresGPS() {
               />
               <Mini
                 label="Rede tentada"
-                valor={barcoSelecionado?.rastreadorWifiStatus?.ssidTentado || "—"}
+                valor={
+                  barcoSelecionado?.rastreadorWifiStatus?.ssidTentado || "—"
+                }
               />
             </div>
           </section>
 
-          <div className="mt-6 grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Mini
               label="Último sinal"
               valor={formatarData(
@@ -669,12 +717,14 @@ function Campo({
 }) {
   return (
     <label>
-      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">{label}</p>
+      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">
+        {label}
+      </p>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         inputMode="numeric"
-        className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60"
+        className="min-h-12 w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-base font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60 sm:text-sm"
       />
       <p className="mt-1 text-[11px] text-sky-100/55">{descricao}</p>
     </label>
@@ -683,11 +733,11 @@ function Campo({
 
 function Mini({ label, valor }: { label: string; valor: any }) {
   return (
-    <div className="rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] p-3">
+    <div className="rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] p-3 sm:p-4">
       <p className="text-[9px] font-black uppercase tracking-[0.16em] text-sky-100/55">
         {label}
       </p>
-      <p className="mt-1 truncate text-sm font-black text-white">{valor}</p>
+      <p className="mt-1 break-words text-sm font-black text-white">{valor}</p>
     </div>
   );
 }

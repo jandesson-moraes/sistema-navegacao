@@ -204,8 +204,8 @@ export default function ChecklistRastreadorGPS() {
           <p style={styles.label}>Suporte do Rastreador</p>
           <h1 style={styles.title}>Checklist do Rastreador GPS</h1>
           <p style={styles.subtitle}>
-            Use este checklist quando o GPS demorar para aparecer no mapa, ficar offline
-            ou parar de enviar localização.
+            Use este checklist quando o GPS demorar para aparecer no mapa, ficar
+            offline ou parar de enviar localização.
           </p>
         </div>
 
@@ -216,9 +216,10 @@ export default function ChecklistRastreadorGPS() {
       </div>
 
       <div style={styles.alertBox}>
-        <strong>Atenção:</strong> antes de considerar defeito no rastreador, siga todos os
-        passos abaixo. Muitas falhas podem ser causadas por Wi-Fi fraco, fonte desligada,
-        energia insuficiente, provisionamento ausente ou fios mal conectados.
+        <strong>Atenção:</strong> antes de considerar defeito no rastreador,
+        siga todos os passos abaixo. Muitas falhas podem ser causadas por Wi-Fi
+        fraco, fonte desligada, energia insuficiente, provisionamento ausente ou
+        fios mal conectados.
       </div>
 
       <div style={styles.grid}>
@@ -245,7 +246,9 @@ export default function ChecklistRastreadorGPS() {
             </div>
 
             <div style={styles.section}>
-              <h3 style={styles.sectionTitle}>Itens que podem aparecer como ausentes</h3>
+              <h3 style={styles.sectionTitle}>
+                Itens que podem aparecer como ausentes
+              </h3>
               <ul style={styles.list}>
                 {etapa.ausentes.map((item) => (
                   <li key={item} style={styles.listItem}>
@@ -289,16 +292,17 @@ const styles: Record<string, React.CSSProperties> = {
   page: {
     width: "100%",
     minHeight: "100vh",
-    padding: "28px",
+    padding: "16px",
     background: "#f4f7fb",
     color: "#0f172a",
   },
   header: {
     display: "flex",
     justifyContent: "space-between",
-    gap: "20px",
+    gap: "14px",
     alignItems: "flex-start",
-    marginBottom: "22px",
+    flexWrap: "wrap",
+    marginBottom: "18px",
   },
   label: {
     margin: 0,
@@ -310,14 +314,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
   title: {
     margin: "6px 0 8px",
-    fontSize: "30px",
+    fontSize: "24px",
     fontWeight: 800,
     color: "#0f172a",
   },
   subtitle: {
     margin: 0,
     maxWidth: "720px",
-    fontSize: "15px",
+    fontSize: "14px",
     color: "#475569",
     lineHeight: 1.6,
   },
@@ -331,7 +335,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#0369a1",
     fontSize: "13px",
     fontWeight: 700,
-    whiteSpace: "nowrap",
+    whiteSpace: "normal",
   },
   statusDot: {
     width: "9px",
@@ -351,13 +355,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "18px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(0, 1fr))",
+    gap: "14px",
   },
   card: {
     background: "#ffffff",
     borderRadius: "20px",
-    padding: "20px",
+    padding: "16px",
     boxShadow: "0 12px 30px rgba(15, 23, 42, 0.08)",
     border: "1px solid #e2e8f0",
   },
@@ -389,7 +393,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   cardTitle: {
     margin: "0 0 8px",
-    fontSize: "19px",
+    fontSize: "17px",
     color: "#0f172a",
   },
   description: {
@@ -463,7 +467,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   summaryCard: {
     marginTop: "24px",
-    padding: "22px",
+    padding: "16px",
     borderRadius: "20px",
     background: "#0f172a",
     color: "#ffffff",
@@ -471,11 +475,11 @@ const styles: Record<string, React.CSSProperties> = {
   },
   summaryTitle: {
     margin: "0 0 16px",
-    fontSize: "21px",
+    fontSize: "18px",
   },
   summaryList: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(0, 1fr))",
     gap: "10px",
   },
   summaryItem: {

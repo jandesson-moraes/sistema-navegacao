@@ -21,8 +21,8 @@ export default function GestaoGPS() {
   const [aba, setAba] = useState<AbaGPS>("controle");
 
   return (
-    <div className="min-h-screen bg-[#0d0c2c] text-slate-100">
-      <section className="border-b border-[#1d426b] bg-[#0f2240] px-5 py-5 shadow-sm xl:px-6">
+    <div className="min-h-full bg-[#0d0c2c] text-slate-100">
+      <section className="border-b border-[#1d426b] bg-[#0f2240] px-3 py-4 shadow-sm sm:px-5 sm:py-5 xl:px-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#7ba6d4]/25 bg-[#143760] text-lg font-black text-sky-100">
@@ -39,7 +39,7 @@ export default function GestaoGPS() {
             </div>
           </div>
 
-          <div className="grid gap-3 md:grid-cols-2 xl:min-w-[520px]">
+          <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[520px]">
             {ABAS.map((item) => {
               const ativo = aba === item.id;
 

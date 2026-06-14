@@ -10,5 +10,9 @@
   ],
   "compilerOptions": {},
   "jsx": "react-jsx",
-  "types": ["react", "react-dom"]
+  "types": [
+    "react",
+    "react-dom"
+  ],
+  "extends": "expo/tsconfig.base"
 }

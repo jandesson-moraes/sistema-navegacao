@@ -23,6 +23,11 @@ type Rastreador = {
   rssi?: number;
   satelites?: number;
   versaoFirmware?: string;
+  networkStatus?: any;
+  rastreadorNetworkStatus?: any;
+  macCliente?: string;
+  macConfiguracao?: string;
+  macAddress?: string;
   ativo?: boolean;
   apelido?: string;
   observacoes?: string;
@@ -53,12 +58,31 @@ function statusRastreador(r: Rastreador) {
   return { label: "Offline", tone: "red", ordem: 2 };
 }
 
-function formatarData(valor?: string) {
-  if (!valor) return "—";
+function parseData(valor: any): Date | null {
+  try {
+    if (!valor) return null;
 
-  const data = new Date(valor);
+    if (typeof valor?.toDate === "function") {
+      const data = valor.toDate();
+      return Number.isNaN(data.getTime()) ? null : data;
+    }
 
-  if (Number.isNaN(data.getTime())) return valor;
+    if (typeof valor === "number") {
+      const data = new Date(valor < 10000000000 ? valor * 1000 : valor);
+      return Number.isNaN(data.getTime()) ? null : data;
+    }
+
+    const data = new Date(String(valor));
+    return Number.isNaN(data.getTime()) ? null : data;
+  } catch {
+    return null;
+  }
+}
+
+function formatarData(valor?: any) {
+  const data = parseData(valor);
+
+  if (!data) return valor ? String(valor) : "—";
 
   return data.toLocaleString("pt-BR", {
     day: "2-digit",
@@ -77,6 +101,71 @@ function qualidadeWifi(rssi?: number) {
   if (valor >= -75) return "Fraco";
 
   return "Muito fraco";
+}
+
+function obterNetworkStatus(r: Rastreador | null) {
+  return r?.networkStatus || r?.rastreadorNetworkStatus || {};
+}
+
+function obterWifiNome(r: Rastreador) {
+  const status = obterNetworkStatus(r);
+  return r.wifiNome || status.ssidAtual || status.currentSSID || "—";
+}
+
+function obterRssi(r: Rastreador) {
+  const status = obterNetworkStatus(r);
+  return Number(r.rssi ?? status.rssi ?? 0) || undefined;
+}
+
+function obterMacCliente(r: Rastreador | null) {
+  const status = obterNetworkStatus(r);
+
+  const copiarInstrucaoGerente = async (rastreador: Rastreador | null) => {
+    const mensagem = montarInstrucaoGerente(rastreador);
+
+    try {
+      await navigator.clipboard.writeText(mensagem);
+      await modal.sucesso(
+        "Instrução copiada",
+        "A mensagem técnica para o gerente da rede foi copiada.",
+      );
+    } catch {
+      await modal.aviso("Instrução técnica", mensagem);
+    }
+  };
+
+  return status.macCliente || status.macClient || r?.macCliente || r?.macAddress || "—";
+}
+
+function obterMacConfiguracao(r: Rastreador | null) {
+  const status = obterNetworkStatus(r);
+  return status.macConfiguracao || status.macConfig || r?.macConfiguracao || "—";
+}
+
+function textoStatusBoolean(valor: any) {
+  if (valor === true) return "OK";
+  if (valor === false) return "Falhou";
+  return "—";
+}
+
+function montarInstrucaoGerente(r: Rastreador | null) {
+  const mac = obterMacCliente(r);
+  const rede = r ? obterWifiNome(r) : "rede do barco";
+
+  return [
+    "Olá, tudo bem?",
+    "",
+    "Para o rastreador GPS do Cadê Meu Barco funcionar na rede da embarcação, precisamos liberar o dispositivo no hotspot como bypass/whitelist/IP Binding.",
+    "",
+    `Rede/SSID: ${rede}`,
+    `MAC do GPS: ${mac}`,
+    "",
+    "O GPS não abre tela de login de hotspot como um celular. Ele precisa conectar ao Wi‑Fi e ter acesso direto à internet para enviar a localização ao sistema.",
+    "",
+    "Se for MikroTik, normalmente fica em IP > Hotspot > IP Bindings > Add, informando o MAC do GPS e Type: bypassed.",
+    "",
+    "O dispositivo envia apenas dados técnicos e localização para o Firebase. Ele não acessa rede interna e não interfere na internet dos passageiros.",
+  ].join("\n");
 }
 
 function Badge({ status }: { status: ReturnType<typeof statusRastreador> }) {
@@ -145,10 +234,7 @@ export default function Rastreadores() {
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
-    const q = query(
-      collection(db, "rastreadores"),
-      orderBy("ultimoSinal", "desc"),
-    );
+    const q = query(collection(db, "rastreadores"), orderBy("ultimoSinal", "desc"));
 
     const unsub = onSnapshot(
       q,
@@ -193,6 +279,8 @@ export default function Rastreadores() {
           r.barcoIdAdmin,
           r.nomeNaRede,
           r.wifiNome,
+          obterNetworkStatus(r).ssidAtual,
+          obterMacCliente(r),
           r.apelido,
           r.ipLocal,
         ]
@@ -206,14 +294,10 @@ export default function Rastreadores() {
     return {
       lista,
       total: rastreadores.length,
-      online: rastreadores.filter((r) => statusRastreador(r).label === "Online")
+      online: rastreadores.filter((r) => statusRastreador(r).label === "Online").length,
+      semSinal: rastreadores.filter((r) => statusRastreador(r).label === "Sem sinal")
         .length,
-      semSinal: rastreadores.filter(
-        (r) => statusRastreador(r).label === "Sem sinal",
-      ).length,
-      offline: rastreadores.filter(
-        (r) => statusRastreador(r).label === "Offline",
-      ).length,
+      offline: rastreadores.filter((r) => statusRastreador(r).label === "Offline").length,
     };
   }, [rastreadores, busca, filtroStatus]);
 
@@ -330,6 +414,8 @@ export default function Rastreadores() {
         ) : (
           dados.lista.map((r: any) => {
             const st = statusRastreador(r);
+            const ns = obterNetworkStatus(r);
+            const rssiAtual = obterRssi(r);
 
             return (
               <div
@@ -363,27 +449,21 @@ export default function Rastreadores() {
                 </div>
 
                 <div className="min-w-0">
-                  <p className="truncate font-bold text-sky-50">
-                    {r.wifiNome || "—"}
-                  </p>
+                  <p className="truncate font-bold text-sky-50">{obterWifiNome(r)}</p>
                   <p className="mt-0.5 text-[11px] text-sky-100/45">
-                    {qualidadeWifi(r.rssi)} {r.rssi ? `• ${r.rssi} dBm` : ""}
+                    {qualidadeWifi(rssiAtual)} {rssiAtual ? `• ${rssiAtual} dBm` : ""}
                   </p>
                 </div>
 
                 <div>
-                  <p className="font-bold text-sky-50">
-                    {Number(r.satelites || 0)}
-                  </p>
+                  <p className="font-bold text-sky-50">{Number(r.satelites || 0)}</p>
                   <p className="text-[11px] text-sky-100/45">satélites</p>
                 </div>
 
                 <div>
-                  <p className="font-bold text-sky-50">
-                    {formatarData(r.ultimoSinal)}
-                  </p>
+                  <p className="font-bold text-sky-50">{formatarData(r.ultimoSinal)}</p>
                   <p className="text-[11px] text-sky-100/45">
-                    IP {r.ipLocal || "—"}
+                    IP {r.ipLocal || ns.ipLocal || ns.ipAddress || "—"}
                   </p>
                 </div>
 
@@ -419,12 +499,20 @@ export default function Rastreadores() {
                   {detalhe.apelido || detalhe.nomeNaRede || detalhe.id}
                 </h2>
               </div>
-              <button
-                onClick={() => setDetalhe(null)}
-                className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-sky-100 hover:bg-white/10"
-              >
-                Fechar
-              </button>
+              <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                <button
+                  onClick={() => copiarInstrucaoGerente(detalhe)}
+                  className="rounded-xl border border-sky-300/25 bg-sky-300/10 px-3 py-2 text-xs font-black uppercase text-sky-100 hover:bg-sky-300/20"
+                >
+                  Copiar instrução rede
+                </button>
+                <button
+                  onClick={() => setDetalhe(null)}
+                  className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-sky-100 hover:bg-white/10"
+                >
+                  Fechar
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
@@ -432,9 +520,29 @@ export default function Rastreadores() {
                 ["Device ID", detalhe.deviceId || detalhe.id],
                 ["Barco", detalhe.barcoId || "—"],
                 ["Nome na rede", detalhe.nomeNaRede || "—"],
-                ["Wi‑Fi", detalhe.wifiNome || "—"],
-                ["RSSI", detalhe.rssi ? `${detalhe.rssi} dBm` : "—"],
-                ["IP local", detalhe.ipLocal || "—"],
+                ["Wi‑Fi", obterWifiNome(detalhe)],
+                ["RSSI", obterRssi(detalhe) ? `${obterRssi(detalhe)} dBm` : "—"],
+                [
+                  "IP local",
+                  detalhe.ipLocal ||
+                    obterNetworkStatus(detalhe).ipLocal ||
+                    obterNetworkStatus(detalhe).ipAddress ||
+                    "—",
+                ],
+                ["MAC cliente", obterMacCliente(detalhe)],
+                ["MAC configuração", obterMacConfiguracao(detalhe)],
+                ["Internet", textoStatusBoolean(obterNetworkStatus(detalhe).internetOk)],
+                ["Firebase", textoStatusBoolean(obterNetworkStatus(detalhe).firebaseOk)],
+                [
+                  "Último erro",
+                  obterNetworkStatus(detalhe).ultimoErro ||
+                    obterNetworkStatus(detalhe).lastError ||
+                    "—",
+                ],
+                [
+                  "Diagnóstico atualizado",
+                  formatarData(obterNetworkStatus(detalhe).atualizadoEm),
+                ],
                 ["Firmware", detalhe.versaoFirmware || "—"],
                 ["Último sinal", formatarData(detalhe.ultimoSinal)],
                 [
@@ -465,9 +573,7 @@ export default function Rastreadores() {
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-300">
                   Editar rastreador
                 </p>
-                <h2 className="mt-1 text-xl font-black text-white">
-                  {editando.id}
-                </h2>
+                <h2 className="mt-1 text-xl font-black text-white">{editando.id}</h2>
               </div>
               <button
                 onClick={() => setEditando(null)}
@@ -480,9 +586,7 @@ export default function Rastreadores() {
             <div className="space-y-4">
               <input
                 value={editando.apelido}
-                onChange={(e) =>
-                  setEditando({ ...editando, apelido: e.target.value })
-                }
+                onChange={(e) => setEditando({ ...editando, apelido: e.target.value })}
                 placeholder="Apelido interno"
                 className="w-full rounded-2xl border border-[#7ba6d4]/20 bg-[#0d0c2c] px-4 py-3 text-sm text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/50"
               />
@@ -510,9 +614,7 @@ export default function Rastreadores() {
                 <input
                   type="checkbox"
                   checked={editando.ativo}
-                  onChange={(e) =>
-                    setEditando({ ...editando, ativo: e.target.checked })
-                  }
+                  onChange={(e) => setEditando({ ...editando, ativo: e.target.checked })}
                   className="h-4 w-4 accent-sky-400"
                 />
                 Rastreador ativo

@@ -1,11 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
+import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { useAppModal } from "../components/AppModal";
 
@@ -25,6 +19,10 @@ type Rastreador = {
   precisaProvisionar?: boolean;
   provisionamentoStatus?: any;
   provisionamentoPendente?: any;
+  networkStatus?: any;
+  macCliente?: string;
+  macConfiguracao?: string;
+  macAddress?: string;
 };
 
 function formatarData(valor: any) {
@@ -56,6 +54,39 @@ function limparBarcoId(valor: string) {
     .toUpperCase();
 }
 
+type TipoRede = "wifi_comum" | "hotspot_mac_bypass";
+
+function obterNetworkStatus(rastreador?: Rastreador | null) {
+  return rastreador?.networkStatus || {};
+}
+
+function obterMacCliente(rastreador?: Rastreador | null) {
+  const status = obterNetworkStatus(rastreador);
+
+  return (
+    status.macCliente ||
+    status.macClient ||
+    rastreador?.macCliente ||
+    rastreador?.macAddress ||
+    "—"
+  );
+}
+
+function obterMacConfiguracao(rastreador?: Rastreador | null) {
+  const status = obterNetworkStatus(rastreador);
+
+  return status.macConfiguracao || status.macConfig || rastreador?.macConfiguracao || "—";
+}
+
+function textoTipoRede(tipo: TipoRede) {
+  if (tipo === "hotspot_mac_bypass") return "Hotspot com MAC bypass";
+  return "Wi-Fi comum";
+}
+
+function textoSimNao(valor: boolean) {
+  return valor ? "Sim" : "Não";
+}
+
 export default function ProvisionamentoRastreadores() {
   const modal = useAppModal();
   const alert = (mensagem: any) => {
@@ -70,36 +101,33 @@ export default function ProvisionamentoRastreadores() {
   const [nomeNaRede, setNomeNaRede] = useState("");
   const [wifiSsid, setWifiSsid] = useState("RoteadorTeste");
   const [wifiSenha, setWifiSenha] = useState("12341234");
+  const [tipoRede, setTipoRede] = useState<TipoRede>("wifi_comum");
+  const [macBypassLiberado, setMacBypassLiberado] = useState(false);
+  const [responsavelRede, setResponsavelRede] = useState("");
+  const [telefoneResponsavel, setTelefoneResponsavel] = useState("");
+  const [observacaoRede, setObservacaoRede] = useState("");
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "rastreadores"),
-      (snapshot) => {
-        const lista = snapshot.docs
-          .map(
-            (docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as Rastreador,
-          )
-          .sort((a, b) => {
-            const aPrecisa = a.precisaProvisionar ? 0 : 1;
-            const bPrecisa = b.precisaProvisionar ? 0 : 1;
+    const unsubscribe = onSnapshot(collection(db, "rastreadores"), (snapshot) => {
+      const lista = snapshot.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }) as Rastreador)
+        .sort((a, b) => {
+          const aPrecisa = a.precisaProvisionar ? 0 : 1;
+          const bPrecisa = b.precisaProvisionar ? 0 : 1;
 
-            if (aPrecisa !== bPrecisa) return aPrecisa - bPrecisa;
+          if (aPrecisa !== bPrecisa) return aPrecisa - bPrecisa;
 
-            return String(a.barcoId || a.id).localeCompare(
-              String(b.barcoId || b.id),
-            );
-          });
+          return String(a.barcoId || a.id).localeCompare(String(b.barcoId || b.id));
+        });
 
-        setRastreadores(lista);
+      setRastreadores(lista);
 
-        if (!deviceSelecionado && lista.length > 0) {
-          const preferido =
-            lista.find((item) => item.precisaProvisionar) || lista[0];
-          selecionarRastreador(preferido, false);
-        }
-      },
-    );
+      if (!deviceSelecionado && lista.length > 0) {
+        const preferido = lista.find((item) => item.precisaProvisionar) || lista[0];
+        selecionarRastreador(preferido, false);
+      }
+    });
 
     return () => unsubscribe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -134,11 +162,19 @@ export default function ProvisionamentoRastreadores() {
 
   function selecionarRastreador(item: Rastreador, limparSenha = true) {
     setDeviceSelecionado(item.id);
-    setBarcoId(
-      item.barcoId && item.barcoId !== "SEM_BARCO" ? item.barcoId : "",
-    );
+    setBarcoId(item.barcoId && item.barcoId !== "SEM_BARCO" ? item.barcoId : "");
     setNomeNaRede(item.nomeNaRede || "");
     setWifiSsid(item.wifiSSIDAtual || item.wifiNome || "RoteadorTeste");
+
+    const rede = item.provisionamentoPendente || item.provisionamentoStatus || {};
+    const tipo =
+      rede.tipoRede === "hotspot_mac_bypass" ? "hotspot_mac_bypass" : "wifi_comum";
+
+    setTipoRede(tipo);
+    setMacBypassLiberado(Boolean(rede.macBypassLiberado));
+    setResponsavelRede(String(rede.responsavelRede || ""));
+    setTelefoneResponsavel(String(rede.telefoneResponsavel || ""));
+    setObservacaoRede(String(rede.observacaoRede || ""));
 
     if (limparSenha) {
       setWifiSenha("");
@@ -149,6 +185,41 @@ export default function ProvisionamentoRastreadores() {
     setWifiSsid("RoteadorTeste");
     setWifiSenha("12341234");
     setNomeNaRede(barcoId ? `CMB_${limparBarcoId(barcoId)}` : "CMB_CONFIG");
+    setTipoRede("wifi_comum");
+    setMacBypassLiberado(false);
+    setResponsavelRede("");
+    setTelefoneResponsavel("");
+    setObservacaoRede("");
+  }
+
+  async function copiarInstrucaoGerente() {
+    const mac = obterMacCliente(rastreadorSelecionado);
+    const rede = wifiSsid.trim() || "rede do barco";
+
+    const mensagem = [
+      "Olá, tudo bem?",
+      "",
+      "Para o rastreador GPS do Cadê Meu Barco funcionar na rede da embarcação, precisamos liberar o dispositivo no hotspot como bypass/whitelist/IP Binding.",
+      "",
+      `Rede/SSID: ${rede}`,
+      `MAC do GPS: ${mac}`,
+      "",
+      "O GPS não abre tela de login de hotspot como um celular. Ele precisa conectar ao Wi-Fi e ter acesso direto à internet para enviar a localização ao sistema.",
+      "",
+      "Se for MikroTik, normalmente fica em IP > Hotspot > IP Bindings > Add, informando o MAC do GPS e Type: bypassed.",
+      "",
+      "O dispositivo envia apenas dados técnicos e localização para o Firebase. Ele não acessa rede interna e não interfere na internet dos passageiros.",
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(mensagem);
+      await modal.sucesso(
+        "Instrução copiada",
+        "A mensagem técnica para o gerente da rede foi copiada.",
+      );
+    } catch {
+      await modal.aviso("Instrução técnica", mensagem);
+    }
   }
 
   async function enviarProvisionamento() {
@@ -183,6 +254,15 @@ export default function ProvisionamentoRastreadores() {
       setEnviando(true);
 
       const comandoId = `prov_${Date.now()}`;
+      const requerBypassMac = tipoRede === "hotspot_mac_bypass";
+      const redeInfo = {
+        tipoRede,
+        requerBypassMac,
+        macBypassLiberado: requerBypassMac ? macBypassLiberado : false,
+        responsavelRede: responsavelRede.trim(),
+        telefoneResponsavel: telefoneResponsavel.trim(),
+        observacaoRede: observacaoRede.trim(),
+      };
 
       await setDoc(
         doc(db, "rastreadores", rastreadorSelecionado.id),
@@ -193,16 +273,17 @@ export default function ProvisionamentoRastreadores() {
             ssid: wifiSsid.trim(),
             senha: wifiSenha,
             nomeNaRede: nomeNaRede.trim() || `CMB_${novoBarcoId}`,
+            ...redeInfo,
             comandoId,
             criadoEm: serverTimestamp(),
           },
           provisionamentoStatus: {
             status: "pendente",
-            mensagem:
-              "Provisionamento enviado. Aguardando rastreador ler o Firebase.",
+            mensagem: "Provisionamento enviado. Aguardando rastreador ler o Firebase.",
             novoBarcoId,
             ssidTentado: wifiSsid.trim(),
             nomeNaRede: nomeNaRede.trim() || `CMB_${novoBarcoId}`,
+            ...redeInfo,
             comandoId,
             atualizadoEm: serverTimestamp(),
           },
@@ -233,8 +314,7 @@ export default function ProvisionamentoRastreadores() {
     const confirmou = await modal.confirmar({
       tipo: "warning",
       titulo: "Cancelar provisionamento?",
-      mensagem:
-        "O provisionamento pendente será marcado como cancelado no Firebase.",
+      mensagem: "O provisionamento pendente será marcado como cancelado no Firebase.",
       confirmarTexto: "Cancelar pendente",
       cancelarTexto: "Voltar",
     });
@@ -273,9 +353,7 @@ export default function ProvisionamentoRastreadores() {
           <p className="text-xs font-black uppercase tracking-[0.25em]">
             Instalação de rastreadores
           </p>
-          <h1 className="mt-2 text-2xl font-black tracking-tight">
-            Provisionamento GPS
-          </h1>
+          <h1 className="mt-2 text-2xl font-black tracking-tight">Provisionamento GPS</h1>
         </div>
 
         <input
@@ -313,9 +391,7 @@ export default function ProvisionamentoRastreadores() {
                       <p className="truncate text-sm font-black text-white">
                         {item.barcoId || "SEM_BARCO"}
                       </p>
-                      <p className="mt-1 truncate text-xs text-sky-100/55">
-                        {item.id}
-                      </p>
+                      <p className="mt-1 truncate text-xs text-sky-100/55">{item.id}</p>
                     </div>
 
                     {item.precisaProvisionar && (
@@ -376,8 +452,9 @@ export default function ProvisionamentoRastreadores() {
 
           <div className="mb-5 rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3">
             <p className="text-sm text-sky-100/75">
-              Use o padrão de instalação para acelerar o cadastro e depois envie
-              o provisionamento.
+              Use o padrão de instalação para acelerar o cadastro e depois envie o
+              provisionamento. Em rede com hotspot, o caminho correto é liberar o MAC
+              cliente do GPS como bypass.
             </p>
           </div>
 
@@ -415,6 +492,62 @@ export default function ProvisionamentoRastreadores() {
               value={wifiSenha}
               onChange={setWifiSenha}
             />
+
+            <label>
+              <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">
+                Tipo de rede
+              </p>
+              <select
+                value={tipoRede}
+                onChange={(e) => setTipoRede(e.target.value as TipoRede)}
+                className="min-h-12 w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-base font-semibold text-white shadow-sm outline-none focus:border-sky-300/60 sm:text-sm"
+              >
+                <option value="wifi_comum">Wi‑Fi comum</option>
+                <option value="hotspot_mac_bypass">Hotspot com MAC bypass</option>
+              </select>
+              <p className="mt-1 text-[11px] text-sky-100/55">
+                Use hotspot quando a rede tiver portal/login para passageiros.
+              </p>
+            </label>
+
+            <label className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-[#7ba6d4]/25 bg-[#143760] p-4">
+              <div>
+                <p className="text-[10px] font-black uppercase text-sky-100/55">
+                  MAC liberado no hotspot
+                </p>
+                <p className="mt-1 text-[11px] text-sky-100/55">
+                  Marque quando o gerente confirmar bypass/whitelist.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                checked={macBypassLiberado}
+                onChange={(e) => setMacBypassLiberado(e.target.checked)}
+                disabled={tipoRede !== "hotspot_mac_bypass"}
+                className="h-5 w-5 accent-sky-400 disabled:opacity-40"
+              />
+            </label>
+
+            <Campo
+              label="Responsável da rede"
+              descricao="Nome do técnico ou gerente da internet do barco"
+              value={responsavelRede}
+              onChange={setResponsavelRede}
+            />
+
+            <Campo
+              label="Telefone do responsável"
+              descricao="Contato para liberação do MAC, se necessário"
+              value={telefoneResponsavel}
+              onChange={setTelefoneResponsavel}
+            />
+
+            <Campo
+              label="Observação técnica"
+              descricao="Exemplo: hotspot MikroTik, aguardar liberação do MAC"
+              value={observacaoRede}
+              onChange={setObservacaoRede}
+            />
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
@@ -427,6 +560,14 @@ export default function ProvisionamentoRastreadores() {
               className="min-h-11 rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-xs font-black uppercase text-sky-100 hover:bg-[#2b5b91]"
             >
               Digitar Starlink
+            </button>
+
+            <button
+              onClick={copiarInstrucaoGerente}
+              disabled={!rastreadorSelecionado}
+              className="min-h-11 rounded-xl border border-sky-300/35 bg-sky-500/10 px-4 py-3 text-xs font-black uppercase text-sky-100 hover:bg-sky-500/20 disabled:opacity-60"
+            >
+              Copiar instrução rede
             </button>
 
             <button
@@ -444,30 +585,24 @@ export default function ProvisionamentoRastreadores() {
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <Mini
                 label="Status"
-                valor={
-                  rastreadorSelecionado?.provisionamentoStatus?.status || "—"
-                }
+                valor={rastreadorSelecionado?.provisionamentoStatus?.status || "—"}
               />
               <Mini
                 label="Mensagem"
-                valor={
-                  rastreadorSelecionado?.provisionamentoStatus?.mensagem || "—"
-                }
+                valor={rastreadorSelecionado?.provisionamentoStatus?.mensagem || "—"}
               />
               <Mini
                 label="Novo barco"
-                valor={
-                  rastreadorSelecionado?.provisionamentoStatus?.novoBarcoId ||
-                  "—"
-                }
+                valor={rastreadorSelecionado?.provisionamentoStatus?.novoBarcoId || "—"}
               />
               <Mini
                 label="SSID tentado"
-                valor={
-                  rastreadorSelecionado?.provisionamentoStatus?.ssidTentado ||
-                  "—"
-                }
+                valor={rastreadorSelecionado?.provisionamentoStatus?.ssidTentado || "—"}
               />
+              <Mini label="Tipo de rede" valor={textoTipoRede(tipoRede)} />
+              <Mini label="MAC bypass" valor={textoSimNao(macBypassLiberado)} />
+              <Mini label="Responsável" valor={responsavelRede || "—"} />
+              <Mini label="Contato" valor={telefoneResponsavel || "—"} />
             </div>
           </section>
 
@@ -479,14 +614,27 @@ export default function ProvisionamentoRastreadores() {
                 label="Último sinal"
                 valor={formatarData(rastreadorSelecionado?.ultimoSinal)}
               />
-              <Mini
-                label="IP local"
-                valor={rastreadorSelecionado?.ipLocal || "—"}
-              />
+              <Mini label="IP local" valor={rastreadorSelecionado?.ipLocal || "—"} />
               <Mini label="RSSI" valor={rastreadorSelecionado?.rssi ?? "—"} />
+              <Mini label="Satélites" valor={rastreadorSelecionado?.satelites ?? "—"} />
+              <Mini label="MAC cliente" valor={obterMacCliente(rastreadorSelecionado)} />
               <Mini
-                label="Satélites"
-                valor={rastreadorSelecionado?.satelites ?? "—"}
+                label="MAC configuração"
+                valor={obterMacConfiguracao(rastreadorSelecionado)}
+              />
+              <Mini
+                label="Internet"
+                valor={
+                  obterNetworkStatus(rastreadorSelecionado).internetOk === true
+                    ? "OK"
+                    : obterNetworkStatus(rastreadorSelecionado).internetOk === false
+                      ? "Sem internet"
+                      : "—"
+                }
+              />
+              <Mini
+                label="Último erro"
+                valor={obterNetworkStatus(rastreadorSelecionado).ultimoErro || "—"}
               />
             </div>
           </section>
@@ -509,9 +657,7 @@ function Campo({
 }) {
   return (
     <label>
-      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">
-        {label}
-      </p>
+      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">{label}</p>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}

@@ -1,13 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  doc,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
-} from "firebase/firestore";
+import { collection, doc, onSnapshot, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { useAppModal } from "../components/AppModal";
+
+type TipoRede = "wifi_comum" | "hotspot_mac_bypass";
 
 type ConfigGPS = {
   rastreadorAtivo: boolean;
@@ -62,23 +58,19 @@ function pegarConfig(barco: any): ConfigGPS {
       config.intervaloTesteSegundos ?? CONFIG_PADRAO.intervaloTesteSegundos,
     ),
     intervaloNavegandoSegundos: String(
-      config.intervaloNavegandoSegundos ??
-        CONFIG_PADRAO.intervaloNavegandoSegundos,
+      config.intervaloNavegandoSegundos ?? CONFIG_PADRAO.intervaloNavegandoSegundos,
     ),
     intervaloParadoSegundos: String(
       config.intervaloParadoSegundos ?? CONFIG_PADRAO.intervaloParadoSegundos,
     ),
     intervaloPertoPortoSegundos: String(
-      config.intervaloPertoPortoSegundos ??
-        CONFIG_PADRAO.intervaloPertoPortoSegundos,
+      config.intervaloPertoPortoSegundos ?? CONFIG_PADRAO.intervaloPertoPortoSegundos,
     ),
     distanciaPertoPortoMetros: String(
-      config.distanciaPertoPortoMetros ??
-        CONFIG_PADRAO.distanciaPertoPortoMetros,
+      config.distanciaPertoPortoMetros ?? CONFIG_PADRAO.distanciaPertoPortoMetros,
     ),
     atualizarConfigACadaSegundos: String(
-      config.atualizarConfigACadaSegundos ??
-        CONFIG_PADRAO.atualizarConfigACadaSegundos,
+      config.atualizarConfigACadaSegundos ?? CONFIG_PADRAO.atualizarConfigACadaSegundos,
     ),
   };
 }
@@ -108,9 +100,7 @@ function parseDataSistema(valor: any): Date | null {
 
     const numeroTexto = Number(texto);
     if (Number.isFinite(numeroTexto) && numeroTexto > 0) {
-      const data = new Date(
-        numeroTexto < 10000000000 ? numeroTexto * 1000 : numeroTexto,
-      );
+      const data = new Date(numeroTexto < 10000000000 ? numeroTexto * 1000 : numeroTexto);
       return Number.isNaN(data.getTime()) ? null : data;
     }
 
@@ -136,6 +126,32 @@ function formatarData(valor: any) {
   });
 }
 
+function textoTipoRede(tipo: TipoRede) {
+  if (tipo === "hotspot_mac_bypass") return "Hotspot com MAC bypass";
+  return "Wi‑Fi comum";
+}
+
+function textoSimNao(valor: boolean) {
+  return valor ? "Sim" : "Não";
+}
+
+function obterNetworkStatus(barco: any) {
+  return barco?.rastreadorNetworkStatus || barco?.networkStatus || {};
+}
+
+function obterMacCliente(barco: any) {
+  const status = obterNetworkStatus(barco);
+
+  return (
+    status.macCliente || status.macClient || barco?.macCliente || barco?.macAddress || "—"
+  );
+}
+
+function obterMacConfiguracao(barco: any) {
+  const status = obterNetworkStatus(barco);
+  return status.macConfiguracao || status.macConfig || barco?.macConfiguracao || "—";
+}
+
 export default function ControleRastreadoresGPS() {
   const modal = useAppModal();
   const alert = (mensagem: any) => {
@@ -150,29 +166,30 @@ export default function ControleRastreadoresGPS() {
   const [wifiSsid, setWifiSsid] = useState("");
   const [wifiSenha, setWifiSenha] = useState("");
   const [wifiNomeRede, setWifiNomeRede] = useState("");
+  const [wifiTipoRede, setWifiTipoRede] = useState<TipoRede>("wifi_comum");
+  const [wifiMacBypassLiberado, setWifiMacBypassLiberado] = useState(false);
+  const [wifiResponsavelRede, setWifiResponsavelRede] = useState("");
+  const [wifiTelefoneResponsavel, setWifiTelefoneResponsavel] = useState("");
+  const [wifiObservacaoRede, setWifiObservacaoRede] = useState("");
   const [enviandoWifi, setEnviandoWifi] = useState(false);
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "embarcacoes"),
-      (snapshot) => {
-        const lista = snapshot.docs
-          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-          .sort((a: any, b: any) =>
-            String(a.nome || a.id).localeCompare(String(b.nome || b.id)),
-          );
+    const unsubscribe = onSnapshot(collection(db, "embarcacoes"), (snapshot) => {
+      const lista = snapshot.docs
+        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+        .sort((a: any, b: any) =>
+          String(a.nome || a.id).localeCompare(String(b.nome || b.id)),
+        );
 
-        setBarcos(lista);
+      setBarcos(lista);
 
-        if (!barcoId && lista.length > 0) {
-          const preferido =
-            lista.find((item: any) => item.modoTeste === true) || lista[0];
+      if (!barcoId && lista.length > 0) {
+        const preferido = lista.find((item: any) => item.modoTeste === true) || lista[0];
 
-          setBarcoId(preferido.id);
-          setConfig(pegarConfig(preferido));
-        }
-      },
-    );
+        setBarcoId(preferido.id);
+        setConfig(pegarConfig(preferido));
+      }
+    });
 
     return () => unsubscribe();
   }, [barcoId]);
@@ -209,9 +226,17 @@ export default function ControleRastreadoresGPS() {
           barco?.wifiNome ||
           "",
       );
-      setWifiNomeRede(
-        barco?.nomeNaRede || barco?.rastreadorWifiStatus?.nomeNaRede || "",
-      );
+      setWifiNomeRede(barco?.nomeNaRede || barco?.rastreadorWifiStatus?.nomeNaRede || "");
+
+      const rede = barco?.rastreadorWifiPendente || barco?.rastreadorWifiStatus || {};
+      const tipo =
+        rede.tipoRede === "hotspot_mac_bypass" ? "hotspot_mac_bypass" : "wifi_comum";
+
+      setWifiTipoRede(tipo);
+      setWifiMacBypassLiberado(Boolean(rede.macBypassLiberado));
+      setWifiResponsavelRede(String(rede.responsavelRede || ""));
+      setWifiTelefoneResponsavel(String(rede.telefoneResponsavel || ""));
+      setWifiObservacaoRede(String(rede.observacaoRede || ""));
       setWifiSenha("");
     }
   };
@@ -230,6 +255,19 @@ export default function ControleRastreadoresGPS() {
         barcoSelecionado?.rastreadorWifiStatus?.nomeNaRede ||
         "",
     );
+
+    const rede =
+      barcoSelecionado?.rastreadorWifiPendente ||
+      barcoSelecionado?.rastreadorWifiStatus ||
+      {};
+    const tipo =
+      rede.tipoRede === "hotspot_mac_bypass" ? "hotspot_mac_bypass" : "wifi_comum";
+
+    setWifiTipoRede(tipo);
+    setWifiMacBypassLiberado(Boolean(rede.macBypassLiberado));
+    setWifiResponsavelRede(String(rede.responsavelRede || ""));
+    setWifiTelefoneResponsavel(String(rede.telefoneResponsavel || ""));
+    setWifiObservacaoRede(String(rede.observacaoRede || ""));
     setWifiSenha("");
   }, [barcoSelecionado?.id]);
 
@@ -275,30 +313,10 @@ export default function ControleRastreadoresGPS() {
       const payload = {
         rastreadorAtivo: config.rastreadorAtivo,
         modoEnvio: config.modoEnvio,
-        intervaloEnvioSegundos: numero(
-          config.intervaloEnvioSegundos,
-          15,
-          3,
-          600,
-        ),
-        intervaloTesteSegundos: numero(
-          config.intervaloTesteSegundos,
-          5,
-          3,
-          600,
-        ),
-        intervaloNavegandoSegundos: numero(
-          config.intervaloNavegandoSegundos,
-          15,
-          3,
-          600,
-        ),
-        intervaloParadoSegundos: numero(
-          config.intervaloParadoSegundos,
-          60,
-          5,
-          1800,
-        ),
+        intervaloEnvioSegundos: numero(config.intervaloEnvioSegundos, 15, 3, 600),
+        intervaloTesteSegundos: numero(config.intervaloTesteSegundos, 5, 3, 600),
+        intervaloNavegandoSegundos: numero(config.intervaloNavegandoSegundos, 15, 3, 600),
+        intervaloParadoSegundos: numero(config.intervaloParadoSegundos, 60, 5, 1800),
         intervaloPertoPortoSegundos: numero(
           config.intervaloPertoPortoSegundos,
           5,
@@ -339,6 +357,36 @@ export default function ControleRastreadoresGPS() {
     }
   };
 
+  const copiarInstrucaoGerente = async () => {
+    const mac = obterMacCliente(barcoSelecionado);
+    const rede = wifiSsid.trim() || "rede do barco";
+
+    const mensagem = [
+      "Olá, tudo bem?",
+      "",
+      "Para o rastreador GPS do Cadê Meu Barco funcionar na rede da embarcação, precisamos liberar o dispositivo no hotspot como bypass/whitelist/IP Binding.",
+      "",
+      `Rede/SSID: ${rede}`,
+      `MAC do GPS: ${mac}`,
+      "",
+      "O GPS não abre tela de login de hotspot como um celular. Ele precisa conectar ao Wi‑Fi e ter acesso direto à internet para enviar a localização ao sistema.",
+      "",
+      "Se for MikroTik, normalmente fica em IP > Hotspot > IP Bindings > Add, informando o MAC do GPS e Type: bypassed.",
+      "",
+      "O dispositivo envia apenas dados técnicos e localização para o Firebase. Ele não acessa rede interna e não interfere na internet dos passageiros.",
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(mensagem);
+      await modal.sucesso(
+        "Instrução copiada",
+        "A mensagem técnica para o gerente da rede foi copiada.",
+      );
+    } catch {
+      await modal.aviso("Instrução técnica", mensagem);
+    }
+  };
+
   const enviarTrocaWifiRemota = async () => {
     try {
       if (!barcoId) {
@@ -365,6 +413,15 @@ export default function ControleRastreadoresGPS() {
       setEnviandoWifi(true);
 
       const comandoId = `wifi_${Date.now()}`;
+      const requerBypassMac = wifiTipoRede === "hotspot_mac_bypass";
+      const redeInfo = {
+        tipoRede: wifiTipoRede,
+        requerBypassMac,
+        macBypassLiberado: requerBypassMac ? wifiMacBypassLiberado : false,
+        responsavelRede: wifiResponsavelRede.trim(),
+        telefoneResponsavel: wifiTelefoneResponsavel.trim(),
+        observacaoRede: wifiObservacaoRede.trim(),
+      };
 
       await setDoc(
         doc(db, "embarcacoes", barcoId),
@@ -374,15 +431,16 @@ export default function ControleRastreadoresGPS() {
             ssid: wifiSsid.trim(),
             senha: wifiSenha,
             nomeNaRede: wifiNomeRede.trim() || `CMB_${barcoId}`,
+            ...redeInfo,
             comandoId,
             criadoEm: serverTimestamp(),
           },
           rastreadorWifiStatus: {
             status: "pendente",
-            mensagem:
-              "Troca remota enviada. Aguardando rastreador ler o Firebase.",
+            mensagem: "Troca remota enviada. Aguardando rastreador ler o Firebase.",
             ssidTentado: wifiSsid.trim(),
             nomeNaRede: wifiNomeRede.trim() || `CMB_${barcoId}`,
+            ...redeInfo,
             comandoId,
             atualizadoEm: serverTimestamp(),
           },
@@ -391,9 +449,7 @@ export default function ControleRastreadoresGPS() {
         { merge: true },
       );
 
-      alert(
-        "Troca de Wi-Fi enviada. Aguarde o rastreador testar e atualizar o status.",
-      );
+      alert("Troca de Wi-Fi enviada. Aguarde o rastreador testar e atualizar o status.");
       setWifiSenha("");
     } catch (error: any) {
       alert(error?.message || "Erro ao enviar troca de Wi-Fi.");
@@ -409,9 +465,7 @@ export default function ControleRastreadoresGPS() {
           <p className="text-xs font-black uppercase tracking-[0.25em]">
             Rastreamento remoto
           </p>
-          <h1 className="mt-2 text-2xl font-black tracking-tight">
-            Controle GPS
-          </h1>
+          <h1 className="mt-2 text-2xl font-black tracking-tight">Controle GPS</h1>
         </div>
 
         <input
@@ -449,9 +503,7 @@ export default function ControleRastreadoresGPS() {
                       <p className="truncate text-sm font-black text-white">
                         {barco.nome || barco.id}
                       </p>
-                      <p className="mt-1 truncate text-xs text-sky-100/55">
-                        {barco.id}
-                      </p>
+                      <p className="mt-1 truncate text-xs text-sky-100/55">{barco.id}</p>
                     </div>
 
                     {barco.modoTeste && (
@@ -512,8 +564,8 @@ export default function ControleRastreadoresGPS() {
 
           <div className="mb-5 rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3">
             <p className="text-sm text-sky-100/75">
-              As alterações desta tela passam a valer pelo Firebase para o
-              rastreador selecionado.
+              As alterações desta tela passam a valer pelo Firebase para o rastreador
+              selecionado.
             </p>
           </div>
 
@@ -607,19 +659,28 @@ export default function ControleRastreadoresGPS() {
                   Troca remota de Wi-Fi
                 </h3>
                 <p className="mt-1 max-w-3xl text-xs leading-5 text-sky-100/55">
-                  Funciona quando o rastreador ainda está online na rede atual.
-                  O ESP32 testa a nova rede e, se falhar, tenta voltar para a
-                  rede anterior.
+                  Funciona quando o rastreador ainda está online na rede atual. O ESP32
+                  testa a nova rede e, se falhar, tenta voltar para a rede anterior.
                 </p>
               </div>
 
-              <button
-                onClick={enviarTrocaWifiRemota}
-                disabled={enviandoWifi || !barcoId}
-                className="min-h-11 rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/20 disabled:opacity-60"
-              >
-                {enviandoWifi ? "Enviando..." : "Enviar troca Wi-Fi"}
-              </button>
+              <div className="grid gap-2 sm:flex sm:flex-wrap">
+                <button
+                  onClick={copiarInstrucaoGerente}
+                  disabled={!barcoId}
+                  className="min-h-11 rounded-xl border border-sky-300/35 bg-sky-500/10 px-4 py-3 text-xs font-black uppercase text-sky-100 hover:bg-sky-500/20 disabled:opacity-60"
+                >
+                  Copiar instrução rede
+                </button>
+
+                <button
+                  onClick={enviarTrocaWifiRemota}
+                  disabled={enviandoWifi || !barcoId}
+                  className="min-h-11 rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/20 disabled:opacity-60"
+                >
+                  {enviandoWifi ? "Enviando..." : "Enviar troca Wi-Fi"}
+                </button>
+              </div>
             </div>
 
             <div className="grid gap-4 xl:grid-cols-3">
@@ -643,6 +704,62 @@ export default function ControleRastreadoresGPS() {
                 value={wifiNomeRede}
                 onChange={setWifiNomeRede}
               />
+
+              <label>
+                <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">
+                  Tipo de rede
+                </p>
+                <select
+                  value={wifiTipoRede}
+                  onChange={(e) => setWifiTipoRede(e.target.value as TipoRede)}
+                  className="min-h-12 w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-base font-semibold text-white shadow-sm outline-none focus:border-sky-300/60 sm:text-sm"
+                >
+                  <option value="wifi_comum">Wi‑Fi comum</option>
+                  <option value="hotspot_mac_bypass">Hotspot com MAC bypass</option>
+                </select>
+                <p className="mt-1 text-[11px] text-sky-100/55">
+                  Hotspot exige liberação do MAC como bypass/whitelist.
+                </p>
+              </label>
+
+              <label className="flex min-h-12 items-center justify-between gap-3 rounded-2xl border border-[#7ba6d4]/25 bg-[#143760] p-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase text-sky-100/55">
+                    MAC liberado no hotspot
+                  </p>
+                  <p className="mt-1 text-[11px] text-sky-100/55">
+                    Confirmação do gerente da rede.
+                  </p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={wifiMacBypassLiberado}
+                  onChange={(e) => setWifiMacBypassLiberado(e.target.checked)}
+                  disabled={wifiTipoRede !== "hotspot_mac_bypass"}
+                  className="h-5 w-5 accent-sky-400 disabled:opacity-40"
+                />
+              </label>
+
+              <Campo
+                label="Responsável da rede"
+                descricao="Nome do técnico ou gerente da internet do barco"
+                value={wifiResponsavelRede}
+                onChange={setWifiResponsavelRede}
+              />
+
+              <Campo
+                label="Telefone do responsável"
+                descricao="Contato para liberação do MAC, se necessário"
+                value={wifiTelefoneResponsavel}
+                onChange={setWifiTelefoneResponsavel}
+              />
+
+              <Campo
+                label="Observação técnica"
+                descricao="Exemplo: hotspot MikroTik, aguardar liberação do MAC"
+                value={wifiObservacaoRede}
+                onChange={setWifiObservacaoRede}
+              />
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -665,9 +782,14 @@ export default function ControleRastreadoresGPS() {
               />
               <Mini
                 label="Rede tentada"
-                valor={
-                  barcoSelecionado?.rastreadorWifiStatus?.ssidTentado || "—"
-                }
+                valor={barcoSelecionado?.rastreadorWifiStatus?.ssidTentado || "—"}
+              />
+              <Mini label="Tipo de rede" valor={textoTipoRede(wifiTipoRede)} />
+              <Mini label="MAC bypass" valor={textoSimNao(wifiMacBypassLiberado)} />
+              <Mini label="MAC cliente" valor={obterMacCliente(barcoSelecionado)} />
+              <Mini
+                label="Último erro"
+                valor={obterNetworkStatus(barcoSelecionado).ultimoErro || "—"}
               />
             </div>
           </section>
@@ -709,21 +831,21 @@ function Campo({
   descricao,
   value,
   onChange,
+  inputMode,
 }: {
   label: string;
   descricao: string;
   value: string;
   onChange: (valor: string) => void;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
 }) {
   return (
     <label>
-      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">
-        {label}
-      </p>
+      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">{label}</p>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        inputMode="numeric"
+        inputMode={inputMode}
         className="min-h-12 w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-base font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/40 focus:border-sky-300/60 sm:text-sm"
       />
       <p className="mt-1 text-[11px] text-sky-100/55">{descricao}</p>

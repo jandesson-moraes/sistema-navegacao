@@ -464,7 +464,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-3">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/8 text-2xl text-sky-200 ring-1 ring-white/10">
               <img
-                src="https://firebasestorage.googleapis.com/v0/b/sistema-navegacao.firebasestorage.app/o/logo_barco.png?alt=media&token=cb0862be-efed-408a-9b17-d249ab36d137"
+                src="https://firebasestorage.googleapis.com/v0/b/sistema-navegacao.firebasestorage.app/o/loho%20pequena.png?alt=media&token=661b1dcd-fc5c-404a-82c9-d0f00566c2b3"
                 alt="Logo"
               />
             </div>

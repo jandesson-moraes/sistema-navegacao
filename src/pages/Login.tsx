@@ -171,7 +171,7 @@ export default function Login() {
             <div className="flex items-center gap-4">
               <div className="flex h-20 w-20 items-center justify-center rounded-6xl border border-none bg-sky-300/10 text-3xl text-sky-100">
                 <img
-                  src="https://firebasestorage.googleapis.com/v0/b/sistema-navegacao.firebasestorage.app/o/logo_barco.png?alt=media&token=cb0862be-efed-408a-9b17-d249ab36d137"
+                  src="https://firebasestorage.googleapis.com/v0/b/sistema-navegacao.firebasestorage.app/o/loho%20pequena.png?alt=media&token=661b1dcd-fc5c-404a-82c9-d0f00566c2b3"
                   alt="Logo"
                 />
               </div>

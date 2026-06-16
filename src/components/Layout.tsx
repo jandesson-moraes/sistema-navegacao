@@ -274,7 +274,9 @@ function MobileBottomItem({ item }: { item: MenuItem }) {
       aria-current={ativo ? "page" : undefined}
       className={[
         "relative flex min-w-0 flex-1 flex-col items-center justify-center rounded-2xl px-1 py-2 transition",
-        ativo ? "bg-sky-500/[0.16] text-sky-100" : "text-slate-300/70 active:bg-white/[0.08]",
+        ativo
+          ? "bg-sky-500/[0.16] text-sky-100"
+          : "text-slate-300/70 active:bg-white/[0.08]",
       ].join(" ")}
     >
       <span
@@ -456,19 +458,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen h-[100dvh] w-full overflow-hidden bg-[#000813] text-slate-900">
-      <aside className="hidden w-[275px] shrink-0 bg-[#061b32] text-white shadow-2xl md:flex md:flex-col">
+    <div className="flex h-screen w-full overflow-hidden bg-[#000813] text-slate-900">
+      <aside className="hidden w-68.75 shrink-0 bg-[#061b32] text-white shadow-2xl md:flex md:flex-col">
         <div className="px-6 pb-5 pt-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/[0.08] text-2xl text-sky-200 ring-1 ring-white/10">
-              ⚓
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/8 text-2xl text-sky-200 ring-1 ring-white/10">
+              <img src="src/assets/logo_barco.png" alt="Logo" />
             </div>
 
             <div>
-              <h1 className="text-[12px] font-black uppercase tracking-[0.18em] text-white">
+              <h1 className="text-[12px] font-black uppercase tracking-widest text-white">
                 Cadê o Meu Barco
               </h1>
-              <p className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.11em] text-sky-200/70">
+              <p className="mt-0.5 text-[9px] font-bold uppercase tracking-[0.10em] text-sky-200/70">
                 Sistema de Navegação
               </p>
             </div>
@@ -500,24 +502,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </div>
           )}
         </nav>
-
-        <div className="mt-auto px-4 pb-3">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.055] p-3 shadow-sm">
-            <div className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.12)]" />
-              <span className="text-[13px] font-black text-white">
-                Sistema Operacional
-              </span>
-            </div>
-            <p className="mt-1 text-[11px] font-medium text-slate-300/80">
-              Todos os serviços online
-            </p>
-          </div>
-
-          <p className="mt-4 text-center text-[11px] font-semibold text-slate-400/70">
-            Versão 1.1.1
-          </p>
-        </div>
       </aside>
 
       <div
@@ -553,7 +537,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <h1 className="truncate text-[12px] font-black uppercase tracking-[0.16em] text-white">
                     Cadê o Meu Barco
                   </h1>
-                  <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-[0.09em] text-sky-200/70">
+                  <p className="mt-0.5 truncate text-[8px] font-bold uppercase tracking-[0.09em] text-sky-200/70">
                     Sistema de Navegação
                   </p>
                 </div>

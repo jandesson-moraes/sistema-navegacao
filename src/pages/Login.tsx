@@ -166,18 +166,18 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#0d0c2c] p-5 text-white">
       <div className="grid w-full max-w-4xl overflow-hidden rounded-[30px] border border-[#7ba6d4]/20 bg-[#0f2240] shadow-2xl lg:grid-cols-[0.95fr_390px]">
-        <section className="hidden bg-gradient-to-br from-[#071a31] via-[#0f2240] to-[#143760] p-8 text-white lg:flex lg:flex-col lg:justify-between">
+        <section className="hidden bg-linear-to-br from-[#071a31] via-[#0f2240] to-[#143760] p-8 text-white lg:flex lg:flex-col lg:justify-between">
           <div>
             <div className="flex items-center gap-4">
-              <div className="flex h-13 w-13 items-center justify-center rounded-2xl border border-sky-300/20 bg-sky-300/10 text-3xl text-sky-100">
-                ⚓
+              <div className="flex h-20 w-20 items-center justify-center rounded-6xl border border-none bg-sky-300/10 text-3xl text-sky-100">
+                <img src="src/assets/logo_barco.png" alt="Logo" />
               </div>
 
               <div>
-                <h1 className="text-lg font-black uppercase tracking-[0.18em]">
-                  Cadê o Meu Barco
+                <h1 className="text-lg font-black uppercase tracking-[0.10em]">
+                  Cadê Meu Barco
                 </h1>
-                <p className="mt-1 text-[10px] font-black uppercase tracking-[0.2em] text-sky-100/55">
+                <p className="mt-1 text-[10px] font-black uppercase tracking-[0.1em] text-sky-100/55">
                   Sistema de Navegação
                 </p>
               </div>
@@ -187,8 +187,8 @@ export default function Login() {
               <p className="text-[10px] font-black uppercase tracking-[0.25em] text-sky-300">
                 Central operacional
               </p>
-              <h2 className="mt-4 max-w-md text-3xl font-black leading-tight">
-                Controle da frota em um só lugar.
+              <h2 className="mt-2 max-w-md text-2xl font-black leading-tight">
+                Controle da frota
               </h2>
             </div>
           </div>

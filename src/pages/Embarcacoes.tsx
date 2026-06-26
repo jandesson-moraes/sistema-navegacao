@@ -22,6 +22,7 @@ type Embarcacao = {
   status?: string;
   online?: boolean;
   ativo?: boolean;
+  visivelNoApp?: boolean;
   icon?: string;
   ownerId?: string;
   ownerEmail?: string;
@@ -333,6 +334,8 @@ export default function Embarcacoes() {
       status: embarcacaoAnterior.status || "ativo",
       online: embarcacaoAnterior.online === true,
       ativo: true,
+      // Embarcações antigas sem este campo continuam visíveis por padrão.
+      visivelNoApp: embarcacaoAnterior.visivelNoApp !== false,
       icon: embarcacaoAnterior.icon || "🚢",
       atualizadoEm: serverTimestamp(),
     };
@@ -436,6 +439,47 @@ export default function Embarcacoes() {
       );
     } finally {
       setSalvando(false);
+    }
+  }
+
+  async function alterarVisibilidadeNoApp(barco: Embarcacao) {
+    const estaVisivel = barco.visivelNoApp !== false;
+
+    const confirmou = await modal.confirmar({
+      tipo: estaVisivel ? "warning" : "confirm",
+      titulo: estaVisivel
+        ? "Ocultar embarcação do aplicativo?"
+        : "Publicar embarcação no aplicativo?",
+      mensagem: estaVisivel
+        ? `A embarcação ${barco.nome || barco.id} deixará de aparecer na pesquisa e no mapa do app. Os dados, o GPS e o histórico serão mantidos.`
+        : `A embarcação ${barco.nome || barco.id} voltará a aparecer na pesquisa e no mapa do app.`,
+      confirmarTexto: estaVisivel ? "Ocultar do app" : "Publicar no app",
+      cancelarTexto: "Cancelar",
+    });
+
+    if (!confirmou) return;
+
+    try {
+      await setDoc(
+        doc(db, "embarcacoes", barco.id),
+        {
+          visivelNoApp: !estaVisivel,
+          visibilidadeAtualizadaEm: serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      await modal.sucesso(
+        estaVisivel ? "Embarcação ocultada" : "Embarcação publicada",
+        estaVisivel
+          ? "Ela não aparecerá mais no aplicativo, mas todos os dados continuam salvos."
+          : "Ela já pode aparecer novamente na pesquisa e no mapa do aplicativo.",
+      );
+    } catch (error: any) {
+      await modal.erro(
+        "Erro ao alterar visibilidade",
+        error?.message || "Não foi possível atualizar a exibição da embarcação.",
+      );
     }
   }
 
@@ -679,6 +723,11 @@ export default function Embarcacoes() {
                                 <Badge texto="GPS" cor="amber" />
                               )}
                               {barco.online && <Badge texto="online" cor="emerald" />}
+                              {barco.visivelNoApp !== false ? (
+                                <Badge texto="No app" cor="emerald" />
+                              ) : (
+                                <Badge texto="Oculta no app" cor="amber" />
+                              )}
                             </div>
 
                             <p className="mt-1 text-xs font-semibold text-sky-100/55">
@@ -687,7 +736,21 @@ export default function Embarcacoes() {
                             </p>
                           </div>
 
-                          <div className="flex shrink-0 gap-2">
+                          <div className="flex shrink-0 flex-wrap gap-2">
+                            <button
+                              onClick={() => alterarVisibilidadeNoApp(barco)}
+                              className={[
+                                "rounded-xl border px-3 py-2 text-[10px] font-black uppercase transition",
+                                barco.visivelNoApp !== false
+                                  ? "border-amber-300/35 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                                  : "border-emerald-300/35 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20",
+                              ].join(" ")}
+                            >
+                              {barco.visivelNoApp !== false
+                                ? "Ocultar do app"
+                                : "Publicar no app"}
+                            </button>
+
                             <button
                               onClick={() => iniciarEdicao(barco)}
                               className="rounded-xl border border-sky-300/30 bg-sky-300/10 px-3 py-2 text-[10px] font-black uppercase text-sky-100 hover:bg-sky-300/20"
@@ -727,6 +790,10 @@ export default function Embarcacoes() {
                           <Mini
                             label="GPS ativo"
                             valor={barco.rastreadorAtivo !== false ? "Sim" : "Não"}
+                          />
+                          <Mini
+                            label="No aplicativo"
+                            valor={barco.visivelNoApp !== false ? "Publicado" : "Oculto"}
                           />
                         </div>
                       </>

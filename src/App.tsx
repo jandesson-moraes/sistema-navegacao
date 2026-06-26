@@ -18,7 +18,7 @@ import MapaTatico from "../src/pages/MapaTatico";
 import NotificacoesChegada from "../src/pages/NotificacoesChegada";
 import Rotas from "../src/pages/Rotas";
 import Terminais from "../src/pages/Terminais";
-import CentralFinanceira from "../src/pages/CentralFinanceira";
+import FinanceiroUnificado from "../src/pages/FinanceiroUnificado";
 import ChecklistRastreadorGPS from "../src/pages/ChecklistRastreadorGPS";
 import RedefinirSenha from "../src/pages/RedefinirSenha";
 import LoginApp from "../src/pages/LoginApp";
@@ -370,7 +370,7 @@ export default function App() {
             path="/financeiro"
             element={
               <RotaProtegida permissao="financeiro">
-                <CentralFinanceira />
+                <FinanceiroUnificado />
               </RotaProtegida>
             }
           />

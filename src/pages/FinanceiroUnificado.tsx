@@ -4,8 +4,15 @@ import { db } from "../config/firebase";
 
 import CentralFinanceira from "./CentralFinanceira";
 import CentroFinanceiro from "./CentroFinanceiro";
+import MercadoPagoFinanceiro from "./MercadoPagoFinanceiro";
 
-type AbaFinanceiro = "visao" | "clientes" | "movimentos" | "fornecedores" | "relatorios";
+type AbaFinanceiro =
+  | "visao"
+  | "clientes"
+  | "movimentos"
+  | "fornecedores"
+  | "relatorios"
+  | "mercado_pago";
 
 type MovimentoResumo = {
   id: string;
@@ -206,6 +213,7 @@ export default function FinanceiroUnificado() {
     { id: "movimentos", label: "Movimentos" },
     { id: "fornecedores", label: "Fornecedores" },
     { id: "relatorios", label: "Relatórios" },
+    { id: "mercado_pago", label: "Mercado Pago" },
   ] as const;
 
   return (
@@ -220,11 +228,12 @@ export default function FinanceiroUnificado() {
               Central financeira unificada
             </h1>
             <p className="mt-1 text-xs text-sky-100/50">
-              Clientes GPS, mensalidades, movimentos, fornecedores, saldo e relatórios.
+              Clientes GPS, mensalidades, movimentos, fornecedores, Mercado Pago, saldo e
+              relatórios.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#7ba6d4]/15 bg-[#143760] p-1 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#7ba6d4]/15 bg-[#143760] p-1 md:grid-cols-6">
             {abas.map((item) => (
               <button
                 key={item.id}
@@ -397,6 +406,12 @@ export default function FinanceiroUnificado() {
       {aba === "relatorios" && (
         <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-[#7ba6d4]/20">
           <CentroFinanceiro abaInicial="relatorios" modoEmbed />
+        </div>
+      )}
+
+      {aba === "mercado_pago" && (
+        <div className="min-h-0 flex-1 overflow-hidden rounded-2xl border border-[#7ba6d4]/20">
+          <MercadoPagoFinanceiro />
         </div>
       )}
     </div>

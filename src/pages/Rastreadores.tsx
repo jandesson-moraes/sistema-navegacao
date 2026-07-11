@@ -5,6 +5,8 @@ import {
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
+  setDoc,
   updateDoc,
 } from "firebase/firestore";
 import { db } from "../config/firebase";
@@ -33,6 +35,8 @@ type Rastreador = {
   observacoes?: string;
   barcoIdAdmin?: string;
   ultima_posicao?: { latitude?: number; longitude?: number };
+  comandoOperacionalPendente?: any;
+  comandoOperacionalStatus?: any;
 };
 
 type Editando = {
@@ -119,21 +123,6 @@ function obterRssi(r: Rastreador) {
 
 function obterMacCliente(r: Rastreador | null) {
   const status = obterNetworkStatus(r);
-
-  const copiarInstrucaoGerente = async (rastreador: Rastreador | null) => {
-    const mensagem = montarInstrucaoGerente(rastreador);
-
-    try {
-      await navigator.clipboard.writeText(mensagem);
-      await modal.sucesso(
-        "Instrução copiada",
-        "A mensagem técnica para o gerente da rede foi copiada.",
-      );
-    } catch {
-      await modal.aviso("Instrução técnica", mensagem);
-    }
-  };
-
   return status.macCliente || status.macClient || r?.macCliente || r?.macAddress || "—";
 }
 
@@ -166,6 +155,22 @@ function montarInstrucaoGerente(r: Rastreador | null) {
     "",
     "O dispositivo envia apenas dados técnicos e localização para o Firebase. Ele não acessa rede interna e não interfere na internet dos passageiros.",
   ].join("\n");
+}
+
+function mensagemComando(tipo: string) {
+  if (tipo === "reiniciar")
+    return "Reiniciar o rastreador agora? Ele ficará offline por alguns segundos.";
+  if (tipo === "reconectar_wifi")
+    return "Forçar reconexão do Wi‑Fi agora? Use quando a Starlink/roteador voltou, mas o GPS não retomou.";
+  if (tipo === "testar_internet") return "Pedir um diagnóstico de internet agora?";
+  return "Enviar comando ao rastreador?";
+}
+
+function tituloComando(tipo: string) {
+  if (tipo === "reiniciar") return "Reiniciar rastreador";
+  if (tipo === "reconectar_wifi") return "Reconectar Wi‑Fi";
+  if (tipo === "testar_internet") return "Testar internet";
+  return "Comando remoto";
 }
 
 function Badge({ status }: { status: ReturnType<typeof statusRastreador> }) {
@@ -341,6 +346,55 @@ export default function Rastreadores() {
     }
   };
 
+  const enviarComandoOperacional = async (rastreador: Rastreador, tipo: string) => {
+    const confirmou = await modal.confirmar({
+      tipo: tipo === "reiniciar" ? "warning" : "confirm",
+      titulo: tituloComando(tipo),
+      mensagem: mensagemComando(tipo),
+      confirmarTexto: "Enviar comando",
+      cancelarTexto: "Cancelar",
+    });
+
+    if (!confirmou) return;
+
+    const comandoId = `cmd_${tipo}_${Date.now()}`;
+
+    try {
+      await setDoc(
+        doc(db, "rastreadores", rastreador.id),
+        {
+          comandoOperacionalPendente: {
+            aplicar: true,
+            tipo,
+            comandoId,
+            origem: "sistema_navegacao",
+            criadoEm: serverTimestamp(),
+          },
+          comandoOperacionalStatus: {
+            status: "pendente",
+            tipo,
+            mensagem:
+              "Comando enviado. O rastreador executará quando estiver online e ler o Firebase.",
+            comandoId,
+            atualizadoEm: serverTimestamp(),
+          },
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      await modal.sucesso(
+        "Comando enviado",
+        "Se o rastreador estiver online, ele executará em poucos segundos. Se estiver offline, o comando ficará pendente até voltar.",
+      );
+    } catch (error: any) {
+      await modal.erro(
+        "Erro ao enviar comando",
+        error?.message || "Não foi possível enviar o comando remoto.",
+      );
+    }
+  };
+
   return (
     <div className="min-h-full bg-[#0d0c2c] p-2 text-slate-100 sm:p-4 lg:p-6">
       <div className="mb-4 overflow-hidden rounded-2xl border border-[#1d426b] bg-gradient-to-r from-[#0f2240] to-[#13345d] shadow-sm sm:rounded-[26px]">
@@ -507,6 +561,24 @@ export default function Rastreadores() {
                   Copiar instrução rede
                 </button>
                 <button
+                  onClick={() => enviarComandoOperacional(detalhe, "testar_internet")}
+                  className="rounded-xl border border-emerald-300/25 bg-emerald-300/10 px-3 py-2 text-xs font-black uppercase text-emerald-100 hover:bg-emerald-300/20"
+                >
+                  Testar internet
+                </button>
+                <button
+                  onClick={() => enviarComandoOperacional(detalhe, "reconectar_wifi")}
+                  className="rounded-xl border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-xs font-black uppercase text-amber-100 hover:bg-amber-300/20"
+                >
+                  Reconectar Wi‑Fi
+                </button>
+                <button
+                  onClick={() => enviarComandoOperacional(detalhe, "reiniciar")}
+                  className="rounded-xl border border-red-300/25 bg-red-300/10 px-3 py-2 text-xs font-black uppercase text-red-100 hover:bg-red-300/20"
+                >
+                  Reiniciar
+                </button>
+                <button
                   onClick={() => setDetalhe(null)}
                   className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-sky-100 hover:bg-white/10"
                 >
@@ -542,6 +614,16 @@ export default function Rastreadores() {
                 [
                   "Diagnóstico atualizado",
                   formatarData(obterNetworkStatus(detalhe).atualizadoEm),
+                ],
+                [
+                  "Último comando",
+                  detalhe.comandoOperacionalStatus
+                    ? `${detalhe.comandoOperacionalStatus.tipo || "—"} • ${detalhe.comandoOperacionalStatus.status || "—"}`
+                    : "—",
+                ],
+                [
+                  "Mensagem do comando",
+                  detalhe.comandoOperacionalStatus?.mensagem || "—",
                 ],
                 ["Firmware", detalhe.versaoFirmware || "—"],
                 ["Último sinal", formatarData(detalhe.ultimoSinal)],

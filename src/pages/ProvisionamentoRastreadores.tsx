@@ -23,6 +23,8 @@ type Rastreador = {
   macCliente?: string;
   macConfiguracao?: string;
   macAddress?: string;
+  wifiSenhaSalva?: string;
+  wifiConfigSalva?: any;
 };
 
 function formatarData(valor: any) {
@@ -169,6 +171,7 @@ export default function ProvisionamentoRastreadores() {
     const rede = item.provisionamentoPendente || item.provisionamentoStatus || {};
     const tipo =
       rede.tipoRede === "hotspot_mac_bypass" ? "hotspot_mac_bypass" : "wifi_comum";
+    const senhaSalva = String(item.wifiSenhaSalva || item.wifiConfigSalva?.senha || "");
 
     setTipoRede(tipo);
     setMacBypassLiberado(Boolean(rede.macBypassLiberado));
@@ -177,7 +180,7 @@ export default function ProvisionamentoRastreadores() {
     setObservacaoRede(String(rede.observacaoRede || ""));
 
     if (limparSenha) {
-      setWifiSenha("");
+      setWifiSenha(senhaSalva);
     }
   }
 
@@ -263,6 +266,13 @@ export default function ProvisionamentoRastreadores() {
         telefoneResponsavel: telefoneResponsavel.trim(),
         observacaoRede: observacaoRede.trim(),
       };
+      const senhaFinal =
+        wifiSenha ||
+        rastreadorSelecionado.wifiSenhaSalva ||
+        rastreadorSelecionado.wifiConfigSalva?.senha ||
+        "";
+      const ssidFinal = wifiSsid.trim();
+      const nomeNaRedeFinal = nomeNaRede.trim() || `CMB_${novoBarcoId}`;
 
       await setDoc(
         doc(db, "rastreadores", rastreadorSelecionado.id),
@@ -270,9 +280,9 @@ export default function ProvisionamentoRastreadores() {
           provisionamentoPendente: {
             aplicar: true,
             barcoId: novoBarcoId,
-            ssid: wifiSsid.trim(),
-            senha: wifiSenha,
-            nomeNaRede: nomeNaRede.trim() || `CMB_${novoBarcoId}`,
+            ssid: ssidFinal,
+            senha: senhaFinal,
+            nomeNaRede: nomeNaRedeFinal,
             ...redeInfo,
             comandoId,
             criadoEm: serverTimestamp(),
@@ -281,10 +291,18 @@ export default function ProvisionamentoRastreadores() {
             status: "pendente",
             mensagem: "Provisionamento enviado. Aguardando rastreador ler o Firebase.",
             novoBarcoId,
-            ssidTentado: wifiSsid.trim(),
-            nomeNaRede: nomeNaRede.trim() || `CMB_${novoBarcoId}`,
+            ssidTentado: ssidFinal,
+            nomeNaRede: nomeNaRedeFinal,
             ...redeInfo,
             comandoId,
+            atualizadoEm: serverTimestamp(),
+          },
+          wifiSenhaSalva: senhaFinal,
+          wifiConfigSalva: {
+            ssid: ssidFinal,
+            senha: senhaFinal,
+            nomeNaRede: nomeNaRedeFinal,
+            ...redeInfo,
             atualizadoEm: serverTimestamp(),
           },
           atualizadoEm: serverTimestamp(),
@@ -297,7 +315,7 @@ export default function ProvisionamentoRastreadores() {
         "Aguarde o rastreador testar a configuração e atualizar o status.",
       );
 
-      setWifiSenha("");
+      setWifiSenha(senhaFinal);
     } catch (error: any) {
       await modal.erro(
         "Erro ao enviar provisionamento",
@@ -488,7 +506,7 @@ export default function ProvisionamentoRastreadores() {
 
             <Campo
               label="Senha do Wi‑Fi"
-              descricao="Senha que será testada pelo rastreador"
+              descricao="Fica salva no histórico técnico do rastreador"
               value={wifiSenha}
               onChange={setWifiSenha}
             />
@@ -554,7 +572,7 @@ export default function ProvisionamentoRastreadores() {
             <button
               onClick={() => {
                 setWifiSsid("");
-                setWifiSenha("");
+                setWifiSenha(senhaFinal);
                 setNomeNaRede(barcoId ? `CMB_${limparBarcoId(barcoId)}` : "");
               }}
               className="min-h-11 rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-xs font-black uppercase text-sky-100 hover:bg-[#2b5b91]"

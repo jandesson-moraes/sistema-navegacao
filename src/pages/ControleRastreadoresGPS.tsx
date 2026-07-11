@@ -237,7 +237,9 @@ export default function ControleRastreadoresGPS() {
       setWifiResponsavelRede(String(rede.responsavelRede || ""));
       setWifiTelefoneResponsavel(String(rede.telefoneResponsavel || ""));
       setWifiObservacaoRede(String(rede.observacaoRede || ""));
-      setWifiSenha("");
+      setWifiSenha(
+        String(barco?.rastreadorWifiSenhaSalva || barco?.wifiConfigSalva?.senha || ""),
+      );
     }
   };
 
@@ -268,7 +270,13 @@ export default function ControleRastreadoresGPS() {
     setWifiResponsavelRede(String(rede.responsavelRede || ""));
     setWifiTelefoneResponsavel(String(rede.telefoneResponsavel || ""));
     setWifiObservacaoRede(String(rede.observacaoRede || ""));
-    setWifiSenha("");
+    setWifiSenha(
+      String(
+        barcoSelecionado?.rastreadorWifiSenhaSalva ||
+          barcoSelecionado?.wifiConfigSalva?.senha ||
+          "",
+      ),
+    );
   }, [barcoSelecionado?.id]);
 
   const alterar = (campo: keyof ConfigGPS, valor: any) => {
@@ -422,15 +430,22 @@ export default function ControleRastreadoresGPS() {
         telefoneResponsavel: wifiTelefoneResponsavel.trim(),
         observacaoRede: wifiObservacaoRede.trim(),
       };
+      const ssidFinal = wifiSsid.trim();
+      const senhaFinal =
+        wifiSenha ||
+        barcoSelecionado?.rastreadorWifiSenhaSalva ||
+        barcoSelecionado?.wifiConfigSalva?.senha ||
+        "";
+      const nomeNaRedeFinal = wifiNomeRede.trim() || `CMB_${barcoId}`;
 
       await setDoc(
         doc(db, "embarcacoes", barcoId),
         {
           rastreadorWifiPendente: {
             aplicar: true,
-            ssid: wifiSsid.trim(),
-            senha: wifiSenha,
-            nomeNaRede: wifiNomeRede.trim() || `CMB_${barcoId}`,
+            ssid: ssidFinal,
+            senha: senhaFinal,
+            nomeNaRede: nomeNaRedeFinal,
             ...redeInfo,
             comandoId,
             criadoEm: serverTimestamp(),
@@ -438,10 +453,18 @@ export default function ControleRastreadoresGPS() {
           rastreadorWifiStatus: {
             status: "pendente",
             mensagem: "Troca remota enviada. Aguardando rastreador ler o Firebase.",
-            ssidTentado: wifiSsid.trim(),
-            nomeNaRede: wifiNomeRede.trim() || `CMB_${barcoId}`,
+            ssidTentado: ssidFinal,
+            nomeNaRede: nomeNaRedeFinal,
             ...redeInfo,
             comandoId,
+            atualizadoEm: serverTimestamp(),
+          },
+          rastreadorWifiSenhaSalva: senhaFinal,
+          wifiConfigSalva: {
+            ssid: ssidFinal,
+            senha: senhaFinal,
+            nomeNaRede: nomeNaRedeFinal,
+            ...redeInfo,
             atualizadoEm: serverTimestamp(),
           },
           atualizadoEm: serverTimestamp(),
@@ -450,7 +473,7 @@ export default function ControleRastreadoresGPS() {
       );
 
       alert("Troca de Wi-Fi enviada. Aguarde o rastreador testar e atualizar o status.");
-      setWifiSenha("");
+      setWifiSenha(senhaFinal);
     } catch (error: any) {
       alert(error?.message || "Erro ao enviar troca de Wi-Fi.");
     } finally {
@@ -693,7 +716,7 @@ export default function ControleRastreadoresGPS() {
 
               <Campo
                 label="Nova senha Wi-Fi"
-                descricao="Fica salva no Firebase para o rastreador ler"
+                descricao="Fica salva no histórico técnico da embarcação"
                 value={wifiSenha}
                 onChange={setWifiSenha}
               />

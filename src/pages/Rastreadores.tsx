@@ -37,6 +37,21 @@ type Rastreador = {
   ultima_posicao?: { latitude?: number; longitude?: number };
   comandoOperacionalPendente?: any;
   comandoOperacionalStatus?: any;
+  internetOk?: boolean;
+  firebaseOk?: boolean;
+  uptimeSegundos?: number;
+  heapLivreBytes?: number;
+  menorHeapLivreBytes?: number;
+  maiorBlocoHeapBytes?: number;
+  falhasFirebaseConsecutivas?: number;
+  ultimoErroFirebase?: string;
+  ultimoSucessoFirebaseHaSegundos?: number;
+  contadorInicializacoes?: number;
+  motivoResetHardware?: string;
+  motivoReinicioPlanejadoAnterior?: string;
+  watchdogAtivo?: boolean;
+  gpsValido?: boolean;
+  idadeGpsMs?: number;
 };
 
 type Editando = {
@@ -94,6 +109,68 @@ function formatarData(valor?: any) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function segundosDesde(valor: any) {
+  const data = parseData(valor);
+  if (!data) return null;
+
+  return Math.max(0, Math.floor((Date.now() - data.getTime()) / 1000));
+}
+
+function formatarTempoDecorrido(valor: any) {
+  const segundos = segundosDesde(valor);
+
+  if (segundos === null) return "sem horário";
+  if (segundos < 60) return `há ${segundos}s`;
+
+  const minutos = Math.floor(segundos / 60);
+  if (minutos < 60) return `há ${minutos} min`;
+
+  const horas = Math.floor(minutos / 60);
+  const minutosRestantes = minutos % 60;
+
+  if (horas < 24) {
+    return minutosRestantes > 0 ? `há ${horas}h ${minutosRestantes}min` : `há ${horas}h`;
+  }
+
+  const dias = Math.floor(horas / 24);
+  return `há ${dias} dia${dias === 1 ? "" : "s"}`;
+}
+
+function formatarDuracaoSegundos(valor: any) {
+  const total = Number(valor || 0);
+
+  if (!Number.isFinite(total) || total <= 0) return "—";
+
+  const dias = Math.floor(total / 86400);
+  const horas = Math.floor((total % 86400) / 3600);
+  const minutos = Math.floor((total % 3600) / 60);
+
+  if (dias > 0) return `${dias}d ${horas}h`;
+  if (horas > 0) return `${horas}h ${minutos}min`;
+  return `${minutos}min`;
+}
+
+function formatarBytes(valor: any) {
+  const bytes = Number(valor || 0);
+
+  if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.round(bytes / 1024)} KB`;
+}
+
+function diagnosticoEstaAntigo(r: Rastreador | null) {
+  const segundos = segundosDesde(r?.ultimoSinal);
+  return segundos === null || segundos > 120;
+}
+
+function textoStatusComAtualizacao(valor: any, r: Rastreador | null) {
+  const base = textoStatusBoolean(valor);
+
+  if (base === "—") return base;
+
+  return diagnosticoEstaAntigo(r) ? `${base} • registro antigo` : `${base} • atualizado`;
 }
 
 function qualidadeWifi(rssi?: number) {
@@ -346,6 +423,20 @@ export default function Rastreadores() {
     }
   };
 
+  const copiarInstrucaoGerente = async (rastreador: Rastreador | null) => {
+    const mensagem = montarInstrucaoGerente(rastreador);
+
+    try {
+      await navigator.clipboard.writeText(mensagem);
+      await modal.sucesso(
+        "Instrução copiada",
+        "A mensagem técnica para o gerente da rede foi copiada.",
+      );
+    } catch {
+      await modal.aviso("Instrução técnica", mensagem);
+    }
+  };
+
   const enviarComandoOperacional = async (rastreador: Rastreador, tipo: string) => {
     const confirmou = await modal.confirmar({
       tipo: tipo === "reiniciar" ? "warning" : "confirm",
@@ -516,8 +607,14 @@ export default function Rastreadores() {
 
                 <div>
                   <p className="font-bold text-sky-50">{formatarData(r.ultimoSinal)}</p>
-                  <p className="text-[11px] text-sky-100/45">
-                    IP {r.ipLocal || ns.ipLocal || ns.ipAddress || "—"}
+                  <p
+                    className={[
+                      "text-[11px]",
+                      diagnosticoEstaAntigo(r) ? "text-red-300" : "text-sky-100/45",
+                    ].join(" ")}
+                  >
+                    {formatarTempoDecorrido(r.ultimoSinal)} • IP{" "}
+                    {r.ipLocal || ns.ipLocal || ns.ipAddress || "—"}
                   </p>
                 </div>
 
@@ -587,6 +684,19 @@ export default function Rastreadores() {
               </div>
             </div>
 
+            {diagnosticoEstaAntigo(detalhe) && (
+              <div className="mb-4 rounded-2xl border border-red-300/30 bg-red-500/10 p-4">
+                <p className="text-sm font-black text-red-100">
+                  Rastreador sem comunicação atual
+                </p>
+                <p className="mt-1 text-xs leading-5 text-red-100/70">
+                  Internet, Firebase, IP e RSSI abaixo são do último sinal recebido{" "}
+                  {formatarTempoDecorrido(detalhe.ultimoSinal)}. Eles não representam
+                  necessariamente o estado atual da placa.
+                </p>
+              </div>
+            )}
+
             <div className="grid gap-3 md:grid-cols-2">
               {[
                 ["Device ID", detalhe.deviceId || detalhe.id],
@@ -603,8 +713,20 @@ export default function Rastreadores() {
                 ],
                 ["MAC cliente", obterMacCliente(detalhe)],
                 ["MAC configuração", obterMacConfiguracao(detalhe)],
-                ["Internet", textoStatusBoolean(obterNetworkStatus(detalhe).internetOk)],
-                ["Firebase", textoStatusBoolean(obterNetworkStatus(detalhe).firebaseOk)],
+                [
+                  "Internet",
+                  textoStatusComAtualizacao(
+                    obterNetworkStatus(detalhe).internetOk ?? detalhe.internetOk,
+                    detalhe,
+                  ),
+                ],
+                [
+                  "Firebase",
+                  textoStatusComAtualizacao(
+                    obterNetworkStatus(detalhe).firebaseOk ?? detalhe.firebaseOk,
+                    detalhe,
+                  ),
+                ],
                 [
                   "Último erro",
                   obterNetworkStatus(detalhe).ultimoErro ||
@@ -626,7 +748,44 @@ export default function Rastreadores() {
                   detalhe.comandoOperacionalStatus?.mensagem || "—",
                 ],
                 ["Firmware", detalhe.versaoFirmware || "—"],
-                ["Último sinal", formatarData(detalhe.ultimoSinal)],
+                [
+                  "Último sinal",
+                  `${formatarData(detalhe.ultimoSinal)} • ${formatarTempoDecorrido(detalhe.ultimoSinal)}`,
+                ],
+                ["Tempo ligado", formatarDuracaoSegundos(detalhe.uptimeSegundos)],
+                [
+                  "Watchdog",
+                  detalhe.watchdogAtivo === true
+                    ? "Ativo"
+                    : detalhe.watchdogAtivo === false
+                      ? "Inativo"
+                      : "—",
+                ],
+                ["Memória livre", formatarBytes(detalhe.heapLivreBytes)],
+                ["Menor memória livre", formatarBytes(detalhe.menorHeapLivreBytes)],
+                ["Maior bloco livre", formatarBytes(detalhe.maiorBlocoHeapBytes)],
+                [
+                  "Falhas Firebase seguidas",
+                  Number(detalhe.falhasFirebaseConsecutivas || 0),
+                ],
+                ["Último erro Firebase", detalhe.ultimoErroFirebase || "—"],
+                ["Motivo do último reset", detalhe.motivoResetHardware || "—"],
+                [
+                  "Reinício planejado anterior",
+                  detalhe.motivoReinicioPlanejadoAnterior || "—",
+                ],
+                [
+                  "Quantidade de inicializações",
+                  Number(detalhe.contadorInicializacoes || 0),
+                ],
+                [
+                  "GPS válido",
+                  detalhe.gpsValido === true
+                    ? "Sim"
+                    : detalhe.gpsValido === false
+                      ? "Não"
+                      : "—",
+                ],
                 [
                   "Latitude",
                   detalhe.ultima_posicao?.latitude

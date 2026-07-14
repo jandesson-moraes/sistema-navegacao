@@ -22,6 +22,9 @@ import FinanceiroUnificado from "../src/pages/FinanceiroUnificado";
 import ChecklistRastreadorGPS from "../src/pages/ChecklistRastreadorGPS";
 import RedefinirSenha from "../src/pages/RedefinirSenha";
 import LoginApp from "../src/pages/LoginApp";
+import RelatoriosApp from "../src/pages/RelatoriosApp";
+import ConfiguracaoVendasEmbarcacoes from "../src/pages/ConfiguracaoVendasEmbarcacoes";
+import RelatorioVendasInteligente from "../src/pages/RelatorioVendasInteligente";
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
@@ -378,6 +381,33 @@ export default function App() {
           <Route
             path="/centro-financeiro"
             element={<Navigate to="/financeiro" replace />}
+          />
+
+          <Route
+            path="/relatorios-app"
+            element={
+              <RotaAdmin>
+                <RelatoriosApp />
+              </RotaAdmin>
+            }
+          />
+
+          <Route
+            path="/configuracao-vendas"
+            element={
+              <RotaAdmin>
+                <ConfiguracaoVendasEmbarcacoes />
+              </RotaAdmin>
+            }
+          />
+
+          <Route
+            path="/relatorio-vendas-inteligente"
+            element={
+              <RotaAdmin>
+                <RelatorioVendasInteligente />
+              </RotaAdmin>
+            }
           />
 
           <Route path="*" element={<Navigate to="/" replace />} />

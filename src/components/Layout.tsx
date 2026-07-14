@@ -18,7 +18,8 @@ type PermissaoKey =
   | "financeiro"
   | "inteligencia"
   | "notificacoes"
-  | "funcionarios";
+  | "funcionarios"
+  | "relatoriosApp";
 
 type MenuItem = {
   to: string;
@@ -104,6 +105,13 @@ const admin: MenuItem[] = [
     permissao: "notificacoes",
   },
   {
+    to: "/relatorios-app",
+    icon: "▤",
+    label: "Relatórios do App",
+    match: ["/relatorios-app"],
+    permissao: "relatoriosApp",
+  },
+  {
     to: "/funcionarios",
     icon: "☷",
     label: "Permissões de Usuários",
@@ -115,6 +123,20 @@ const admin: MenuItem[] = [
     icon: "◈",
     label: "Financeiro",
     match: ["/financeiro"],
+    permissao: "financeiro",
+  },
+  {
+    to: "/configuracao-vendas",
+    icon: "◫",
+    label: "Configuração de Vendas",
+    match: ["/configuracao-vendas"],
+    permissao: "financeiro",
+  },
+  {
+    to: "/relatorio-vendas-inteligente",
+    icon: "▤",
+    label: "Relatório de Vendas",
+    match: ["/relatorio-vendas-inteligente"],
     permissao: "financeiro",
   },
 ];
@@ -139,6 +161,7 @@ const titulos: Record<string, string> = {
   "/usuarios": "Permissões de Usuários",
   "/funcionarios": "Permissões de Usuários",
   "/financeiro": "Financeiro",
+  "/relatorios-app": "Relatórios do Aplicativo",
 };
 
 const subtitulos: Record<string, string> = {
@@ -162,6 +185,8 @@ const subtitulos: Record<string, string> = {
   "/funcionarios": "Equipe, acessos e permissões do sistema",
   "/financeiro":
     "Clientes GPS, mensalidades, movimentos, fornecedores, saldo e relatórios",
+  "/relatorios-app":
+    "Usuários, acessos diários, sessões, versões e tempo de utilização do aplicativo",
 };
 
 const ADMIN_FIXOS = ["jandessonmoraes@gmail.com", "escdecastrousinagen@gmail.com"];
@@ -349,6 +374,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             "inteligencia",
             "notificacoes",
             "funcionarios",
+            "relatoriosApp",
           ].reduce(
             (acc, key) => {
               acc[key] = true;
@@ -394,6 +420,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             "inteligencia",
             "notificacoes",
             "funcionarios",
+            "relatoriosApp",
           ].reduce(
             (acc, key) => {
               acc[key] = true;

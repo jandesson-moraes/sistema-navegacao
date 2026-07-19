@@ -25,7 +25,6 @@ import LoginApp from "../src/pages/LoginApp";
 import RelatoriosApp from "../src/pages/RelatoriosApp";
 import ConfiguracaoVendasEmbarcacoes from "../src/pages/ConfiguracaoVendasEmbarcacoes";
 import RelatorioVendasInteligente from "../src/pages/RelatorioVendasInteligente";
-import MetricasLandingPage from "../src/pages/MetricasLandingPage";
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
@@ -47,9 +46,7 @@ type PermissaoKey =
   | "financeiro"
   | "inteligencia"
   | "notificacoes"
-  | "funcionarios"
-  | "relatoriosApp"
-  | "metricasLanding";
+  | "funcionarios";
 
 function normalizarEmail(email: string) {
   return String(email || "")
@@ -389,18 +386,9 @@ export default function App() {
           <Route
             path="/relatorios-app"
             element={
-              <RotaProtegida permissao="relatoriosApp">
+              <RotaAdmin>
                 <RelatoriosApp />
-              </RotaProtegida>
-            }
-          />
-
-          <Route
-            path="/metricas-landing"
-            element={
-              <RotaProtegida permissao="metricasLanding">
-                <MetricasLandingPage />
-              </RotaProtegida>
+              </RotaAdmin>
             }
           />
 

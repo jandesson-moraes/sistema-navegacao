@@ -18,9 +18,7 @@ type PermissaoKey =
   | "financeiro"
   | "inteligencia"
   | "notificacoes"
-  | "funcionarios"
-  | "relatoriosApp"
-  | "metricasLanding";
+  | "funcionarios";
 
 type Funcionario = {
   id: string;
@@ -113,18 +111,6 @@ const PERMISSOES: {
     grupo: "Comercial",
   },
   {
-    key: "relatoriosApp",
-    titulo: "Relatórios do Aplicativo",
-    descricao: "Ver usuários, acessos, sessões, versões e tempo de uso do app.",
-    grupo: "Relatórios",
-  },
-  {
-    key: "metricasLanding",
-    titulo: "Métricas da Landing Page",
-    descricao: "Ver visitas, cliques para download, conversão e origem dos acessos.",
-    grupo: "Relatórios",
-  },
-  {
     key: "funcionarios",
     titulo: "Permissões de Usuários",
     descricao: "Criar usuários e liberar acessos.",
@@ -147,8 +133,6 @@ const PERMISSOES_PADRAO: Record<PermissaoKey, boolean> = {
   inteligencia: false,
   notificacoes: false,
   funcionarios: false,
-  relatoriosApp: false,
-  metricasLanding: false,
 };
 
 function normalizarEmail(email: string) {

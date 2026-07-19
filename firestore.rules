@@ -1,0 +1,538 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function estaLogado() {
+      return request.auth != null;
+    }
+
+    function emailUsuario() {
+      return request.auth.token.email;
+    }
+
+    function isAdminSistema() {
+      return estaLogado() && (
+        emailUsuario() == "jandessonmoraes@gmail.com" ||
+        emailUsuario() == "escdecastrousinagen@gmail.com"
+      );
+    }
+
+    function funcionarioTemPermissao(chave) {
+      return estaLogado() &&
+        exists(
+          /databases/$(database)/documents/funcionarios/$(emailUsuario())
+        ) &&
+        get(
+          /databases/$(database)/documents/funcionarios/$(emailUsuario())
+        ).data.get("ativo", true) != false &&
+        get(
+          /databases/$(database)/documents/funcionarios/$(emailUsuario())
+        ).data.get("excluido", false) != true && (
+          get(
+            /databases/$(database)/documents/funcionarios/$(emailUsuario())
+          ).data.get("tipo", "funcionario") == "admin" ||
+          get(
+            /databases/$(database)/documents/funcionarios/$(emailUsuario())
+          ).data.get("permissoes", {}).get(chave, false) == true
+        );
+    }
+
+    function perfilUsuario() {
+      return get(
+        /databases/$(database)/documents/usuarios/$(request.auth.uid)
+      ).data;
+    }
+
+    function isDono() {
+      return estaLogado() && perfilUsuario().tipo == "dono";
+    }
+
+    function isTripulante() {
+      return estaLogado() && perfilUsuario().tipo == "tripulante";
+    }
+
+    // ============================================================
+    // FUNÇÕES DE VALIDAÇÃO DAS MÉTRICAS DO APLICATIVO
+    // ============================================================
+    function numeroNaoNegativo(valor) {
+      return (
+        valor is int ||
+        valor is float
+      ) && valor >= 0;
+    }
+
+    function ambienteValido(valor) {
+      return valor == "desenvolvimento" ||
+        valor == "producao";
+    }
+
+    function usuarioPodeGravarMetrica(uid) {
+      return estaLogado() &&
+        request.auth.uid == uid &&
+        request.resource.data.uid == uid;
+    }
+
+    match /configuracoes/{document=**} {
+      allow read: if true;
+      allow write: if isAdminSistema();
+    }
+
+    match /funcionarios/{email} {
+      allow read: if isAdminSistema() || (
+        estaLogado() &&
+        emailUsuario() == email
+      );
+
+      allow create, delete: if isAdminSistema();
+
+      allow update: if isAdminSistema() || (
+        estaLogado() &&
+        emailUsuario() == email &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "mustChangePassword",
+          "primeiroAcesso",
+          "senhaAlteradaEm",
+          "atualizadoEm"
+        ])
+      );
+    }
+
+    match /usuarios/{userId} {
+      allow read: if estaLogado();
+      allow write: if estaLogado() && (
+        request.auth.uid == userId ||
+        isAdminSistema() ||
+        isDono()
+      );
+    }
+
+    match /passagens/{docId} {
+      allow read, write: if estaLogado();
+      allow delete: if isAdminSistema();
+    }
+
+    match /passagens_vendidas/{docId} {
+      allow read, write: if estaLogado();
+    }
+
+    match /pagamentos/{docId} {
+      allow read, create: if estaLogado();
+      allow update: if true;
+      allow delete: if isAdminSistema();
+    }
+
+    match /chaves_mestras/{docId} {
+      allow read: if true;
+      allow create, delete: if isAdminSistema();
+      allow update: if true;
+    }
+
+    match /embarcacoes/{docId} {
+      allow read: if true;
+
+      allow create: if estaLogado() && (
+        isAdminSistema() ||
+        request.auth.uid == request.resource.data.ownerId
+      );
+
+      allow update, delete: if estaLogado() && (
+        isAdminSistema() ||
+        request.auth.uid == resource.data.ownerId ||
+        request.auth.uid == request.resource.data.ownerId
+      );
+    }
+
+    match /terminais/{docId} {
+      allow read: if true;
+      allow write: if isAdminSistema();
+    }
+
+    match /portos/{docId} {
+      allow read: if true;
+      allow write: if isAdminSistema();
+    }
+
+    match /grades_viagens/{docId} {
+      allow read: if true;
+      allow write: if estaLogado();
+    }
+
+    match /banners_promocionais/{docId} {
+      allow read: if true;
+      allow write: if isAdminSistema();
+    }
+
+    match /push_tokens/{tokenId} {
+      allow create, update: if estaLogado()
+        && request.resource.data.uid == request.auth.uid;
+
+      allow read, delete: if estaLogado()
+        && (
+          resource.data.uid == request.auth.uid ||
+          isAdminSistema()
+        );
+    }
+
+    match /rastreadores/{deviceId} {
+      allow read: if isAdminSistema() || isDono() || isTripulante();
+      allow write: if isAdminSistema();
+    }
+
+    match /rastreamento/{document=**} {
+      allow read: if estaLogado();
+      allow write: if true;
+    }
+
+    match /operacao_barcos/{docId} {
+      allow read: if estaLogado();
+      allow write: if isAdminSistema();
+    }
+
+    match /notificacoes_chegada/{docId} {
+      allow read: if estaLogado();
+      allow write, delete: if isAdminSistema();
+    }
+
+    match /rotas_oficiais/{docId} {
+      allow read: if true;
+      allow write, delete: if isAdminSistema();
+    }
+
+    match /rotas_historicas/{docId} {
+      allow read: if estaLogado();
+      allow write, delete: if isAdminSistema();
+    }
+
+    match /trechos_oficiais/{docId} {
+      allow read: if true;
+      allow write, delete: if isAdminSistema();
+    }
+
+    match /prospeccao_embarcacoes/{docId} {
+      allow read, write, delete: if isAdminSistema();
+    }
+
+    match /clientes_financeiro/{docId} {
+      allow read, write, delete: if isAdminSistema();
+    }
+
+    match /financeiro_clientes/{docId} {
+      allow read, write, delete: if isAdminSistema();
+    }
+
+    match /financeiro_movimentos/{docId} {
+      allow read, write, delete: if isAdminSistema();
+    }
+
+    match /financeiro_fornecedores/{docId} {
+      allow read, write, delete: if isAdminSistema();
+    }
+
+    match /fornecedores/{docId} {
+      allow read, write, delete: if isAdminSistema();
+    }
+
+    // ============================================================
+    // MÉTRICAS DO APP — RESUMO POR USUÁRIO
+    // Documento: metricas_app_usuarios/{uid}
+    // ============================================================
+    match /metricas_app_usuarios/{uid} {
+      allow read: if estaLogado() && (
+        request.auth.uid == uid ||
+        isAdminSistema()
+      );
+
+      allow create: if usuarioPodeGravarMetrica(uid)
+        && request.resource.data.keys().hasOnly([
+          "uid",
+          "primeiroAcessoEm",
+          "primeiroAcessoData",
+          "ultimoAcessoEm",
+          "ultimoAcessoData",
+          "totalAberturas",
+          "totalTempoUsoSegundos",
+          "diasAtivos",
+          "plataforma",
+          "appVersion",
+          "buildVersion",
+          "modeloDispositivo",
+          "fabricante",
+          "sistemaOperacional",
+          "versaoSistema",
+          "ambiente",
+          "ultimaSessaoId",
+          "atualizadoEm"
+        ])
+        && numeroNaoNegativo(
+          request.resource.data.get("totalAberturas", 0)
+        )
+        && numeroNaoNegativo(
+          request.resource.data.get("totalTempoUsoSegundos", 0)
+        )
+        && numeroNaoNegativo(
+          request.resource.data.get("diasAtivos", 0)
+        )
+        && ambienteValido(
+          request.resource.data.get("ambiente", "producao")
+        );
+
+      allow update: if usuarioPodeGravarMetrica(uid)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "ultimoAcessoEm",
+          "ultimoAcessoData",
+          "totalAberturas",
+          "totalTempoUsoSegundos",
+          "diasAtivos",
+          "plataforma",
+          "appVersion",
+          "buildVersion",
+          "modeloDispositivo",
+          "fabricante",
+          "sistemaOperacional",
+          "versaoSistema",
+          "ambiente",
+          "ultimaSessaoId",
+          "atualizadoEm"
+        ])
+        && request.resource.data.get("primeiroAcessoEm", null)
+          == resource.data.get("primeiroAcessoEm", null)
+        && request.resource.data.get("primeiroAcessoData", "")
+          == resource.data.get("primeiroAcessoData", "")
+        && numeroNaoNegativo(
+          request.resource.data.get("totalAberturas", 0)
+        )
+        && numeroNaoNegativo(
+          request.resource.data.get("totalTempoUsoSegundos", 0)
+        )
+        && numeroNaoNegativo(
+          request.resource.data.get("diasAtivos", 0)
+        )
+        && request.resource.data.get("totalAberturas", 0)
+          >= resource.data.get("totalAberturas", 0)
+        && request.resource.data.get("totalTempoUsoSegundos", 0)
+          >= resource.data.get("totalTempoUsoSegundos", 0)
+        && request.resource.data.get("diasAtivos", 0)
+          >= resource.data.get("diasAtivos", 0)
+        && ambienteValido(
+          request.resource.data.get("ambiente", "producao")
+        );
+
+      allow delete: if isAdminSistema();
+    }
+
+    // ============================================================
+    // MÉTRICAS DO APP — ACESSO DIÁRIO POR USUÁRIO
+    // Documento:
+    // metricas_app_diarias/{data}/acessos_usuarios/{uid}
+    // ============================================================
+    match /metricas_app_diarias/{data}/acessos_usuarios/{uid} {
+      allow read: if estaLogado() && (
+        request.auth.uid == uid ||
+        isAdminSistema()
+      );
+
+      allow create: if usuarioPodeGravarMetrica(uid)
+        && request.resource.data.data == data
+        && request.resource.data.keys().hasOnly([
+          "uid",
+          "data",
+          "primeiroAcessoEm",
+          "ultimoAcessoEm",
+          "aberturas",
+          "tempoUsoSegundos",
+          "plataforma",
+          "appVersion",
+          "buildVersion",
+          "ambiente",
+          "atualizadoEm"
+        ])
+        && numeroNaoNegativo(
+          request.resource.data.get("aberturas", 0)
+        )
+        && numeroNaoNegativo(
+          request.resource.data.get("tempoUsoSegundos", 0)
+        )
+        && ambienteValido(
+          request.resource.data.get("ambiente", "producao")
+        );
+
+      allow update: if usuarioPodeGravarMetrica(uid)
+        && request.resource.data.data == data
+        && request.resource.data.get("uid", "") ==
+          resource.data.get("uid", "")
+        && request.resource.data.get("data", "") ==
+          resource.data.get("data", "")
+        && request.resource.data.get("primeiroAcessoEm", null) ==
+          resource.data.get("primeiroAcessoEm", null)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "ultimoAcessoEm",
+          "aberturas",
+          "tempoUsoSegundos",
+          "plataforma",
+          "appVersion",
+          "buildVersion",
+          "ambiente",
+          "atualizadoEm"
+        ])
+        && numeroNaoNegativo(
+          request.resource.data.get("aberturas", 0)
+        )
+        && numeroNaoNegativo(
+          request.resource.data.get("tempoUsoSegundos", 0)
+        )
+        && request.resource.data.get("aberturas", 0)
+          >= resource.data.get("aberturas", 0)
+        && request.resource.data.get("tempoUsoSegundos", 0)
+          >= resource.data.get("tempoUsoSegundos", 0)
+        && ambienteValido(
+          request.resource.data.get("ambiente", "producao")
+        );
+
+      allow delete: if isAdminSistema();
+    }
+
+    // Documento-pai opcional da data.
+    // O app atual não precisa gravar aqui, mas o administrador pode ler
+    // e gerenciar caso futuramente seja criado um resumo diário.
+    match /metricas_app_diarias/{data} {
+      allow read: if isAdminSistema();
+      allow write: if isAdminSistema();
+    }
+
+    // ============================================================
+    // MÉTRICAS DO APP — SESSÕES
+    // Documento: metricas_app_sessoes/{sessaoId}
+    // ============================================================
+    match /metricas_app_sessoes/{sessaoId} {
+      // O aplicativo consulta a sessão antes de criá-la para evitar
+      // duplicidade. Por isso, o "get" também precisa funcionar quando
+      // o documento ainda não existe.
+      allow get: if estaLogado() && (
+        !exists(
+          /databases/$(database)/documents/metricas_app_sessoes/$(sessaoId)
+        ) ||
+        resource.data.uid == request.auth.uid ||
+        isAdminSistema()
+      );
+
+      // Listagem completa fica restrita aos administradores.
+      allow list: if isAdminSistema();
+
+      allow create: if estaLogado()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.sessaoId == sessaoId
+        && request.resource.data.keys().hasOnly([
+          "sessaoId",
+          "uid",
+          "data",
+          "iniciadoEm",
+          "iniciadoEmMs",
+          "encerradoEm",
+          "duracaoSegundos",
+          "duracaoAplicada",
+          "plataforma",
+          "appVersion",
+          "buildVersion",
+          "modeloDispositivo",
+          "fabricante",
+          "sistemaOperacional",
+          "versaoSistema",
+          "ambiente",
+          "criadoEm",
+          "atualizadoEm"
+        ])
+        && request.resource.data.duracaoAplicada == false
+        && numeroNaoNegativo(
+          request.resource.data.get("iniciadoEmMs", 0)
+        )
+        && numeroNaoNegativo(
+          request.resource.data.get("duracaoSegundos", 0)
+        )
+        && ambienteValido(
+          request.resource.data.get("ambiente", "producao")
+        );
+
+      allow update: if estaLogado()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.get("sessaoId", "") ==
+          resource.data.get("sessaoId", "")
+        && request.resource.data.get("data", "") ==
+          resource.data.get("data", "")
+        && request.resource.data.get("iniciadoEm", null) ==
+          resource.data.get("iniciadoEm", null)
+        && request.resource.data.get("iniciadoEmMs", 0) ==
+          resource.data.get("iniciadoEmMs", 0)
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "encerradoEm",
+          "encerradoEmMs",
+          "duracaoSegundos",
+          "duracaoAplicada",
+          "atualizadoEm"
+        ])
+        && resource.data.get("duracaoAplicada", false) == false
+        && request.resource.data.get("duracaoAplicada", false) == true
+        && numeroNaoNegativo(
+          request.resource.data.get("encerradoEmMs", 0)
+        )
+        && numeroNaoNegativo(
+          request.resource.data.get("duracaoSegundos", 0)
+        )
+        && request.resource.data.get("encerradoEmMs", 0)
+          >= resource.data.get("iniciadoEmMs", 0)
+        && request.resource.data.get("duracaoSegundos", 0)
+          >= resource.data.get("duracaoSegundos", 0);
+
+      allow delete: if isAdminSistema();
+    }
+
+    // ============================================================
+    // MÉTRICAS DA LANDING PAGE
+    // A landing page registra eventos somente pela Cloud Function.
+    // O cliente web nunca possui permissão de escrita direta.
+    // ============================================================
+    match /metricas_landing_diarias/{data} {
+      allow read: if isAdminSistema() ||
+        funcionarioTemPermissao("metricasLanding");
+      allow create, update, delete: if false;
+    }
+
+    match /metricas_landing_visitantes/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /metricas_landing_eventos/{document=**} {
+      allow read, write: if false;
+    }
+
+    // ============================================================
+    // VENDAS DE PASSAGENS — REGISTRO FINANCEIRO CENTRAL
+    // Documento: vendas/{vendaId}
+    //
+    // IMPORTANTE:
+    // - O aplicativo do passageiro não cria nem altera estes documentos.
+    // - A Cloud Function usa o Firebase Admin SDK e grava a venda oficial.
+    // - O passageiro pode consultar apenas as próprias vendas.
+    // - O dono pode consultar apenas vendas vinculadas a ele.
+    // - Os administradores podem consultar e gerenciar todas as vendas.
+    // ============================================================
+    match /vendas/{vendaId} {
+      allow get, list: if isAdminSistema() || (
+        estaLogado() && (
+          resource.data.get("compradorUid", "") == request.auth.uid ||
+          resource.data.get("compradorEmail", "") == emailUsuario() ||
+          resource.data.get("ownerId", "") == request.auth.uid ||
+          resource.data.get("ownerEmail", "") == emailUsuario()
+        )
+      );
+
+      // Criação, alteração e exclusão ficam restritas aos administradores
+      // pelo cliente. A Cloud Function com Admin SDK não depende destas regras.
+      allow create, update, delete: if isAdminSistema();
+    }
+
+    match /{document=**} {
+      allow read, write: if isAdminSistema();
+    }
+  }
+}

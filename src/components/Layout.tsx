@@ -84,6 +84,13 @@ const admin: MenuItem[] = [
     permissao: "rotas",
   },
   {
+    to: "/programacao-viagens",
+    icon: "◷",
+    label: "Programação de Viagens",
+    match: ["/programacao-viagens"],
+    permissao: "rotas",
+  },
+  {
     to: "/inteligencia-comercial",
     icon: "▥",
     label: "Inteligência Comercial",
@@ -153,6 +160,7 @@ const titulos: Record<string, string> = {
   "/": "Mapa Tático",
   "/dashboard": "Mapa Tático",
   "/rotas": "Rotas",
+  "/programacao-viagens": "Programação de Viagens",
   "/embarcacoes": "Gestão de Frota",
   "/frota": "Gestão de Frota",
   "/terminais": "Terminais e Portos",
@@ -177,6 +185,8 @@ const subtitulos: Record<string, string> = {
   "/": "Acompanhe em tempo real a localização e o status da frota",
   "/dashboard": "Acompanhe em tempo real a localização e o status da frota",
   "/rotas": "Gerencie rotas, trechos oficiais e histórico operacional",
+  "/programacao-viagens":
+    "Cadastre dias, horários, duração e várias saídas por embarcação",
   "/embarcacoes": "Cadastre e acompanhe embarcações do sistema",
   "/frota": "Cadastre e acompanhe embarcações do sistema",
   "/terminais": "Gerencie portos, terminais e pontos de parada",
@@ -479,16 +489,25 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 
   const atalhosMobile = useMemo(() => {
-    const prioridades = ["/gps", "/", "/embarcacoes", "/rotas"];
-    const priorizados = prioridades
-      .map((rota) => menuCompletoVisivel.find((item) => item.to === rota))
-      .filter((item): item is MenuItem => Boolean(item));
-    const restantes = menuCompletoVisivel.filter(
-      (item) => !priorizados.some((priorizado) => priorizado.to === item.to),
+    const itemAtual = menuCompletoVisivel.find((item) =>
+      itemAtivo(item, location.pathname),
     );
+    const prioridades = ["/", "/embarcacoes", "/gps", "/rotas"];
+    const candidatos = [
+      itemAtual,
+      ...prioridades.map((rota) =>
+        menuCompletoVisivel.find((item) => item.to === rota),
+      ),
+      ...menuCompletoVisivel,
+    ].filter((item): item is MenuItem => Boolean(item));
 
-    return [...priorizados, ...restantes].slice(0, 4);
-  }, [menuCompletoVisivel]);
+    return candidatos
+      .filter(
+        (item, indice, lista) =>
+          lista.findIndex((candidato) => candidato.to === item.to) === indice,
+      )
+      .slice(0, 4);
+  }, [location.pathname, menuCompletoVisivel]);
 
   async function sair() {
     const auth = getAuth();

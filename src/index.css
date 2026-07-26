@@ -36,3 +36,110 @@ body,
 *::-webkit-scrollbar-thumb:hover {
   background: #1e293b;
 }
+
+/* Base responsiva reutilizável do Sistema de Navegação */
+html,
+body,
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+.cmb-page {
+  width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.cmb-section {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid rgb(123 166 212 / 20%);
+  border-radius: 20px;
+  background: rgb(20 55 96 / 72%);
+  padding: 12px;
+}
+
+.cmb-section > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgb(224 242 254 / 86%);
+}
+
+.cmb-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.cmb-section > summary::after {
+  content: "+";
+  float: right;
+  font-size: 18px;
+  line-height: 1;
+  color: rgb(125 211 252 / 80%);
+}
+
+.cmb-section[open] > summary::after {
+  content: "−";
+}
+
+.cmb-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cmb-field > span {
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgb(224 242 254 / 55%);
+}
+
+.cmb-field input:not([type="checkbox"]):not([type="file"]),
+.cmb-field select,
+.cmb-field textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgb(123 166 212 / 25%);
+  border-radius: 16px;
+  background: #17345e;
+  padding: 12px 14px;
+  color: white;
+  outline: none;
+}
+
+.cmb-field input:focus,
+.cmb-field select:focus,
+.cmb-field textarea:focus {
+  border-color: rgb(125 211 252 / 65%);
+}
+
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  .cmb-section {
+    border-radius: 18px;
+    padding: 12px;
+  }
+
+  table {
+    font-size: 12px;
+  }
+}

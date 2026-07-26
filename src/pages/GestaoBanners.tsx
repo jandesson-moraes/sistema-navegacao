@@ -6,6 +6,7 @@ import {
   doc,
   onSnapshot,
   orderBy,
+  limit,
   query,
   serverTimestamp,
   updateDoc,
@@ -14,26 +15,121 @@ import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { auth, db, storage } from "../config/firebase";
 import { useAppModal } from "../components/AppModal";
 
-type TipoCampanha = "promocao" | "aviso" | "informativo";
-type PublicoAlvo = "todos" | "cidade" | "comprou_barco";
-type MomentoExibicao = "agora" | "ao_abrir_app" | "apos_tempo";
+type TipoCampanha =
+  | "promocao"
+  | "escala"
+  | "alteracao_horario"
+  | "alteracao_rota"
+  | "aviso_operacional"
+  | "venda_passagem"
+  | "servico"
+  | "informativo";
+
+type PublicoAlvo = "todos" | "cidade" | "comprou_barco" | "embarcacoes";
+type GatilhoExibicao = "selecao_embarcacao" | "ao_abrir_app" | "imediato";
+type FrequenciaExibicao = "sessao" | "dia" | "selecao" | "intervalo";
+type AcaoTipo = "nenhuma" | "detalhes" | "vendas" | "itinerario" | "whatsapp" | "link";
+type StatusCampanha = "rascunho" | "agendado" | "ativo" | "pausado" | "expirado";
 
 type BannerForm = {
   titulo: string;
   subtitulo: string;
   mensagem: string;
   botaoTexto: string;
-  linkDestino: string;
+  acaoTipo: AcaoTipo;
+  acaoDestino: string;
   tipo: TipoCampanha;
   publicoAlvo: PublicoAlvo;
   cidadeAlvo: string;
-  barcoIdAlvo: string;
-  momentoExibicao: MomentoExibicao;
-  tempoDepoisSegundos: string;
-  mostrarUmaVez: boolean;
+  barcosIdsAlvo: string[];
+  gatilhoExibicao: GatilhoExibicao;
+  atrasoSegundos: number;
+  frequencia: FrequenciaExibicao;
+  intervaloMinimoMinutos: number;
+  vigenciaInicio: string;
+  vigenciaFim: string;
+  semDataFinal: boolean;
+  diasSemana: number[];
+  restringirHorario: boolean;
+  horarioInicio: string;
+  horarioFim: string;
+  duracaoAbertoSegundos: number;
+  prioridade: number;
   destaque: boolean;
   exibirComoPopup: boolean;
   ativo: boolean;
+  publicado: boolean;
+};
+
+type MetricasBanner = {
+  impressoes: number;
+  cliques: number;
+  fechamentos: number;
+};
+
+const FUSO_HORARIO = "America/Manaus";
+const DIAS = [
+  [0, "Dom"],
+  [1, "Seg"],
+  [2, "Ter"],
+  [3, "Qua"],
+  [4, "Qui"],
+  [5, "Sex"],
+  [6, "Sáb"],
+] as const;
+
+const TIPOS: Record<
+  TipoCampanha,
+  { label: string; tag: string; icone: string; classe: string }
+> = {
+  promocao: {
+    label: "Promoção",
+    tag: "Oferta",
+    icone: "🔥",
+    classe: "border-amber-300/25 bg-amber-400/10 text-amber-100",
+  },
+  escala: {
+    label: "Informação de escala",
+    tag: "Escala",
+    icone: "⚓",
+    classe: "border-cyan-300/25 bg-cyan-400/10 text-cyan-100",
+  },
+  alteracao_horario: {
+    label: "Alteração de horário",
+    tag: "Horário",
+    icone: "⏰",
+    classe: "border-orange-300/25 bg-orange-400/10 text-orange-100",
+  },
+  alteracao_rota: {
+    label: "Alteração de rota",
+    tag: "Rota",
+    icone: "🧭",
+    classe: "border-violet-300/25 bg-violet-400/10 text-violet-100",
+  },
+  aviso_operacional: {
+    label: "Aviso operacional",
+    tag: "Aviso",
+    icone: "🔔",
+    classe: "border-sky-300/25 bg-sky-400/10 text-sky-100",
+  },
+  venda_passagem: {
+    label: "Venda de passagem",
+    tag: "Passagem",
+    icone: "🎟️",
+    classe: "border-emerald-300/25 bg-emerald-400/10 text-emerald-100",
+  },
+  servico: {
+    label: "Serviço da embarcação",
+    tag: "Serviço",
+    icone: "🛟",
+    classe: "border-teal-300/25 bg-teal-400/10 text-teal-100",
+  },
+  informativo: {
+    label: "Informativo geral",
+    tag: "Info",
+    icone: "✨",
+    classe: "border-indigo-300/25 bg-indigo-400/10 text-indigo-100",
+  },
 };
 
 const FORM_INICIAL: BannerForm = {
@@ -41,187 +137,207 @@ const FORM_INICIAL: BannerForm = {
   subtitulo: "",
   mensagem: "",
   botaoTexto: "Ver agora",
-  linkDestino: "",
+  acaoTipo: "nenhuma",
+  acaoDestino: "",
   tipo: "promocao",
-  publicoAlvo: "todos",
+  publicoAlvo: "embarcacoes",
   cidadeAlvo: "",
-  barcoIdAlvo: "",
-  momentoExibicao: "ao_abrir_app",
-  tempoDepoisSegundos: "15",
-  mostrarUmaVez: true,
+  barcosIdsAlvo: [],
+  gatilhoExibicao: "selecao_embarcacao",
+  atrasoSegundos: 20,
+  frequencia: "dia",
+  intervaloMinimoMinutos: 60,
+  vigenciaInicio: valorDatetimeLocal(new Date()),
+  vigenciaFim: valorDatetimeLocal(adicionarDias(new Date(), 7)),
+  semDataFinal: false,
+  diasSemana: [],
+  restringirHorario: false,
+  horarioInicio: "08:00",
+  horarioFim: "22:00",
+  duracaoAbertoSegundos: 0,
+  prioridade: 50,
   destaque: true,
   exibirComoPopup: true,
   ativo: true,
+  publicado: true,
 };
 
-const TIPOS = {
-  promocao: {
-    label: "Promoção",
-    tag: "Oferta",
-    icone: "🔥",
-    classe: "border-amber-300/25 bg-amber-400/10 text-amber-100",
-  },
-  aviso: {
-    label: "Aviso",
-    tag: "Aviso",
-    icone: "🔔",
-    classe: "border-sky-300/25 bg-sky-400/10 text-sky-100",
-  },
-  informativo: {
-    label: "Informativo",
-    tag: "Info",
-    icone: "✨",
-    classe: "border-emerald-300/25 bg-emerald-400/10 text-emerald-100",
-  },
-};
+function adicionarDias(data: Date, dias: number) {
+  const nova = new Date(data);
+  nova.setDate(nova.getDate() + dias);
+  return nova;
+}
 
-const PUBLICOS = {
-  todos: {
-    label: "Todos os usuários",
-    resumo: "Aparece para todos no app",
-    chip: "Todos",
-    icone: "🌎",
-  },
-  cidade: {
-    label: "Usuários de uma cidade",
-    resumo: "Filtra pela cidade do cadastro do usuário",
-    chip: "Cidade",
-    icone: "📍",
-  },
-  comprou_barco: {
-    label: "Quem comprou passagem de um barco",
-    resumo: "Filtra usuários com passagem desse barco",
-    chip: "Comprou barco",
-    icone: "🎟️",
-  },
-};
+function adicionarMes(data: Date) {
+  const nova = new Date(data);
+  nova.setMonth(nova.getMonth() + 1);
+  return nova;
+}
 
-const MOMENTOS = {
-  agora: {
-    label: "Mostrar agora",
-    resumo: "Prioridade máxima quando o app sincronizar",
-    chip: "Agora",
-  },
-  ao_abrir_app: {
-    label: "Ao abrir o app",
-    resumo: "Aparece na entrada do usuário",
-    chip: "Abertura",
-  },
-  apos_tempo: {
-    label: "Depois de um tempo",
-    resumo: "Aparece após alguns segundos de uso",
-    chip: "Temporizado",
-  },
-};
+function valorDatetimeLocal(data: Date) {
+  const pad = (valor: number) => String(valor).padStart(2, "0");
+  return `${data.getFullYear()}-${pad(data.getMonth() + 1)}-${pad(data.getDate())}T${pad(data.getHours())}:${pad(data.getMinutes())}`;
+}
 
-function limparForm() {
-  return { ...FORM_INICIAL };
+function isoOuVazio(valor: string) {
+  if (!valor) return "";
+  const data = new Date(valor);
+  return Number.isNaN(data.getTime()) ? "" : data.toISOString();
+}
+
+function datetimeLocalDeQualquer(valor: any) {
+  if (!valor) return "";
+  const data = typeof valor?.toDate === "function" ? valor.toDate() : new Date(valor);
+  return Number.isNaN(data.getTime()) ? "" : valorDatetimeLocal(data);
 }
 
 function dataMs(valor: any) {
   if (!valor) return 0;
   if (typeof valor?.toDate === "function") return valor.toDate().getTime();
-
-  const d = new Date(valor);
-  return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+  const data = new Date(valor);
+  return Number.isNaN(data.getTime()) ? 0 : data.getTime();
 }
 
 function formatarData(valor: any) {
-  if (!valor) return "—";
-
+  if (!valor) return "Sem limite";
   const data = typeof valor?.toDate === "function" ? valor.toDate() : new Date(valor);
-
   if (Number.isNaN(data.getTime())) return "—";
-
   return data.toLocaleString("pt-BR", {
+    timeZone: FUSO_HORARIO,
     day: "2-digit",
     month: "2-digit",
+    year: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
   });
 }
 
+function statusDaCampanha(banner: any, agora = Date.now()): StatusCampanha {
+  if (banner.publicado === false) return "rascunho";
+  if (banner.ativo === false) return "pausado";
+
+  const inicio = dataMs(banner.vigenciaInicioIso || banner.vigenciaInicio);
+  const fim = dataMs(banner.vigenciaFimIso || banner.vigenciaFim);
+
+  if (inicio && agora < inicio) return "agendado";
+  if (fim && agora > fim) return "expirado";
+  return "ativo";
+}
+
+const STATUS_INFO: Record<StatusCampanha, { label: string; classe: string }> = {
+  rascunho: { label: "Rascunho", classe: "border-slate-300/25 bg-slate-400/10 text-slate-200" },
+  agendado: { label: "Agendado", classe: "border-violet-300/25 bg-violet-400/10 text-violet-100" },
+  ativo: { label: "Ativo", classe: "border-emerald-300/25 bg-emerald-400/10 text-emerald-100" },
+  pausado: { label: "Pausado", classe: "border-amber-300/25 bg-amber-400/10 text-amber-100" },
+  expirado: { label: "Expirado", classe: "border-rose-300/25 bg-rose-400/10 text-rose-100" },
+};
+
 function normalizarCidade(valor: string) {
   return String(valor || "").trim();
 }
 
-function textoPublico(campanha: any) {
-  const publico = campanha.publicoAlvo || campanha.publico || "todos";
+function barcosDoBanner(banner: any) {
+  const ids = Array.isArray(banner.barcosIdsAlvo)
+    ? banner.barcosIdsAlvo
+    : [banner.barcoIdAlvo || banner.barcoId].filter(Boolean);
+  return ids.map(String);
+}
 
-  if (publico === "cidade") {
-    return campanha.cidadeAlvo || "Cidade";
+function nomePublico(banner: any) {
+  const publico = banner.publicoAlvo || banner.publico || "todos";
+  if (publico === "cidade") return banner.cidadeAlvo || "Cidade";
+  if (publico === "comprou_barco") return banner.barcoNomeAlvo || "Comprou passagem";
+  if (publico === "embarcacoes") {
+    const nomes = Array.isArray(banner.barcosNomesAlvo) ? banner.barcosNomesAlvo : [];
+    if (nomes.length === 0) return "Todas as embarcações";
+    if (nomes.length === 1) return nomes[0];
+    return `${nomes.length} embarcações`;
   }
+  return "Todos os usuários";
+}
 
-  if (publico === "comprou_barco") {
-    return campanha.barcoNomeAlvo || campanha.barcoIdAlvo || "Barco";
-  }
-
-  return "Todos";
+function labelFrequencia(valor: string) {
+  if (valor === "sessao") return "Uma vez por sessão";
+  if (valor === "selecao") return "Uma vez por seleção";
+  if (valor === "intervalo") return "Com intervalo mínimo";
+  return "Uma vez por dia";
 }
 
 export default function GestaoBanners() {
   const modal = useAppModal();
-
   const [banners, setBanners] = useState<any[]>([]);
   const [barcos, setBarcos] = useState<any[]>([]);
   const [usuarios, setUsuarios] = useState<any[]>([]);
-  const [form, setForm] = useState<BannerForm>(FORM_INICIAL);
+  const [metricas, setMetricas] = useState<Record<string, MetricasBanner>>({});
+  const [form, setForm] = useState<BannerForm>({ ...FORM_INICIAL });
   const [imagemFile, setImagemFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [imagemAtualUrl, setImagemAtualUrl] = useState("");
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [busca, setBusca] = useState("");
-  const [filtro, setFiltro] = useState<"todos" | "ativos" | "pausados">("todos");
+  const [filtro, setFiltro] = useState<"todos" | StatusCampanha>("todos");
+  const [agora, setAgora] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setAgora(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const q = query(collection(db, "banners_promocionais"), orderBy("createdAt", "desc"));
-
-    const unsub = onSnapshot(
-      q,
-      (snapshot) => {
-        const lista = snapshot.docs
-          .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-          .sort((a: any, b: any) => dataMs(b.createdAt) - dataMs(a.createdAt));
-
-        setBanners(lista);
-      },
-      (error) => {
-        console.error("Erro ao carregar banners:", error);
-      },
-    );
-
-    return () => unsub();
-  }, []);
-
-  useEffect(() => {
-    const unsub = onSnapshot(collection(db, "embarcacoes"), (snapshot) => {
-      const lista = snapshot.docs
-        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-        .sort((a: any, b: any) =>
-          String(a.nome || a.id).localeCompare(String(b.nome || b.id), "pt-BR"),
-        );
-
-      setBarcos(lista);
+    return onSnapshot(q, (snapshot) => {
+      setBanners(
+        snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .sort((a: any, b: any) => dataMs(b.createdAt) - dataMs(a.createdAt)),
+      );
     });
-
-    return () => unsub();
   }, []);
 
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, "usuarios"),
-      (snapshot) => {
-        setUsuarios(
-          snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() })),
-        );
-      },
-      () => {
-        setUsuarios([]);
-      },
-    );
+    return onSnapshot(collection(db, "embarcacoes"), (snapshot) => {
+      setBarcos(
+        snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .filter((item: any) => item.visivelNoApp !== false)
+          .sort((a: any, b: any) =>
+            String(a.nome || a.id).localeCompare(String(b.nome || b.id), "pt-BR"),
+          ),
+      );
+    });
+  }, []);
 
-    return () => unsub();
+  useEffect(() => {
+    return onSnapshot(
+      collection(db, "usuarios"),
+      (snapshot) => setUsuarios(snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))),
+      () => setUsuarios([]),
+    );
+  }, []);
+
+  useEffect(() => {
+    return onSnapshot(
+      query(
+        collection(db, "banner_metricas_eventos"),
+        orderBy("criadoEm", "desc"),
+        limit(5000),
+      ),
+      (snapshot) => {
+        const total: Record<string, MetricasBanner> = {};
+        snapshot.docs.forEach((item) => {
+          const dado = item.data();
+          const bannerId = String(dado.bannerId || "");
+          if (!bannerId) return;
+          total[bannerId] ||= { impressoes: 0, cliques: 0, fechamentos: 0 };
+          if (dado.tipo === "impressao") total[bannerId].impressoes += 1;
+          if (dado.tipo === "clique") total[bannerId].cliques += 1;
+          if (dado.tipo === "fechamento") total[bannerId].fechamentos += 1;
+        });
+        setMetricas(total);
+      },
+      () => setMetricas({}),
+    );
   }, []);
 
   const cidades = useMemo(() => {
@@ -235,227 +351,240 @@ export default function GestaoBanners() {
         ),
       )
       .filter(Boolean);
-
     return Array.from(new Set(lista)).sort((a, b) => a.localeCompare(b, "pt-BR"));
   }, [usuarios]);
 
   const bannersFiltrados = useMemo(() => {
     const texto = busca.trim().toLowerCase();
-
     return banners.filter((banner) => {
-      if (filtro === "ativos" && banner.ativo === false) return false;
-      if (filtro === "pausados" && banner.ativo !== false) return false;
-
+      const status = statusDaCampanha(banner, agora);
+      if (filtro !== "todos" && status !== filtro) return false;
       if (!texto) return true;
-
       return [
         banner.titulo,
         banner.subtitulo,
         banner.mensagem,
         banner.cidadeAlvo,
-        banner.barcoIdAlvo,
         banner.barcoNomeAlvo,
-        banner.publicoAlvo,
+        ...(banner.barcosNomesAlvo || []),
         banner.tipo,
-        banner.momentoExibicao,
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
         .includes(texto);
     });
-  }, [banners, busca, filtro]);
+  }, [agora, banners, busca, filtro]);
 
   const resumo = useMemo(() => {
-    return {
-      total: banners.length,
-      ativos: banners.filter((b) => b.ativo !== false).length,
-      cidades: banners.filter((b) => b.publicoAlvo === "cidade").length,
-      comprouBarco: banners.filter((b) => b.publicoAlvo === "comprou_barco").length,
-    };
-  }, [banners]);
+    const contagem = { total: banners.length, ativo: 0, agendado: 0, pausado: 0, expirado: 0 };
+    banners.forEach((banner) => {
+      const status = statusDaCampanha(banner, agora);
+      if (status === "ativo") contagem.ativo += 1;
+      if (status === "agendado") contagem.agendado += 1;
+      if (status === "pausado" || status === "rascunho") contagem.pausado += 1;
+      if (status === "expirado") contagem.expirado += 1;
+    });
+    return contagem;
+  }, [agora, banners]);
 
   const atualizarForm = <K extends keyof BannerForm>(campo: K, valor: BannerForm[K]) => {
     setForm((atual) => ({ ...atual, [campo]: valor }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const alternarBarco = (barcoId: string) => {
+    setForm((atual) => ({
+      ...atual,
+      barcosIdsAlvo: atual.barcosIdsAlvo.includes(barcoId)
+        ? atual.barcosIdsAlvo.filter((id) => id !== barcoId)
+        : [...atual.barcosIdsAlvo, barcoId],
+    }));
+  };
 
+  const aplicarPeriodo = (tipo: "dia" | "semana" | "quinze" | "mes" | "personalizado") => {
+    if (tipo === "personalizado") return;
+    const inicio = form.vigenciaInicio ? new Date(form.vigenciaInicio) : new Date();
+    const fim = tipo === "mes" ? adicionarMes(inicio) : adicionarDias(inicio, tipo === "dia" ? 1 : tipo === "semana" ? 7 : 15);
+    atualizarForm("vigenciaFim", valorDatetimeLocal(fim));
+    atualizarForm("semDataFinal", false);
+  };
+
+  const handleFileChange = (evento: React.ChangeEvent<HTMLInputElement>) => {
+    const file = evento.target.files?.[0];
     if (!file) return;
-
     if (!file.type.startsWith("image/")) {
       void modal.aviso("Arquivo inválido", "Selecione uma imagem para o banner.");
       return;
     }
-
+    if (file.size > 8 * 1024 * 1024) {
+      void modal.aviso("Imagem muito grande", "Use uma imagem de até 8 MB.");
+      return;
+    }
     setImagemFile(file);
     setPreviewUrl(URL.createObjectURL(file));
   };
 
   const validar = async () => {
     if (!auth.currentUser) {
-      await modal.erro("Acesso negado", "Faça login novamente para publicar.");
+      await modal.erro("Acesso negado", "Faça login novamente para continuar.");
       return false;
     }
-
-    if (!form.titulo.trim()) {
-      await modal.aviso("Título obrigatório", "Informe o título da campanha.");
+    if (!form.titulo.trim() || !form.mensagem.trim()) {
+      await modal.aviso("Conteúdo incompleto", "Informe o título e a mensagem da campanha.");
       return false;
     }
-
-    if (!form.mensagem.trim()) {
-      await modal.aviso(
-        "Mensagem obrigatória",
-        "Informe a mensagem que será exibida no app.",
-      );
-      return false;
-    }
-
-    if (!imagemFile && !imagemAtualUrl) {
-      await modal.aviso(
-        "Arte obrigatória",
-        "Selecione uma imagem vertical para o banner.",
-      );
-      return false;
-    }
-
     if (form.publicoAlvo === "cidade" && !form.cidadeAlvo.trim()) {
-      await modal.aviso(
-        "Cidade obrigatória",
-        "Informe ou selecione a cidade do público-alvo.",
-      );
+      await modal.aviso("Cidade obrigatória", "Selecione a cidade do público-alvo.");
       return false;
     }
-
-    if (form.publicoAlvo === "comprou_barco" && !form.barcoIdAlvo.trim()) {
-      await modal.aviso(
-        "Selecione o barco",
-        "Para alcançar quem comprou passagem de um barco, selecione a embarcação.",
-      );
+    if (
+      (form.publicoAlvo === "comprou_barco" ||
+        (form.publicoAlvo === "embarcacoes" && form.gatilhoExibicao !== "selecao_embarcacao")) &&
+      form.barcosIdsAlvo.length === 0
+    ) {
+      await modal.aviso("Selecione a embarcação", "Marque pelo menos uma embarcação.");
       return false;
     }
-
-    if (form.momentoExibicao === "apos_tempo") {
-      const segundos = Number(form.tempoDepoisSegundos);
-
-      if (!Number.isFinite(segundos) || segundos < 3 || segundos > 300) {
-        await modal.aviso("Tempo inválido", "Informe um tempo entre 3 e 300 segundos.");
+    if (![0, 3, 5, 10, 20, 30, 40].includes(form.atrasoSegundos)) {
+      await modal.aviso("Atraso inválido", "Escolha 3, 5, 10, 20, 30, 40 segundos ou desative a abertura automática.");
+      return false;
+    }
+    const inicio = new Date(form.vigenciaInicio);
+    if (Number.isNaN(inicio.getTime())) {
+      await modal.aviso("Início obrigatório", "Informe a data e a hora de início.");
+      return false;
+    }
+    if (!form.semDataFinal) {
+      const fim = new Date(form.vigenciaFim);
+      if (Number.isNaN(fim.getTime())) {
+        await modal.aviso("Fim obrigatório", "Informe a data e a hora final.");
+        return false;
+      }
+      if (fim.getTime() <= inicio.getTime()) {
+        await modal.aviso("Período inválido", "A data final deve ser posterior à data inicial.");
         return false;
       }
     }
-
+    if (form.restringirHorario && form.horarioInicio === form.horarioFim) {
+      await modal.aviso("Faixa inválida", "Os horários inicial e final precisam ser diferentes.");
+      return false;
+    }
+    if (form.acaoTipo === "link" && !/^https?:\/\//i.test(form.acaoDestino.trim())) {
+      await modal.aviso("Link inválido", "Informe um endereço iniciado por http:// ou https://.");
+      return false;
+    }
+    if (form.acaoTipo === "whatsapp" && !form.acaoDestino.replace(/\D/g, "")) {
+      await modal.aviso("WhatsApp obrigatório", "Informe o número usado pelo botão.");
+      return false;
+    }
     return true;
   };
 
-  const salvarBanner = async () => {
+  const salvarBanner = async (publicarAgora: boolean) => {
     const valido = await validar();
     if (!valido) return;
-
     setCarregando(true);
 
     try {
       let downloadURL = imagemAtualUrl;
-
       if (imagemFile) {
-        const nomeArquivo = `${Date.now()}_${imagemFile.name}`;
-        const storageRef = ref(storage, `banners/${nomeArquivo}`);
-        const snapshot = await uploadBytes(storageRef, imagemFile);
-        downloadURL = await getDownloadURL(snapshot.ref);
+        const nomeSeguro = imagemFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const storageRef = ref(storage, `banners/${Date.now()}_${nomeSeguro}`);
+        downloadURL = await getDownloadURL((await uploadBytes(storageRef, imagemFile)).ref);
       }
 
-      const barcoSelecionado = barcos.find((b) => b.id === form.barcoIdAlvo);
-      const publicoAlvo = form.publicoAlvo;
-      const momentoExibicao = form.momentoExibicao;
-      const tempoDepoisSegundos =
-        momentoExibicao === "apos_tempo"
-          ? Math.max(3, Math.min(300, Number(form.tempoDepoisSegundos) || 15))
-          : 0;
+      const selecionados = barcos.filter((barco) => form.barcosIdsAlvo.includes(barco.id));
+      const primeiro = selecionados[0];
+      const publicado = publicarAgora;
+      const ativo = publicarAgora ? form.ativo : false;
+      const vigenciaInicioIso = isoOuVazio(form.vigenciaInicio);
+      const vigenciaFimIso = form.semDataFinal ? "" : isoOuVazio(form.vigenciaFim);
 
-      const dadosCampanha = {
+      const dados = {
+        schemaVersao: 2,
         titulo: form.titulo.trim(),
         subtitulo: form.subtitulo.trim(),
         mensagem: form.mensagem.trim(),
         botaoTexto: form.botaoTexto.trim() || "Ver agora",
         imageUrl: downloadURL,
         imagemUrl: downloadURL,
-        linkDestino: form.linkDestino.trim(),
         tipo: form.tipo,
-
-        // Novo modelo de público-alvo.
-        publicoAlvo,
-        cidadeAlvo: publicoAlvo === "cidade" ? form.cidadeAlvo.trim() : "",
-        cidadeAlvoNormalizada:
-          publicoAlvo === "cidade" ? form.cidadeAlvo.trim().toLowerCase() : "",
-        barcoIdAlvo: publicoAlvo === "comprou_barco" ? form.barcoIdAlvo.trim() : "",
-        barcoNomeAlvo:
-          publicoAlvo === "comprou_barco"
-            ? String(barcoSelecionado?.nome || barcoSelecionado?.id || form.barcoIdAlvo)
-            : "",
-
-        // Compatibilidade com versões antigas da tela/app.
-        publico:
-          publicoAlvo === "todos"
-            ? "todos"
-            : publicoAlvo === "cidade"
-              ? "cidade"
-              : "comprou_barco",
-        barcoId: publicoAlvo === "comprou_barco" ? form.barcoIdAlvo.trim() : "",
-        barcoNome:
-          publicoAlvo === "comprou_barco"
-            ? String(barcoSelecionado?.nome || barcoSelecionado?.id || form.barcoIdAlvo)
-            : "",
-
-        // Regras modernas de exibição mobile.
-        momentoExibicao,
-        mostrarAgora: momentoExibicao === "agora",
-        mostrarAoAbrirApp: momentoExibicao === "ao_abrir_app",
-        mostrarDepoisDeTempo: momentoExibicao === "apos_tempo",
-        tempoDepoisSegundos,
-        mostrarUmaVez: form.mostrarUmaVez,
-
-        ativo: form.ativo,
+        publicoAlvo: form.publicoAlvo,
+        cidadeAlvo: form.publicoAlvo === "cidade" ? form.cidadeAlvo.trim() : "",
+        cidadeAlvoNormalizada: form.publicoAlvo === "cidade" ? form.cidadeAlvo.trim().toLowerCase() : "",
+        barcosIdsAlvo: form.barcosIdsAlvo,
+        barcosNomesAlvo: selecionados.map((barco) => String(barco.nome || barco.id)),
+        barcoIdAlvo: primeiro?.id || "",
+        barcoNomeAlvo: String(primeiro?.nome || primeiro?.id || ""),
+        barcoId: primeiro?.id || "",
+        barcoNome: String(primeiro?.nome || primeiro?.id || ""),
+        gatilhoExibicao: form.gatilhoExibicao,
+        momentoExibicao:
+          form.gatilhoExibicao === "imediato"
+            ? "agora"
+            : form.gatilhoExibicao === "ao_abrir_app"
+              ? "ao_abrir_app"
+              : "apos_tempo",
+        atrasoSegundos: form.atrasoSegundos,
+        tempoDepoisSegundos: form.atrasoSegundos,
+        abrirAutomaticamente: form.atrasoSegundos > 0 || form.gatilhoExibicao !== "selecao_embarcacao",
+        frequencia: form.frequencia,
+        mostrarUmaVez: form.frequencia === "sessao",
+        intervaloMinimoMinutos: form.intervaloMinimoMinutos,
+        vigenciaInicioIso,
+        vigenciaFimIso,
+        semDataFinal: form.semDataFinal,
+        diasSemana: form.diasSemana,
+        restringirHorario: form.restringirHorario,
+        horarioInicio: form.restringirHorario ? form.horarioInicio : "",
+        horarioFim: form.restringirHorario ? form.horarioFim : "",
+        fusoHorario: FUSO_HORARIO,
+        duracaoAbertoSegundos: form.duracaoAbertoSegundos,
+        acaoTipo: form.acaoTipo,
+        acaoDestino: form.acaoDestino.trim(),
+        linkDestino: form.acaoTipo === "link" ? form.acaoDestino.trim() : "",
+        prioridade: Math.max(0, Math.min(100, Number(form.prioridade) || 0)),
+        ativo,
+        publicado,
         destaque: form.destaque,
         exibirComoPopup: form.exibirComoPopup,
+        atualizadoEm: serverTimestamp(),
+        atualizadoPor: auth.currentUser?.email || "",
         exibicaoMobile: {
-          formato: "banner_vertical",
-          larguraRecomendada: 1080,
-          alturaRecomendada: 1920,
+          formato: "modal_responsivo",
           popup: form.exibirComoPopup,
           destaque: form.destaque,
-          momentoExibicao,
-          tempoDepoisSegundos,
-          mostrarUmaVez: form.mostrarUmaVez,
+          gatilhoExibicao: form.gatilhoExibicao,
+          atrasoSegundos: form.atrasoSegundos,
+          duracaoAbertoSegundos: form.duracaoAbertoSegundos,
+          frequencia: form.frequencia,
         },
-        criadoPor: auth.currentUser.email || "",
-        atualizadoEm: serverTimestamp(),
       };
 
       if (editandoId) {
-        await updateDoc(doc(db, "banners_promocionais", editandoId), dadosCampanha);
+        await updateDoc(doc(db, "banners_promocionais", editandoId), dados);
       } else {
         await addDoc(collection(db, "banners_promocionais"), {
-          ...dadosCampanha,
+          ...dados,
           createdAt: serverTimestamp(),
+          criadoPor: auth.currentUser.email || "",
         });
       }
 
-      setForm(limparForm());
+      setForm({ ...FORM_INICIAL, vigenciaInicio: valorDatetimeLocal(new Date()), vigenciaFim: valorDatetimeLocal(adicionarDias(new Date(), 7)) });
       setImagemFile(null);
       setPreviewUrl(null);
       setImagemAtualUrl("");
       setEditandoId(null);
 
       await modal.sucesso(
-        editandoId ? "Campanha atualizada" : "Campanha publicada",
-        PUBLICOS[publicoAlvo].label +
-          " receberão a campanha conforme a regra de exibição.",
+        publicarAgora ? "Campanha publicada" : "Rascunho salvo",
+        publicarAgora
+          ? "A campanha seguirá o direcionamento, a vigência e a frequência configurados."
+          : "A campanha foi salva sem aparecer no aplicativo.",
       );
     } catch (error: any) {
-      await modal.erro(
-        "Falha ao publicar",
-        error?.message || "Não foi possível publicar a campanha.",
-      );
+      await modal.erro("Falha ao salvar", error?.message || "Não foi possível salvar a campanha.");
     } finally {
       setCarregando(false);
     }
@@ -466,31 +595,54 @@ export default function GestaoBanners() {
     setImagemFile(null);
     setImagemAtualUrl(banner.imageUrl || banner.imagemUrl || "");
     setPreviewUrl(banner.imageUrl || banner.imagemUrl || null);
-
     setForm({
       titulo: banner.titulo || "",
       subtitulo: banner.subtitulo || "",
       mensagem: banner.mensagem || "",
       botaoTexto: banner.botaoTexto || "Ver agora",
-      linkDestino: banner.linkDestino || "",
-      tipo: banner.tipo || "promocao",
-      publicoAlvo: banner.publicoAlvo || banner.publico || "todos",
+      acaoTipo: banner.acaoTipo || (banner.linkDestino ? "link" : "nenhuma"),
+      acaoDestino: banner.acaoDestino || banner.linkDestino || "",
+      tipo: Object.prototype.hasOwnProperty.call(TIPOS, banner.tipo)
+        ? banner.tipo
+        : "informativo",
+      publicoAlvo:
+        banner.publicoAlvo === "cidade" || banner.publicoAlvo === "comprou_barco" || banner.publicoAlvo === "embarcacoes"
+          ? banner.publicoAlvo
+          : "todos",
       cidadeAlvo: banner.cidadeAlvo || "",
-      barcoIdAlvo: banner.barcoIdAlvo || banner.barcoId || "",
-      momentoExibicao: banner.momentoExibicao || "ao_abrir_app",
-      tempoDepoisSegundos: String(banner.tempoDepoisSegundos || "15"),
-      mostrarUmaVez: banner.mostrarUmaVez !== false,
+      barcosIdsAlvo: barcosDoBanner(banner),
+      gatilhoExibicao:
+        banner.gatilhoExibicao ||
+        (banner.momentoExibicao === "agora"
+          ? "imediato"
+          : banner.momentoExibicao === "ao_abrir_app"
+            ? "ao_abrir_app"
+            : "selecao_embarcacao"),
+      atrasoSegundos: [0, 3, 5, 10, 20, 30, 40].includes(Number(banner.atrasoSegundos ?? banner.tempoDepoisSegundos))
+        ? Number(banner.atrasoSegundos ?? banner.tempoDepoisSegundos)
+        : 20,
+      frequencia: banner.frequencia || (banner.mostrarUmaVez !== false ? "sessao" : "dia"),
+      intervaloMinimoMinutos: Number(banner.intervaloMinimoMinutos || 60),
+      vigenciaInicio: datetimeLocalDeQualquer(banner.vigenciaInicioIso || banner.vigenciaInicio) || valorDatetimeLocal(new Date()),
+      vigenciaFim: datetimeLocalDeQualquer(banner.vigenciaFimIso || banner.vigenciaFim) || valorDatetimeLocal(adicionarDias(new Date(), 7)),
+      semDataFinal: banner.semDataFinal === true || !banner.vigenciaFimIso,
+      diasSemana: Array.isArray(banner.diasSemana) ? banner.diasSemana.map(Number) : [],
+      restringirHorario: banner.restringirHorario === true,
+      horarioInicio: banner.horarioInicio || "08:00",
+      horarioFim: banner.horarioFim || "22:00",
+      duracaoAbertoSegundos: Number(banner.duracaoAbertoSegundos || 0),
+      prioridade: Number(banner.prioridade ?? 50),
       destaque: banner.destaque !== false,
       exibirComoPopup: banner.exibirComoPopup !== false,
       ativo: banner.ativo !== false,
+      publicado: banner.publicado !== false,
     });
-
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const cancelarEdicao = () => {
     setEditandoId(null);
-    setForm(limparForm());
+    setForm({ ...FORM_INICIAL, vigenciaInicio: valorDatetimeLocal(new Date()), vigenciaFim: valorDatetimeLocal(adicionarDias(new Date(), 7)) });
     setImagemFile(null);
     setImagemAtualUrl("");
     setPreviewUrl(null);
@@ -500,536 +652,292 @@ export default function GestaoBanners() {
     try {
       await updateDoc(doc(db, "banners_promocionais", banner.id), {
         ativo: true,
-        momentoExibicao: "agora",
-        mostrarAgora: true,
-        mostrarAoAbrirApp: false,
-        mostrarDepoisDeTempo: false,
-        exibirComoPopup: true,
-        disparoAgoraId: `${Date.now()}`,
-        disparoAgoraAt: serverTimestamp(),
+        publicado: true,
+        disparoAgoraId: String(Date.now()),
+        forcarExibicaoAteIso: new Date(Date.now() + 10 * 60_000).toISOString(),
         atualizadoEm: serverTimestamp(),
       });
-
-      await modal.sucesso(
-        "Campanha enviada agora",
-        "A campanha foi ativada e disparada em tempo real para os apps abertos.",
-      );
+      await modal.sucesso("Disparo liberado", "A campanha poderá aparecer imediatamente durante os próximos 10 minutos.");
     } catch (error: any) {
-      await modal.erro(
-        "Erro ao enviar agora",
-        error?.message || "Não foi possível disparar a campanha agora.",
-      );
+      await modal.erro("Erro ao disparar", error?.message || "Não foi possível disparar a campanha.");
     }
   };
 
   const alternarStatus = async (banner: any) => {
-    try {
-      await updateDoc(doc(db, "banners_promocionais", banner.id), {
-        ativo: banner.ativo === false,
-        atualizadoEm: serverTimestamp(),
-      });
-    } catch (error: any) {
-      await modal.erro(
-        "Erro ao atualizar",
-        error?.message || "Não foi possível alterar o status.",
-      );
-    }
+    await updateDoc(doc(db, "banners_promocionais", banner.id), {
+      ativo: banner.ativo === false,
+      publicado: true,
+      atualizadoEm: serverTimestamp(),
+    });
   };
 
   const deletarBanner = async (banner: any) => {
     const confirmou = await modal.confirmar({
       tipo: "warning",
       titulo: "Remover campanha?",
-      mensagem: `Remover "${banner.titulo || "esta campanha"}" da rede?`,
+      mensagem: `Remover “${banner.titulo || "esta campanha"}”?`,
       confirmarTexto: "Remover",
       cancelarTexto: "Cancelar",
     });
-
-    if (!confirmou) return;
-
-    try {
-      await deleteDoc(doc(db, "banners_promocionais", banner.id));
-    } catch (error: any) {
-      await modal.erro(
-        "Erro ao remover",
-        error?.message || "Não foi possível remover a campanha.",
-      );
-    }
+    if (confirmou) await deleteDoc(doc(db, "banners_promocionais", banner.id));
   };
 
   const tipoInfo = TIPOS[form.tipo];
-  const publicoInfo = PUBLICOS[form.publicoAlvo];
-  const momentoInfo = MOMENTOS[form.momentoExibicao];
 
   return (
-    <div className="min-h-screen bg-[#0d0c2c] p-5 text-white lg:p-6">
+    <div className="cmb-page min-h-screen bg-[#0d0c2c] p-3 text-white sm:p-5 lg:p-6">
       <header className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.25em] text-sky-300">
-            Central de campanhas
-          </p>
-          <h1 className="mt-2 text-2xl font-black tracking-tight text-white">
-            Campanhas Mobile
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-sky-100/55">
-            Publique promoções e avisos por cidade, para todos ou para quem comprou
-            passagem de um barco.
+          <p className="text-[10px] font-black uppercase tracking-[0.24em] text-sky-300 sm:text-xs">Central de campanhas</p>
+          <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Banners por embarcação</h1>
+          <p className="mt-1 max-w-3xl text-sm text-sky-100/60">
+            Organize promoções, escalas e avisos com direcionamento, vigência, frequência e visualização adaptada ao celular.
           </p>
         </div>
-
         <input
           value={busca}
-          onChange={(e) => setBusca(e.target.value)}
-          placeholder="Buscar campanha, cidade ou barco..."
-          className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none placeholder:text-sky-100/35 focus:border-sky-300/60 xl:w-[360px]"
+          onChange={(evento) => setBusca(evento.target.value)}
+          placeholder="Buscar campanha ou embarcação..."
+          className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-base font-semibold text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/60 xl:w-[380px]"
         />
       </header>
 
-      <div className="mb-5 grid gap-3 md:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <MiniResumo label="Campanhas" valor={resumo.total} />
-        <MiniResumo label="Ativas" valor={resumo.ativos} />
-        <MiniResumo label="Por cidade" valor={resumo.cidades} />
-        <MiniResumo label="Comprou barco" valor={resumo.comprouBarco} />
+        <MiniResumo label="Ativas" valor={resumo.ativo} />
+        <MiniResumo label="Agendadas" valor={resumo.agendado} />
+        <MiniResumo label="Pausadas" valor={resumo.pausado} />
+        <MiniResumo label="Expiradas" valor={resumo.expirado} />
       </div>
 
-      <main className="grid gap-5 xl:grid-cols-[440px_1fr]">
-        <section className="rounded-[28px] border border-[#1d426b] bg-[#0f2240] p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-3">
+      <main className="grid min-w-0 gap-5 2xl:grid-cols-[500px_minmax(0,1fr)]">
+        <section className="min-w-0 rounded-[26px] border border-[#1d426b] bg-[#0f2240] p-3 shadow-sm sm:p-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-black text-white">
-                {editandoId ? "Editar campanha" : "Nova campanha"}
-              </h2>
-              <p className="mt-1 text-xs text-sky-100/55">
-                Defina público, momento e visual mobile.
-              </p>
+              <h2 className="text-lg font-black">{editandoId ? "Editar campanha" : "Nova campanha"}</h2>
+              <p className="mt-1 text-xs text-sky-100/55">Preencha por etapas. Os campos foram organizados para uso no celular.</p>
             </div>
-
-            <div className="flex items-center gap-2">
-              {editandoId && (
-                <button
-                  type="button"
-                  onClick={cancelarEdicao}
-                  className="rounded-full border border-[#7ba6d4]/25 bg-[#17345e] px-3 py-1 text-[10px] font-black uppercase text-sky-100 hover:bg-[#2b5b91]"
-                >
-                  Cancelar edição
-                </button>
-              )}
-
-              <span
-                className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${tipoInfo.classe}`}
-              >
-                {tipoInfo.icone} {tipoInfo.label}
-              </span>
-            </div>
+            {editandoId && (
+              <button onClick={cancelarEdicao} className="rounded-xl border border-white/15 px-3 py-2 text-[10px] font-black uppercase">Cancelar</button>
+            )}
           </div>
 
-          <div className="mb-5 rounded-[32px] border border-[#7ba6d4]/25 bg-[#071a31] p-4">
-            <div className="mx-auto w-full max-w-[230px] overflow-hidden rounded-[34px] border-[7px] border-[#020617] bg-[#020617] shadow-2xl">
-              <div className="relative aspect-[9/18] overflow-hidden rounded-[27px] bg-gradient-to-br from-[#0f2240] to-[#143760]">
-                <div className="absolute left-1/2 top-0 z-20 h-5 w-24 -translate-x-1/2 rounded-b-2xl bg-[#020617]" />
-
+          <div className="mb-4 rounded-[28px] border border-[#7ba6d4]/25 bg-[#071a31] p-3">
+            <div className="mx-auto w-full max-w-[270px] overflow-hidden rounded-[30px] border-[6px] border-[#020617] bg-[#020617] shadow-2xl">
+              <div className="relative aspect-[9/16] overflow-hidden rounded-[23px] bg-gradient-to-br from-[#123760] to-[#071a31]">
                 {previewUrl ? (
-                  <img
-                    src={previewUrl}
-                    alt="Preview"
-                    className="h-full w-full object-cover"
-                  />
+                  <img src={previewUrl} alt="Prévia" className="h-full w-full object-cover" />
                 ) : (
-                  <div className="flex h-full flex-col items-center justify-center p-6 text-center">
-                    <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] text-2xl">
-                      📱
-                    </div>
-                    <p className="text-[10px] font-black uppercase tracking-wide text-sky-100/45">
-                      Preview mobile 1080x1920
-                    </p>
-                  </div>
+                  <div className="flex h-full items-center justify-center p-8 text-center text-sm font-bold text-sky-100/45">A imagem é opcional para avisos e escalas.</div>
                 )}
-
-                <div className="absolute inset-x-3 bottom-3 rounded-3xl border border-white/15 bg-[#020617]/72 p-4 shadow-2xl backdrop-blur-md">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span
-                      className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase ${tipoInfo.classe}`}
-                    >
-                      {tipoInfo.tag}
-                    </span>
-
-                    <span className="rounded-full border border-sky-300/25 bg-sky-400/10 px-2 py-0.5 text-[8px] font-black uppercase text-sky-100">
-                      {publicoInfo.chip}
-                    </span>
-
-                    <span className="rounded-full border border-white/15 bg-white/10 px-2 py-0.5 text-[8px] font-black uppercase text-white">
-                      {momentoInfo.chip}
-                    </span>
+                <div className="absolute inset-x-3 bottom-3 rounded-3xl border border-white/15 bg-[#020617]/85 p-4 backdrop-blur-md">
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    <span className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase ${tipoInfo.classe}`}>{tipoInfo.icone} {tipoInfo.tag}</span>
+                    <span className="rounded-full border border-sky-300/25 bg-sky-400/10 px-2 py-1 text-[8px] font-black uppercase text-sky-100">{form.atrasoSegundos ? `${form.atrasoSegundos}s` : "Manual"}</span>
                   </div>
-
-                  <h3 className="line-clamp-2 text-sm font-black leading-4 text-white">
-                    {form.titulo || "Título da campanha"}
-                  </h3>
-
-                  <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-sky-100/65">
-                    {form.mensagem || "Mensagem resumida para o passageiro no app."}
-                  </p>
-
-                  <button className="mt-3 w-full rounded-2xl bg-white px-3 py-2 text-[9px] font-black uppercase text-[#0f2240]">
-                    {form.botaoTexto || "Ver agora"}
-                  </button>
+                  <h3 className="line-clamp-2 text-base font-black">{form.titulo || "Título da campanha"}</h3>
+                  <p className="mt-1 line-clamp-3 text-xs leading-5 text-sky-100/70">{form.mensagem || "Mensagem que será exibida ao passageiro."}</p>
+                  {form.acaoTipo !== "nenhuma" && <div className="mt-3 rounded-2xl bg-white px-3 py-2 text-center text-[10px] font-black uppercase text-[#0f2240]">{form.botaoTexto || "Ver agora"}</div>}
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="grid gap-3">
-            <label className="rounded-2xl border border-[#7ba6d4]/25 bg-[#143760] p-3">
-              <p className="mb-2 text-[10px] font-black uppercase tracking-wide text-sky-100/55">
-                Arte vertical
-              </p>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleFileChange}
-                className="block w-full text-[11px] text-sky-100/60 file:mr-3 file:rounded-xl file:border-0 file:bg-sky-400/15 file:px-4 file:py-2 file:text-[10px] file:font-black file:uppercase file:text-sky-100 hover:file:bg-sky-400/25"
-              />
-            </label>
-
-            <Campo
-              label="Título"
-              value={form.titulo}
-              onChange={(v) => atualizarForm("titulo", v)}
-              placeholder="Ex: Promoção para Santarém"
-            />
-
-            <Campo
-              label="Subtítulo"
-              value={form.subtitulo}
-              onChange={(v) => atualizarForm("subtitulo", v)}
-              placeholder="Ex: Oferta especial de hoje"
-            />
-
-            <label>
-              <p className="mb-2 text-[10px] font-black uppercase tracking-wide text-sky-100/55">
-                Mensagem no app
-              </p>
-              <textarea
-                rows={3}
-                value={form.mensagem}
-                onChange={(e) => atualizarForm("mensagem", e.target.value)}
-                placeholder="Escreva o aviso ou promoção que o passageiro verá..."
-                className="w-full resize-none rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/60"
-              />
-            </label>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <Campo
-                label="Texto do botão"
-                value={form.botaoTexto}
-                onChange={(v) => atualizarForm("botaoTexto", v)}
-                placeholder="Comprar agora"
-              />
-
-              <Campo
-                label="Link ou rota"
-                value={form.linkDestino}
-                onChange={(v) => atualizarForm("linkDestino", v)}
-                placeholder="https://..."
-              />
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <Select
-                label="Tipo"
-                value={form.tipo}
-                onChange={(v) => atualizarForm("tipo", v as TipoCampanha)}
-                options={[
-                  ["promocao", "Promoção"],
-                  ["aviso", "Aviso"],
-                  ["informativo", "Informativo"],
-                ]}
-              />
-
-              <Select
-                label="Público-alvo"
-                value={form.publicoAlvo}
-                onChange={(v) => atualizarForm("publicoAlvo", v as PublicoAlvo)}
-                options={[
-                  ["todos", "Todos os usuários"],
-                  ["cidade", "Usuários de uma cidade"],
-                  ["comprou_barco", "Quem comprou passagem de um barco"],
-                ]}
-              />
-            </div>
-
-            <div className="rounded-2xl border border-[#7ba6d4]/20 bg-[#143760] p-3">
-              <div className="flex items-start gap-3">
-                <span className="text-xl">{publicoInfo.icone}</span>
-                <div>
-                  <p className="text-sm font-black text-white">{publicoInfo.label}</p>
-                  <p className="mt-1 text-xs text-sky-100/55">{publicoInfo.resumo}</p>
-                </div>
-              </div>
-            </div>
-
-            {form.publicoAlvo === "cidade" && (
-              <label>
-                <p className="mb-2 text-[10px] font-black uppercase tracking-wide text-sky-100/55">
-                  Cidade do usuário
-                </p>
-                <input
-                  value={form.cidadeAlvo}
-                  onChange={(e) => atualizarForm("cidadeAlvo", e.target.value)}
-                  list="cidades-campanha-mobile"
-                  placeholder="Ex: Juruti - PA"
-                  className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/60"
-                />
-                <datalist id="cidades-campanha-mobile">
-                  {cidades.map((cidade) => (
-                    <option key={cidade} value={cidade} />
-                  ))}
-                </datalist>
+          <details open className="cmb-section">
+            <summary>1. Conteúdo do banner</summary>
+            <div className="grid gap-3 pt-4">
+              <label className="cmb-field">
+                <span>Imagem da campanha</span>
+                <input type="file" accept="image/*" onChange={handleFileChange} className="block w-full text-xs file:mr-3 file:rounded-xl file:border-0 file:bg-sky-400/15 file:px-3 file:py-2 file:font-black file:text-sky-100" />
               </label>
-            )}
+              <Select label="Tipo" value={form.tipo} onChange={(valor) => atualizarForm("tipo", valor as TipoCampanha)} options={Object.entries(TIPOS).map(([id, info]) => [id, info.label])} />
+              <Campo label="Título" value={form.titulo} onChange={(valor) => atualizarForm("titulo", valor)} placeholder="Ex.: Escala especial em Itacoatiara" />
+              <Campo label="Subtítulo" value={form.subtitulo} onChange={(valor) => atualizarForm("subtitulo", valor)} placeholder="Informação complementar" />
+              <label className="cmb-field">
+                <span>Mensagem</span>
+                <textarea rows={4} value={form.mensagem} onChange={(evento) => atualizarForm("mensagem", evento.target.value)} placeholder="Escreva a informação para o passageiro..." />
+              </label>
+            </div>
+          </details>
 
-            {form.publicoAlvo === "comprou_barco" && (
-              <Select
-                label="Passageiros que compraram passagem do barco"
-                value={form.barcoIdAlvo}
-                onChange={(v) => atualizarForm("barcoIdAlvo", v)}
-                options={[
-                  ["", "Selecione o barco"],
-                  ...barcos.map(
-                    (barco) => [barco.id, barco.nome || barco.id] as [string, string],
-                  ),
-                ]}
-              />
-            )}
+          <details open className="cmb-section">
+            <summary>2. Direcionamento</summary>
+            <div className="grid gap-3 pt-4">
+              <Select label="Público" value={form.publicoAlvo} onChange={(valor) => atualizarForm("publicoAlvo", valor as PublicoAlvo)} options={[
+                ["embarcacoes", "Ao selecionar uma ou mais embarcações"],
+                ["todos", "Todos os usuários"],
+                ["cidade", "Usuários de uma cidade"],
+                ["comprou_barco", "Quem comprou passagem da embarcação"],
+              ]} />
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <Select
-                label="Quando mostrar"
-                value={form.momentoExibicao}
-                onChange={(v) => atualizarForm("momentoExibicao", v as MomentoExibicao)}
-                options={[
-                  ["agora", "Mostrar agora"],
-                  ["ao_abrir_app", "Ao abrir o app"],
-                  ["apos_tempo", "Depois de alguns segundos"],
-                ]}
-              />
+              {form.publicoAlvo === "cidade" && (
+                <Select label="Cidade" value={form.cidadeAlvo} onChange={(valor) => atualizarForm("cidadeAlvo", valor)} options={[["", "Selecione..."], ...cidades.map((cidade) => [cidade, cidade])]} />
+              )}
 
-              {form.momentoExibicao === "apos_tempo" ? (
-                <Campo
-                  label="Tempo em segundos"
-                  value={form.tempoDepoisSegundos}
-                  onChange={(v) => atualizarForm("tempoDepoisSegundos", v)}
-                  placeholder="15"
-                />
-              ) : (
-                <div className="rounded-2xl border border-[#7ba6d4]/20 bg-[#143760] p-3">
-                  <p className="text-[10px] font-black uppercase tracking-wide text-sky-100/55">
-                    Regra
-                  </p>
-                  <p className="mt-1 text-sm font-black text-white">
-                    {momentoInfo.label}
-                  </p>
+              {(form.publicoAlvo === "embarcacoes" || form.publicoAlvo === "comprou_barco") && (
+                <div className="cmb-field">
+                  <span>Embarcações {form.publicoAlvo === "embarcacoes" ? "(nenhuma marcada = todas)" : ""}</span>
+                  <div className="max-h-64 space-y-2 overflow-y-auto rounded-2xl border border-white/10 bg-[#071a31] p-2">
+                    {barcos.map((barco) => (
+                      <label key={barco.id} className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 active:bg-white/10">
+                        <input type="checkbox" checked={form.barcosIdsAlvo.includes(barco.id)} onChange={() => alternarBarco(barco.id)} className="h-5 w-5" />
+                        <span className="min-w-0 truncate text-sm font-bold">{barco.nome || barco.id}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               )}
-            </div>
 
-            <div className="rounded-2xl border border-[#7ba6d4]/20 bg-[#143760] p-3">
-              <p className="text-sm font-black text-white">{momentoInfo.label}</p>
-              <p className="mt-1 text-xs text-sky-100/55">{momentoInfo.resumo}</p>
-            </div>
+              <Select label="Momento de exibição" value={form.gatilhoExibicao} onChange={(valor) => atualizarForm("gatilhoExibicao", valor as GatilhoExibicao)} options={[
+                ["selecao_embarcacao", "Após selecionar a embarcação"],
+                ["ao_abrir_app", "Ao abrir o aplicativo"],
+                ["imediato", "Disparo imediato"],
+              ]} />
 
-            <div className="grid gap-2 md:grid-cols-4">
-              <Toggle
-                label="Ativo"
-                checked={form.ativo}
-                onChange={(v) => atualizarForm("ativo", v)}
-              />
-              <Toggle
-                label="Popup"
-                checked={form.exibirComoPopup}
-                onChange={(v) => atualizarForm("exibirComoPopup", v)}
-              />
-              <Toggle
-                label="Destaque"
-                checked={form.destaque}
-                onChange={(v) => atualizarForm("destaque", v)}
-              />
-              <Toggle
-                label="Uma vez"
-                checked={form.mostrarUmaVez}
-                onChange={(v) => atualizarForm("mostrarUmaVez", v)}
-              />
+              {form.gatilhoExibicao === "selecao_embarcacao" && (
+                <Select label="Atraso para aparecer" value={String(form.atrasoSegundos)} onChange={(valor) => atualizarForm("atrasoSegundos", Number(valor))} options={[
+                  ["0", "Não abrir automaticamente"],
+                  ["3", "3 segundos"],
+                  ["5", "5 segundos"],
+                  ["10", "10 segundos"],
+                  ["20", "20 segundos"],
+                  ["30", "30 segundos"],
+                  ["40", "40 segundos"],
+                ]} />
+              )}
             </div>
+          </details>
 
-            <button
-              onClick={salvarBanner}
-              disabled={carregando}
-              className="rounded-2xl border border-sky-300/30 bg-[#2b5b91] px-5 py-4 text-xs font-black uppercase tracking-[0.16em] text-white shadow-lg shadow-black/20 transition hover:bg-[#346aa3] disabled:opacity-60"
-            >
-              {carregando
-                ? "Salvando..."
-                : editandoId
-                  ? "Salvar alterações"
-                  : "Publicar campanha"}
-            </button>
+          <details open className="cmb-section">
+            <summary>3. Vigência e horários</summary>
+            <div className="grid gap-3 pt-4">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+                <AtalhoPeriodo label="1 dia" onClick={() => aplicarPeriodo("dia")} />
+                <AtalhoPeriodo label="1 semana" onClick={() => aplicarPeriodo("semana")} />
+                <AtalhoPeriodo label="15 dias" onClick={() => aplicarPeriodo("quinze")} />
+                <AtalhoPeriodo label="1 mês" onClick={() => aplicarPeriodo("mes")} />
+                <AtalhoPeriodo label="Personalizado" onClick={() => aplicarPeriodo("personalizado")} />
+              </div>
+              <Campo label="Início" type="datetime-local" value={form.vigenciaInicio} onChange={(valor) => atualizarForm("vigenciaInicio", valor)} />
+              <Toggle label="Sem data final" checked={form.semDataFinal} onChange={(valor) => atualizarForm("semDataFinal", valor)} />
+              {!form.semDataFinal && <Campo label="Fim" type="datetime-local" value={form.vigenciaFim} onChange={(valor) => atualizarForm("vigenciaFim", valor)} />}
+              <div className="cmb-field">
+                <span>Dias da semana (nenhum marcado = todos)</span>
+                <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+                  {DIAS.map(([dia, label]) => (
+                    <button key={dia} type="button" onClick={() => atualizarForm("diasSemana", form.diasSemana.includes(dia) ? form.diasSemana.filter((item) => item !== dia) : [...form.diasSemana, dia])} className={`min-h-11 rounded-xl border text-xs font-black ${form.diasSemana.includes(dia) ? "border-sky-300 bg-sky-400/20 text-white" : "border-white/10 bg-white/[0.03] text-sky-100/60"}`}>{label}</button>
+                  ))}
+                </div>
+              </div>
+              <Toggle label="Restringir por faixa de horário" checked={form.restringirHorario} onChange={(valor) => atualizarForm("restringirHorario", valor)} />
+              {form.restringirHorario && (
+                <div className="grid grid-cols-2 gap-3">
+                  <Campo label="Das" type="time" value={form.horarioInicio} onChange={(valor) => atualizarForm("horarioInicio", valor)} />
+                  <Campo label="Até" type="time" value={form.horarioFim} onChange={(valor) => atualizarForm("horarioFim", valor)} />
+                </div>
+              )}
+              <p className="rounded-xl border border-sky-300/15 bg-sky-400/5 p-3 text-xs text-sky-100/60">Fuso operacional: <strong>{FUSO_HORARIO}</strong>.</p>
+            </div>
+          </details>
+
+          <details className="cmb-section">
+            <summary>4. Frequência, ação e prioridade</summary>
+            <div className="grid gap-3 pt-4">
+              <Select label="Frequência" value={form.frequencia} onChange={(valor) => atualizarForm("frequencia", valor as FrequenciaExibicao)} options={[
+                ["sessao", "Uma vez por sessão"],
+                ["dia", "Uma vez por dia"],
+                ["selecao", "Uma vez por seleção"],
+                ["intervalo", "Sempre, com intervalo mínimo"],
+              ]} />
+              {form.frequencia === "intervalo" && <Campo label="Intervalo mínimo em minutos" type="number" value={String(form.intervaloMinimoMinutos)} onChange={(valor) => atualizarForm("intervaloMinimoMinutos", Number(valor))} />}
+              <Select label="Tempo aberto na tela" value={String(form.duracaoAbertoSegundos)} onChange={(valor) => atualizarForm("duracaoAbertoSegundos", Number(valor))} options={[
+                ["0", "Até o passageiro fechar"],
+                ["5", "Fechar após 5 segundos"],
+                ["10", "Fechar após 10 segundos"],
+                ["15", "Fechar após 15 segundos"],
+              ]} />
+              <Select label="Ação do botão" value={form.acaoTipo} onChange={(valor) => atualizarForm("acaoTipo", valor as AcaoTipo)} options={[
+                ["nenhuma", "Sem botão de ação"],
+                ["detalhes", "Abrir detalhes da embarcação"],
+                ["itinerario", "Abrir itinerário"],
+                ["vendas", "Abrir venda de passagem"],
+                ["whatsapp", "Abrir WhatsApp"],
+                ["link", "Abrir link externo"],
+              ]} />
+              {form.acaoTipo !== "nenhuma" && <Campo label="Texto do botão" value={form.botaoTexto} onChange={(valor) => atualizarForm("botaoTexto", valor)} placeholder="Ver agora" />}
+              {(form.acaoTipo === "link" || form.acaoTipo === "whatsapp") && <Campo label={form.acaoTipo === "link" ? "Link completo" : "Número do WhatsApp"} value={form.acaoDestino} onChange={(valor) => atualizarForm("acaoDestino", valor)} placeholder={form.acaoTipo === "link" ? "https://..." : "5592991903278"} />}
+              <Campo label="Prioridade (0 a 100)" type="number" value={String(form.prioridade)} onChange={(valor) => atualizarForm("prioridade", Number(valor))} />
+              <div className="grid gap-2 sm:grid-cols-3">
+                <Toggle label="Ativa" checked={form.ativo} onChange={(valor) => atualizarForm("ativo", valor)} />
+                <Toggle label="Popup" checked={form.exibirComoPopup} onChange={(valor) => atualizarForm("exibirComoPopup", valor)} />
+                <Toggle label="Destaque" checked={form.destaque} onChange={(valor) => atualizarForm("destaque", valor)} />
+              </div>
+            </div>
+          </details>
+
+          <div className="sticky bottom-[78px] z-20 -mx-3 mt-4 grid grid-cols-2 gap-2 border-t border-white/10 bg-[#0f2240]/95 p-3 backdrop-blur sm:-mx-5 sm:p-5 md:bottom-0">
+            <button disabled={carregando} onClick={() => void salvarBanner(false)} className="min-h-12 rounded-2xl border border-white/15 bg-white/5 px-3 text-xs font-black uppercase disabled:opacity-50">Salvar rascunho</button>
+            <button disabled={carregando} onClick={() => void salvarBanner(true)} className="min-h-12 rounded-2xl border border-sky-300/30 bg-[#2b5b91] px-3 text-xs font-black uppercase shadow-lg disabled:opacity-50">{carregando ? "Salvando..." : editandoId ? "Atualizar" : "Publicar"}</button>
           </div>
         </section>
 
-        <section className="min-h-0 rounded-[28px] border border-[#1d426b] bg-[#0f2240] p-5 shadow-sm">
+        <section className="min-w-0 rounded-[26px] border border-[#1d426b] bg-[#0f2240] p-3 shadow-sm sm:p-5">
           <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 className="text-lg font-black text-white">Campanhas publicadas</h2>
-              <p className="mt-1 text-xs text-sky-100/55">
-                Controle o que aparece no app do passageiro.
-              </p>
+              <h2 className="text-lg font-black">Campanhas cadastradas</h2>
+              <p className="mt-1 text-xs text-sky-100/55">Status e métricas atualizados automaticamente.</p>
             </div>
-
-            <div className="flex gap-2">
-              {[
-                ["todos", "Todos"],
-                ["ativos", "Ativos"],
-                ["pausados", "Pausados"],
-              ].map(([id, label]) => (
-                <button
-                  key={id}
-                  onClick={() => setFiltro(id as any)}
-                  className={[
-                    "rounded-xl border px-3 py-2 text-[10px] font-black uppercase transition",
-                    filtro === id
-                      ? "border-sky-300/35 bg-sky-400/15 text-sky-100"
-                      : "border-[#7ba6d4]/20 bg-[#17345e] text-sky-100/60 hover:bg-[#2b5b91]",
-                  ].join(" ")}
-                >
-                  {label}
-                </button>
+            <div className="flex max-w-full gap-2 overflow-x-auto pb-1">
+              {(["todos", "ativo", "agendado", "pausado", "expirado", "rascunho"] as const).map((id) => (
+                <button key={id} onClick={() => setFiltro(id)} className={`shrink-0 rounded-xl border px-3 py-2 text-[10px] font-black uppercase ${filtro === id ? "border-sky-300/35 bg-sky-400/15 text-white" : "border-white/10 bg-white/[0.03] text-sky-100/60"}`}>{id === "todos" ? "Todos" : STATUS_INFO[id].label}</button>
               ))}
             </div>
           </div>
 
           {bannersFiltrados.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-[#7ba6d4]/25 bg-[#143760] p-10 text-center">
-              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-3xl border border-[#7ba6d4]/25 bg-[#17345e] text-3xl">
-                📣
-              </div>
-              <p className="text-sm font-black text-white">Nenhuma campanha encontrada</p>
-              <p className="mt-1 text-xs text-sky-100/55">
-                Publique uma promoção ou aviso para começar.
-              </p>
-            </div>
+            <div className="rounded-3xl border border-dashed border-white/15 p-10 text-center text-sm text-sky-100/55">Nenhuma campanha encontrada.</div>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {bannersFiltrados.map((banner) => {
-                const tipo = (banner.tipo || "promocao") as TipoCampanha;
-                const tipoInfo = TIPOS[tipo] || TIPOS.promocao;
-                const momento = (banner.momentoExibicao ||
-                  "ao_abrir_app") as MomentoExibicao;
-                const momentoBanner = MOMENTOS[momento] || MOMENTOS.ao_abrir_app;
+                const tipo = TIPOS[banner.tipo as TipoCampanha] || TIPOS.informativo;
+                const status = statusDaCampanha(banner, agora);
+                const statusInfo = STATUS_INFO[status];
+                const dadosMetricas = metricas[banner.id] || { impressoes: 0, cliques: 0, fechamentos: 0 };
+                const taxaClique = dadosMetricas.impressoes > 0 ? ((dadosMetricas.cliques / dadosMetricas.impressoes) * 100).toFixed(1) : "0,0";
 
                 return (
-                  <article
-                    key={banner.id}
-                    className="group overflow-hidden rounded-[28px] border border-[#7ba6d4]/20 bg-[#143760] shadow-sm transition hover:-translate-y-1 hover:border-sky-300/35"
-                  >
-                    <div className="relative aspect-[9/13] overflow-hidden bg-[#071a31]">
-                      {banner.imageUrl || banner.imagemUrl ? (
-                        <img
-                          src={banner.imageUrl || banner.imagemUrl}
-                          alt={banner.titulo}
-                          className={[
-                            "h-full w-full object-cover transition duration-500 group-hover:scale-105",
-                            banner.ativo === false ? "grayscale opacity-40" : "",
-                          ].join(" ")}
-                        />
-                      ) : (
-                        <div className="flex h-full items-center justify-center text-4xl opacity-30">
-                          📱
-                        </div>
-                      )}
-
-                      <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-[#020617]/20 to-transparent" />
-
-                      <div className="absolute left-3 top-3 flex flex-wrap gap-2">
-                        <span
-                          className={`rounded-full border px-2.5 py-1 text-[9px] font-black uppercase ${tipoInfo.classe}`}
-                        >
-                          {tipoInfo.icone} {tipoInfo.label}
-                        </span>
-
-                        <span className="rounded-full border border-white/15 bg-[#020617]/55 px-2.5 py-1 text-[9px] font-black uppercase text-white backdrop-blur">
-                          {textoPublico(banner)}
-                        </span>
-
-                        <span className="rounded-full border border-sky-300/25 bg-sky-400/10 px-2.5 py-1 text-[9px] font-black uppercase text-sky-100 backdrop-blur">
-                          {momentoBanner.chip}
-                        </span>
+                  <article key={banner.id} className="overflow-hidden rounded-[26px] border border-white/10 bg-[#143760]">
+                    <div className="relative aspect-[9/11] overflow-hidden bg-[#071a31]">
+                      {banner.imageUrl || banner.imagemUrl ? <img src={banner.imageUrl || banner.imagemUrl} alt={banner.titulo} className={`h-full w-full object-cover ${status === "pausado" || status === "expirado" ? "grayscale opacity-50" : ""}`} /> : <div className="flex h-full items-center justify-center text-5xl opacity-30">📣</div>}
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-transparent to-[#020617]/20" />
+                      <div className="absolute left-3 top-3 flex max-w-[80%] flex-wrap gap-2">
+                        <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${tipo.classe}`}>{tipo.icone} {tipo.tag}</span>
+                        <span className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${statusInfo.classe}`}>{statusInfo.label}</span>
                       </div>
-
-                      <div className="absolute right-3 top-3 flex flex-col gap-2 opacity-0 transition group-hover:opacity-100">
-                        <button
-                          onClick={() => mostrarAgora(banner)}
-                          className="rounded-xl border border-emerald-300/30 bg-emerald-500/20 px-3 py-2 text-[10px] font-black uppercase text-emerald-100 backdrop-blur transition hover:bg-emerald-500/30"
-                        >
-                          Mostrar agora
-                        </button>
-
-                        <button
-                          onClick={() => editarBanner(banner)}
-                          className="rounded-xl border border-sky-300/30 bg-sky-400/15 px-3 py-2 text-[10px] font-black uppercase text-sky-100 backdrop-blur transition hover:bg-sky-400/25"
-                        >
-                          Editar
-                        </button>
-
-                        <button
-                          onClick={() => alternarStatus(banner)}
-                          className="rounded-xl border border-white/15 bg-[#020617]/65 px-3 py-2 text-[10px] font-black uppercase text-white backdrop-blur transition hover:bg-[#2b5b91]"
-                        >
-                          {banner.ativo === false ? "Ativar" : "Pausar"}
-                        </button>
-
-                        <button
-                          onClick={() => deletarBanner(banner)}
-                          className="rounded-xl border border-red-300/30 bg-red-500/15 px-3 py-2 text-[10px] font-black uppercase text-red-100 backdrop-blur transition hover:bg-red-500/25"
-                        >
-                          Remover
-                        </button>
-                      </div>
-
                       <div className="absolute inset-x-0 bottom-0 p-4">
-                        <span
-                          className={[
-                            "mb-2 inline-flex rounded-full border px-2.5 py-1 text-[9px] font-black uppercase",
-                            banner.ativo === false
-                              ? "border-slate-300/20 bg-slate-400/10 text-slate-300"
-                              : "border-emerald-300/25 bg-emerald-400/10 text-emerald-100",
-                          ].join(" ")}
-                        >
-                          {banner.ativo === false ? "Pausado" : "Publicado"}
-                        </span>
-
-                        <h3 className="line-clamp-2 text-base font-black leading-5 text-white">
-                          {banner.titulo}
-                        </h3>
-
-                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-sky-100/65">
-                          {banner.mensagem || banner.subtitulo || "Sem mensagem"}
-                        </p>
+                        <p className="mb-1 text-[10px] font-black uppercase text-sky-200/70">{nomePublico(banner)}</p>
+                        <h3 className="line-clamp-2 text-base font-black">{banner.titulo}</h3>
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-sky-100/65">{banner.mensagem}</p>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-4 gap-2 p-3">
-                      <Mini
-                        label="Popup"
-                        valor={banner.exibirComoPopup === false ? "Não" : "Sim"}
-                      />
-                      <Mini
-                        label="Uma vez"
-                        valor={banner.mostrarUmaVez === false ? "Não" : "Sim"}
-                      />
-                      <Mini
-                        label="Disparo"
-                        valor={banner.disparoAgoraId ? "Agora" : "—"}
-                      />
-                      <Mini label="Criado" valor={formatarData(banner.createdAt)} />
+                    <div className="space-y-3 p-3">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <Info label="Vigência" valor={`${formatarData(banner.vigenciaInicioIso)} — ${formatarData(banner.vigenciaFimIso)}`} />
+                        <Info label="Exibição" valor={`${banner.atrasoSegundos ?? banner.tempoDepoisSegundos ?? 0}s • ${labelFrequencia(banner.frequencia || "sessao")}`} />
+                      </div>
+                      <div className="grid grid-cols-4 gap-2">
+                        <Mini label="Vistas" valor={dadosMetricas.impressoes} />
+                        <Mini label="Cliques" valor={dadosMetricas.cliques} />
+                        <Mini label="Fechou" valor={dadosMetricas.fechamentos} />
+                        <Mini label="CTR" valor={`${taxaClique}%`} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <AcaoCard label="Disparar" onClick={() => void mostrarAgora(banner)} />
+                        <AcaoCard label="Editar" onClick={() => editarBanner(banner)} />
+                        <AcaoCard label={banner.ativo === false ? "Ativar" : "Pausar"} onClick={() => void alternarStatus(banner)} />
+                        <AcaoCard label="Remover" perigo onClick={() => void deletarBanner(banner)} />
+                      </div>
                     </div>
                   </article>
                 );
@@ -1042,107 +950,51 @@ export default function GestaoBanners() {
   );
 }
 
-function Campo({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (valor: string) => void;
-  placeholder?: string;
-}) {
+function Campo({ label, value, onChange, placeholder = "", type = "text" }: { label: string; value: string; onChange: (valor: string) => void; placeholder?: string; type?: string }) {
   return (
-    <label>
-      <p className="mb-2 text-[10px] font-black uppercase tracking-wide text-sky-100/55">
-        {label}
-      </p>
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/60"
-      />
+    <label className="cmb-field">
+      <span>{label}</span>
+      <input type={type} value={value} onChange={(evento) => onChange(evento.target.value)} placeholder={placeholder} />
     </label>
   );
 }
 
-function Select({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string;
-  onChange: (valor: string) => void;
-  options: [string, string][];
-}) {
+function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (valor: string) => void; options: string[][] }) {
   return (
-    <label>
-      <p className="mb-2 text-[10px] font-black uppercase tracking-wide text-sky-100/55">
-        {label}
-      </p>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white outline-none focus:border-sky-300/60"
-      >
-        {options.map(([id, label]) => (
-          <option key={id} value={id}>
-            {label}
-          </option>
-        ))}
+    <label className="cmb-field">
+      <span>{label}</span>
+      <select value={value} onChange={(evento) => onChange(evento.target.value)}>
+        {options.map(([id, texto]) => <option key={id} value={id}>{texto}</option>)}
       </select>
     </label>
   );
 }
 
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (valor: boolean) => void;
-}) {
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (valor: boolean) => void }) {
   return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={[
-        "rounded-2xl border px-3 py-3 text-left transition",
-        checked ? "border-sky-300/30 bg-sky-400/15" : "border-[#7ba6d4]/20 bg-[#17345e]",
-      ].join(" ")}
-    >
-      <p className="text-[10px] font-black uppercase tracking-wide text-sky-100/55">
-        {label}
-      </p>
-      <p className="mt-1 text-sm font-black text-white">{checked ? "Sim" : "Não"}</p>
-    </button>
+    <label className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+      <span className="text-xs font-black uppercase text-sky-100/75">{label}</span>
+      <input type="checkbox" checked={checked} onChange={(evento) => onChange(evento.target.checked)} className="h-5 w-5" />
+    </label>
   );
 }
 
-function MiniResumo({ label, valor }: { label: string; valor: any }) {
-  return (
-    <div className="rounded-2xl border border-[#7ba6d4]/25 bg-[#143760] p-4 shadow-sm">
-      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-sky-100/55">
-        {label}
-      </p>
-      <p className="mt-2 text-xl font-black text-white">{valor}</p>
-    </div>
-  );
+function AtalhoPeriodo({ label, onClick }: { label: string; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className="min-h-11 rounded-xl border border-sky-300/20 bg-sky-400/10 px-2 text-[10px] font-black uppercase text-sky-100 active:bg-sky-400/25">{label}</button>;
 }
 
-function Mini({ label, valor }: { label: string; valor: any }) {
-  return (
-    <div className="min-w-0 rounded-xl border border-[#7ba6d4]/20 bg-[#17345e] p-2.5">
-      <p className="text-[8px] font-black uppercase tracking-wide text-sky-100/45">
-        {label}
-      </p>
-      <p className="mt-1 truncate text-[11px] font-black text-white">{valor}</p>
-    </div>
-  );
+function MiniResumo({ label, valor }: { label: string; valor: number }) {
+  return <div className="rounded-2xl border border-white/10 bg-[#0f2240] p-3"><p className="text-[9px] font-black uppercase tracking-wide text-sky-100/45">{label}</p><p className="mt-1 text-2xl font-black">{valor}</p></div>;
+}
+
+function Mini({ label, valor }: { label: string; valor: React.ReactNode }) {
+  return <div className="rounded-xl border border-white/10 bg-[#071a31] p-2 text-center"><p className="text-[8px] font-black uppercase text-sky-100/40">{label}</p><p className="mt-1 truncate text-xs font-black">{valor}</p></div>;
+}
+
+function Info({ label, valor }: { label: string; valor: string }) {
+  return <div className="rounded-xl border border-white/10 bg-[#071a31] p-2"><p className="text-[8px] font-black uppercase text-sky-100/40">{label}</p><p className="mt-1 line-clamp-2 text-[10px] font-bold text-sky-100/75">{valor}</p></div>;
+}
+
+function AcaoCard({ label, onClick, perigo = false }: { label: string; onClick: () => void; perigo?: boolean }) {
+  return <button onClick={onClick} className={`min-h-11 rounded-xl border px-2 text-[10px] font-black uppercase ${perigo ? "border-red-300/20 bg-red-500/10 text-red-100" : "border-sky-300/20 bg-sky-400/10 text-sky-100"}`}>{label}</button>;
 }

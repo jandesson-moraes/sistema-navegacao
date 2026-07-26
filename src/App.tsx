@@ -17,6 +17,7 @@ import Login from "../src/pages/Login";
 import MapaTatico from "../src/pages/MapaTatico";
 import NotificacoesChegada from "../src/pages/NotificacoesChegada";
 import Rotas from "../src/pages/Rotas";
+import ProgramacaoViagens from "../src/pages/ProgramacaoViagens";
 import Terminais from "../src/pages/Terminais";
 import FinanceiroUnificado from "../src/pages/FinanceiroUnificado";
 import ChecklistRastreadorGPS from "../src/pages/ChecklistRastreadorGPS";
@@ -298,6 +299,15 @@ export default function App() {
             element={
               <RotaProtegida permissao="rotas">
                 <Rotas />
+              </RotaProtegida>
+            }
+          />
+
+          <Route
+            path="/programacao-viagens"
+            element={
+              <RotaProtegida permissao="rotas">
+                <ProgramacaoViagens />
               </RotaProtegida>
             }
           />

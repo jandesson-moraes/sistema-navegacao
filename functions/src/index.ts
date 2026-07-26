@@ -1528,3 +1528,2133 @@ export const registrarMetricaLanding = onRequest(
     }
   },
 );
+
+
+
+// =========================================================================
+// 🧭 TRAJETO COMPLETO COMPACTADO PARA O APP
+// Lê os pontos históricos no servidor, simplifica a linha e grava um cache.
+// O celular recebe somente algumas centenas de coordenadas.
+// =========================================================================
+
+type CmbPontoTrajetoCompacto = {
+  latitude: number;
+  longitude: number;
+  criadoEmMs: number;
+};
+
+function cmbNumeroSeguro(valor: any) {
+  const numero = Number(valor);
+  return Number.isFinite(numero) ? numero : null;
+}
+
+function cmbDataMsTrajeto(valor: any): number {
+  try {
+    if (typeof valor?.toMillis === "function") return valor.toMillis();
+    if (typeof valor?.toDate === "function") return valor.toDate().getTime();
+    if (typeof valor?.seconds === "number") return valor.seconds * 1000;
+
+    const data = new Date(valor);
+    return Number.isNaN(data.getTime()) ? 0 : data.getTime();
+  } catch {
+    return 0;
+  }
+}
+
+function cmbExtrairPontoTrajeto(
+  dados: any,
+  campoData: string,
+): CmbPontoTrajetoCompacto | null {
+  const latitude = cmbNumeroSeguro(dados?.latitude ?? dados?.lat);
+  const longitude = cmbNumeroSeguro(dados?.longitude ?? dados?.lng);
+
+  if (
+    latitude === null ||
+    longitude === null ||
+    latitude === 0 ||
+    longitude === 0
+  ) {
+    return null;
+  }
+
+  const criadoEmMs = cmbDataMsTrajeto(
+    dados?.[campoData] ??
+      dados?.criado_em ??
+      dados?.criadoEm ??
+      dados?.timestamp,
+  );
+
+  return { latitude, longitude, criadoEmMs };
+}
+
+function cmbDistanciaTrajetoKm(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+) {
+  const raioTerraKm = 6371;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLng = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const lat1 = (a.latitude * Math.PI) / 180;
+  const lat2 = (b.latitude * Math.PI) / 180;
+
+  const valor =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+
+  return raioTerraKm * 2 * Math.atan2(Math.sqrt(valor), Math.sqrt(1 - valor));
+}
+
+function cmbDistanciaPontoSegmentoKm(
+  ponto: CmbPontoTrajetoCompacto,
+  inicio: CmbPontoTrajetoCompacto,
+  fim: CmbPontoTrajetoCompacto,
+) {
+  const x = ponto.longitude;
+  const y = ponto.latitude;
+  const x1 = inicio.longitude;
+  const y1 = inicio.latitude;
+  const x2 = fim.longitude;
+  const y2 = fim.latitude;
+
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  if (dx === 0 && dy === 0) {
+    return cmbDistanciaTrajetoKm(ponto, inicio);
+  }
+
+  const t = Math.max(
+    0,
+    Math.min(1, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)),
+  );
+
+  return cmbDistanciaTrajetoKm(ponto, {
+    latitude: y1 + t * dy,
+    longitude: x1 + t * dx,
+  });
+}
+
+function cmbSimplificarRdp(
+  pontos: CmbPontoTrajetoCompacto[],
+  toleranciaKm: number,
+): CmbPontoTrajetoCompacto[] {
+  if (pontos.length <= 2) return pontos;
+
+  const primeiro = pontos[0];
+  const ultimo = pontos[pontos.length - 1];
+  let maiorDistancia = 0;
+  let indiceMaior = 0;
+
+  for (let i = 1; i < pontos.length - 1; i += 1) {
+    const distancia = cmbDistanciaPontoSegmentoKm(
+      pontos[i],
+      primeiro,
+      ultimo,
+    );
+
+    if (distancia > maiorDistancia) {
+      maiorDistancia = distancia;
+      indiceMaior = i;
+    }
+  }
+
+  if (maiorDistancia <= toleranciaKm) {
+    return [primeiro, ultimo];
+  }
+
+  const esquerda = cmbSimplificarRdp(
+    pontos.slice(0, indiceMaior + 1),
+    toleranciaKm,
+  );
+  const direita = cmbSimplificarRdp(
+    pontos.slice(indiceMaior),
+    toleranciaKm,
+  );
+
+  return [...esquerda.slice(0, -1), ...direita];
+}
+
+function cmbPrepararTrajetoCompacto(
+  pontosOriginais: CmbPontoTrajetoCompacto[],
+  limite = 320,
+) {
+  if (pontosOriginais.length <= 2) return pontosOriginais;
+
+  const filtrados: CmbPontoTrajetoCompacto[] = [pontosOriginais[0]];
+
+  for (let i = 1; i < pontosOriginais.length; i += 1) {
+    const atual = pontosOriginais[i];
+    const anterior = filtrados[filtrados.length - 1];
+    const distanciaKm = cmbDistanciaTrajetoKm(anterior, atual);
+    const intervaloMs = Math.max(0, atual.criadoEmMs - anterior.criadoEmMs);
+
+    // Mantém curvas e alterações relevantes, descartando pontos praticamente
+    // idênticos. Um ponto temporal é preservado ao menos a cada cinco minutos.
+    if (
+      distanciaKm >= 0.025 ||
+      intervaloMs >= 5 * 60 * 1000 ||
+      i === pontosOriginais.length - 1
+    ) {
+      // Descarta um salto impossível ocorrido em pouco tempo.
+      if (distanciaKm > 30 && intervaloMs > 0 && intervaloMs < 10 * 60 * 1000) {
+        continue;
+      }
+
+      filtrados.push(atual);
+    }
+  }
+
+  let simplificados = cmbSimplificarRdp(filtrados, 0.045);
+
+  if (simplificados.length > limite) {
+    const reduzidos: CmbPontoTrajetoCompacto[] = [];
+    const passo = (simplificados.length - 1) / (limite - 1);
+
+    for (let i = 0; i < limite; i += 1) {
+      reduzidos.push(simplificados[Math.round(i * passo)]);
+    }
+
+    simplificados = reduzidos;
+  }
+
+  return simplificados.filter(
+    (ponto, indice, lista) =>
+      indice === 0 ||
+      ponto.latitude !== lista[indice - 1].latitude ||
+      ponto.longitude !== lista[indice - 1].longitude,
+  );
+}
+
+async function cmbBuscarPontosPaginados({
+  barcoId,
+  campoData,
+  inicioViagemMs,
+  limiteDocumentos,
+}: {
+  barcoId: string;
+  campoData: string;
+  inicioViagemMs: number;
+  limiteDocumentos: number;
+}) {
+  const referencia = db
+    .collection("rastreamento")
+    .doc(barcoId)
+    .collection("pontos");
+
+  const pontos: CmbPontoTrajetoCompacto[] = [];
+  let cursor: any = null;
+  let paginas = 0;
+  const tamanhoPagina = 1000;
+  const limiteInicio = inicioViagemMs
+    ? inicioViagemMs - 30 * 60 * 1000
+    : Date.now() - 10 * 24 * 60 * 60 * 1000;
+
+  while (pontos.length < limiteDocumentos && paginas < 80) {
+    let consulta: any = referencia
+      .orderBy(campoData, "desc")
+      .limit(tamanhoPagina);
+
+    if (cursor) consulta = consulta.startAfter(cursor);
+
+    const snapshot = await consulta.get();
+    if (snapshot.empty) break;
+
+    for (const documento of snapshot.docs) {
+      const ponto = cmbExtrairPontoTrajeto(documento.data(), campoData);
+      if (ponto) pontos.push(ponto);
+    }
+
+    cursor = snapshot.docs[snapshot.docs.length - 1];
+    paginas += 1;
+
+    const pontoMaisAntigoPagina = pontos[pontos.length - 1];
+
+    if (
+      pontoMaisAntigoPagina?.criadoEmMs &&
+      pontoMaisAntigoPagina.criadoEmMs <= limiteInicio
+    ) {
+      break;
+    }
+
+    if (snapshot.docs.length < tamanhoPagina) break;
+  }
+
+  return pontos;
+}
+
+function cmbSelecionarViagemAtual({
+  pontos,
+  inicioViagemMs,
+  origemReferencia,
+}: {
+  pontos: CmbPontoTrajetoCompacto[];
+  inicioViagemMs: number;
+  origemReferencia: { latitude: number; longitude: number } | null;
+}) {
+  const ordenados = [...pontos].sort(
+    (a, b) => a.criadoEmMs - b.criadoEmMs,
+  );
+
+  if (ordenados.length <= 2) return ordenados;
+
+  if (inicioViagemMs) {
+    const filtrados = ordenados.filter(
+      (ponto) =>
+        !ponto.criadoEmMs ||
+        ponto.criadoEmMs >= inicioViagemMs - 30 * 60 * 1000,
+    );
+
+    if (filtrados.length > 1) return filtrados;
+  }
+
+  if (origemReferencia) {
+    const ultimoMs = ordenados[ordenados.length - 1].criadoEmMs;
+    let indiceOrigem = -1;
+
+    for (let i = ordenados.length - 2; i >= 0; i -= 1) {
+      const ponto = ordenados[i];
+
+      if (
+        ultimoMs &&
+        ponto.criadoEmMs &&
+        ultimoMs - ponto.criadoEmMs < 30 * 60 * 1000
+      ) {
+        continue;
+      }
+
+      if (cmbDistanciaTrajetoKm(ponto, origemReferencia) <= 5) {
+        indiceOrigem = i;
+        break;
+      }
+    }
+
+    if (indiceOrigem >= 0) return ordenados.slice(indiceOrigem);
+  }
+
+  // Sem programação ou origem oficial, considera como início da viagem o
+  // ponto posterior ao último intervalo muito longo sem coordenadas.
+  let indiceAposUltimaPausa = 0;
+
+  for (let i = 1; i < ordenados.length; i += 1) {
+    const intervalo = ordenados[i].criadoEmMs - ordenados[i - 1].criadoEmMs;
+
+    if (intervalo >= 12 * 60 * 60 * 1000) {
+      indiceAposUltimaPausa = i;
+    }
+  }
+
+  return ordenados.slice(indiceAposUltimaPausa);
+}
+
+export const obterTrajetoCompletoEmbarcacao = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 300,
+    memory: "1GiB",
+    invoker: "public",
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        res.status(405).json({ erro: "Use POST." });
+        return;
+      }
+
+      const corpo = req.body || {};
+      const idsRecebidos = [
+        corpo.barcoId,
+        ...(Array.isArray(corpo.barcoIds) ? corpo.barcoIds : []),
+      ]
+        .map((valor: any) => String(valor || "").trim())
+        .filter(
+          (valor: string) =>
+            valor.length > 0 && valor.length <= 150 && !valor.includes("/"),
+        );
+
+      const barcoIds = Array.from(new Set(idsRecebidos)) as string[];
+
+      if (barcoIds.length === 0) {
+        res.status(400).json({ erro: "barcoId obrigatório." });
+        return;
+      }
+
+      const inicioViagemMs = Math.max(0, Number(corpo.inicioViagemMs) || 0);
+      const origemLat = cmbNumeroSeguro(
+        corpo.origemReferencia?.latitude ?? corpo.origemReferencia?.lat,
+      );
+      const origemLng = cmbNumeroSeguro(
+        corpo.origemReferencia?.longitude ?? corpo.origemReferencia?.lng,
+      );
+      const origemReferencia =
+        origemLat !== null && origemLng !== null
+          ? { latitude: origemLat, longitude: origemLng }
+          : null;
+
+      for (const barcoId of barcoIds) {
+        const cacheRef = db.collection("trajetos_compactados").doc(barcoId);
+        const cacheSnapshot = await cacheRef.get();
+
+        if (cacheSnapshot.exists) {
+          const cache = cacheSnapshot.data() || {};
+          const atualizadoEmMs = Number(cache.atualizadoEmMs || 0);
+          const mesmoInicio =
+            Number(cache.inicioViagemMs || 0) === inicioViagemMs;
+          const pontosCache = Array.isArray(cache.pontos) ? cache.pontos : [];
+
+          if (
+            mesmoInicio &&
+            pontosCache.length > 1 &&
+            Date.now() - atualizadoEmMs < 3 * 60 * 1000
+          ) {
+            res.status(200).json({
+              barcoIdUsado: barcoId,
+              pontos: pontosCache,
+              cache: true,
+              totalOriginal: Number(cache.totalOriginal || pontosCache.length),
+            });
+            return;
+          }
+        }
+
+        let pontos: CmbPontoTrajetoCompacto[] = [];
+
+        for (const campoData of ["criado_em", "criadoEm", "timestamp"]) {
+          try {
+            pontos = await cmbBuscarPontosPaginados({
+              barcoId,
+              campoData,
+              inicioViagemMs,
+              limiteDocumentos: 80000,
+            });
+          } catch (erroCampo) {
+            console.log(
+              `Trajeto ${barcoId}: campo ${campoData} indisponível.`,
+              erroCampo,
+            );
+            pontos = [];
+          }
+
+          if (pontos.length > 1) break;
+        }
+
+        if (pontos.length <= 1) continue;
+
+        const viagemAtual = cmbSelecionarViagemAtual({
+          pontos,
+          inicioViagemMs,
+          origemReferencia,
+        });
+
+        const compactados = cmbPrepararTrajetoCompacto(viagemAtual, 320);
+
+        if (compactados.length <= 1) continue;
+
+        const respostaPontos = compactados.map((ponto) => ({
+          latitude: ponto.latitude,
+          longitude: ponto.longitude,
+          criadoEmMs: ponto.criadoEmMs,
+        }));
+
+        await cacheRef.set(
+          {
+            barcoId,
+            inicioViagemMs,
+            atualizadoEmMs: Date.now(),
+            atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+            totalOriginal: viagemAtual.length,
+            totalCompactado: respostaPontos.length,
+            pontos: respostaPontos,
+          },
+          { merge: true },
+        );
+
+        res.status(200).json({
+          barcoIdUsado: barcoId,
+          pontos: respostaPontos,
+          cache: false,
+          totalOriginal: viagemAtual.length,
+        });
+        return;
+      }
+
+      res.status(404).json({
+        erro: "Nenhum ponto de rastreamento encontrado para os IDs enviados.",
+        barcoIds,
+      });
+    } catch (error: any) {
+      console.error("Erro ao montar trajeto completo:", error);
+      res.status(500).json({
+        erro: "Não foi possível montar o trajeto completo.",
+      });
+    }
+  },
+);
+
+
+
+
+// =====================================================
+// CMB — TRAJETO UNIVERSAL PARA TODAS AS EMBARCAÇÕES
+// =====================================================
+type CmbUniversalPonto = {
+  latitude: number;
+  longitude: number;
+  criadoEmMs: number;
+  ordem: number;
+};
+
+function cmbUniversalNumero(valor: any): number | null {
+  const numero = Number(valor);
+  return Number.isFinite(numero) ? numero : null;
+}
+
+function cmbUniversalNormalizarId(valor: any): string {
+  return String(valor || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function cmbUniversalVariantesIds(valores: any[]): string[] {
+  const conjunto = new Set<string>();
+
+  for (const valorBruto of valores) {
+    const original = String(valorBruto || "").trim();
+    if (!original || original.includes("/") || original.length > 150) continue;
+
+    const normalizado = cmbUniversalNormalizarId(original);
+    const semSeparador = normalizado.replace(/_/g, "");
+
+    [
+      original,
+      original.toUpperCase(),
+      original.toLowerCase(),
+      normalizado,
+      normalizado.replace(/_/g, " "),
+      normalizado.replace(/_/g, "-"),
+      semSeparador,
+    ].forEach((item) => {
+      const limpo = String(item || "").trim();
+      if (limpo && !limpo.includes("/") && limpo.length <= 150) {
+        conjunto.add(limpo);
+      }
+    });
+  }
+
+  return Array.from(conjunto).slice(0, 30);
+}
+
+function cmbUniversalDataDocumentoId(documentoId: string): number {
+  const match = String(documentoId || "").match(
+    /^(\d{4})(\d{2})(\d{2})[_-]?(\d{2})(\d{2})(\d{2})/,
+  );
+
+  if (!match) return 0;
+
+  const [, ano, mes, dia, hora, minuto, segundo] = match;
+  const valor = Date.UTC(
+    Number(ano),
+    Number(mes) - 1,
+    Number(dia),
+    Number(hora),
+    Number(minuto),
+    Number(segundo),
+  );
+
+  return Number.isFinite(valor) ? valor : 0;
+}
+
+function cmbUniversalDataMs(valor: any, documentoId = ""): number {
+  try {
+    if (typeof valor?.toMillis === "function") return valor.toMillis();
+    if (typeof valor?.toDate === "function") return valor.toDate().getTime();
+    if (typeof valor?.seconds === "number") return valor.seconds * 1000;
+    if (typeof valor === "number" && Number.isFinite(valor)) {
+      return valor < 10_000_000_000 ? valor * 1000 : valor;
+    }
+
+    const texto = String(valor || "").trim();
+    if (texto && !texto.startsWith("sem_data_")) {
+      const data = new Date(texto);
+      if (!Number.isNaN(data.getTime())) return data.getTime();
+    }
+  } catch {
+    // Continua para o ID do documento.
+  }
+
+  return cmbUniversalDataDocumentoId(documentoId);
+}
+
+function cmbUniversalExtrairPonto(
+  dados: any,
+  documentoId: string,
+  ordem: number,
+): CmbUniversalPonto | null {
+  const latitude = cmbUniversalNumero(
+    dados?.latitude ??
+      dados?.lat ??
+      dados?.posicao?.latitude ??
+      dados?.posicao?.lat ??
+      dados?.coordenadas?.latitude ??
+      dados?.coordenadas?.lat,
+  );
+  const longitude = cmbUniversalNumero(
+    dados?.longitude ??
+      dados?.lng ??
+      dados?.lon ??
+      dados?.posicao?.longitude ??
+      dados?.posicao?.lng ??
+      dados?.posicao?.lon ??
+      dados?.coordenadas?.longitude ??
+      dados?.coordenadas?.lng ??
+      dados?.coordenadas?.lon,
+  );
+
+  if (
+    latitude === null ||
+    longitude === null ||
+    latitude === 0 ||
+    longitude === 0 ||
+    Math.abs(latitude) > 90 ||
+    Math.abs(longitude) > 180
+  ) {
+    return null;
+  }
+
+  const criadoEmMs = cmbUniversalDataMs(
+    dados?.criado_em ??
+      dados?.criadoEm ??
+      dados?.timestamp ??
+      dados?.data ??
+      dados?.salvoEm ??
+      dados?.atualizadoEm,
+    documentoId,
+  );
+
+  return { latitude, longitude, criadoEmMs, ordem };
+}
+
+function cmbUniversalDistanciaKm(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+): number {
+  const raio = 6371;
+  const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const dLng = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const lat1 = (a.latitude * Math.PI) / 180;
+  const lat2 = (b.latitude * Math.PI) / 180;
+  const valor =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return raio * 2 * Math.atan2(Math.sqrt(valor), Math.sqrt(1 - valor));
+}
+
+function cmbUniversalDistanciaSegmentoKm(
+  ponto: CmbUniversalPonto,
+  inicio: CmbUniversalPonto,
+  fim: CmbUniversalPonto,
+): number {
+  const x = ponto.longitude;
+  const y = ponto.latitude;
+  const x1 = inicio.longitude;
+  const y1 = inicio.latitude;
+  const x2 = fim.longitude;
+  const y2 = fim.latitude;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  if (dx === 0 && dy === 0) return cmbUniversalDistanciaKm(ponto, inicio);
+
+  const t = Math.max(
+    0,
+    Math.min(1, ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy)),
+  );
+
+  return cmbUniversalDistanciaKm(ponto, {
+    latitude: y1 + t * dy,
+    longitude: x1 + t * dx,
+  });
+}
+
+function cmbUniversalRdp(
+  pontos: CmbUniversalPonto[],
+  toleranciaKm: number,
+): CmbUniversalPonto[] {
+  if (pontos.length <= 2) return pontos;
+
+  const primeiro = pontos[0];
+  const ultimo = pontos[pontos.length - 1];
+  let maiorDistancia = 0;
+  let indiceMaior = 0;
+
+  for (let indice = 1; indice < pontos.length - 1; indice += 1) {
+    const distancia = cmbUniversalDistanciaSegmentoKm(
+      pontos[indice],
+      primeiro,
+      ultimo,
+    );
+
+    if (distancia > maiorDistancia) {
+      maiorDistancia = distancia;
+      indiceMaior = indice;
+    }
+  }
+
+  if (maiorDistancia <= toleranciaKm) return [primeiro, ultimo];
+
+  const esquerda = cmbUniversalRdp(
+    pontos.slice(0, indiceMaior + 1),
+    toleranciaKm,
+  );
+  const direita = cmbUniversalRdp(pontos.slice(indiceMaior), toleranciaKm);
+
+  return [...esquerda.slice(0, -1), ...direita];
+}
+
+function cmbUniversalOrdenar(pontos: CmbUniversalPonto[]) {
+  return [...pontos].sort((a, b) => {
+    if (a.criadoEmMs && b.criadoEmMs && a.criadoEmMs !== b.criadoEmMs) {
+      return a.criadoEmMs - b.criadoEmMs;
+    }
+    return a.ordem - b.ordem;
+  });
+}
+
+function cmbUniversalSelecionarViagem({
+  pontos,
+  inicioViagemMs,
+  origemReferencia,
+}: {
+  pontos: CmbUniversalPonto[];
+  inicioViagemMs: number;
+  origemReferencia: { latitude: number; longitude: number } | null;
+}) {
+  const ordenados = cmbUniversalOrdenar(pontos);
+  if (ordenados.length <= 2) return ordenados;
+
+  if (inicioViagemMs > 0) {
+    const filtrados = ordenados.filter(
+      (ponto) =>
+        !ponto.criadoEmMs ||
+        ponto.criadoEmMs >= inicioViagemMs - 2 * 60 * 60 * 1000,
+    );
+    if (filtrados.length > 1) return filtrados;
+  }
+
+  if (origemReferencia) {
+    let melhorIndice = -1;
+    let menorDistancia = Number.POSITIVE_INFINITY;
+    const ultimoMs = ordenados[ordenados.length - 1]?.criadoEmMs || 0;
+
+    for (let indice = 0; indice < ordenados.length - 1; indice += 1) {
+      const ponto = ordenados[indice];
+      if (
+        ultimoMs &&
+        ponto.criadoEmMs &&
+        ultimoMs - ponto.criadoEmMs < 20 * 60 * 1000
+      ) {
+        continue;
+      }
+
+      const distancia = cmbUniversalDistanciaKm(ponto, origemReferencia);
+      if (distancia < menorDistancia) {
+        menorDistancia = distancia;
+        melhorIndice = indice;
+      }
+    }
+
+    if (melhorIndice >= 0 && menorDistancia <= 20) {
+      return ordenados.slice(melhorIndice);
+    }
+  }
+
+  let indiceAposPausa = 0;
+  for (let indice = 1; indice < ordenados.length; indice += 1) {
+    const anterior = ordenados[indice - 1];
+    const atual = ordenados[indice];
+    if (!anterior.criadoEmMs || !atual.criadoEmMs) continue;
+
+    if (atual.criadoEmMs - anterior.criadoEmMs >= 8 * 60 * 60 * 1000) {
+      indiceAposPausa = indice;
+    }
+  }
+
+  return ordenados.slice(indiceAposPausa);
+}
+
+function cmbUniversalCompactar(
+  pontosOriginais: CmbUniversalPonto[],
+  limite = 400,
+) {
+  if (pontosOriginais.length <= 2) return pontosOriginais;
+
+  const filtrados: CmbUniversalPonto[] = [pontosOriginais[0]];
+
+  for (let indice = 1; indice < pontosOriginais.length; indice += 1) {
+    const atual = pontosOriginais[indice];
+    const anterior = filtrados[filtrados.length - 1];
+    const distancia = cmbUniversalDistanciaKm(anterior, atual);
+    const intervalo =
+      atual.criadoEmMs && anterior.criadoEmMs
+        ? atual.criadoEmMs - anterior.criadoEmMs
+        : 0;
+
+    if (distancia > 35 && intervalo > 0 && intervalo < 10 * 60 * 1000) {
+      continue;
+    }
+
+    if (
+      distancia >= 0.012 ||
+      intervalo >= 3 * 60 * 1000 ||
+      indice === pontosOriginais.length - 1
+    ) {
+      filtrados.push(atual);
+    }
+  }
+
+  let simplificados = cmbUniversalRdp(filtrados, 0.025);
+
+  if (simplificados.length > limite) {
+    const reduzidos: CmbUniversalPonto[] = [];
+    const passo = (simplificados.length - 1) / (limite - 1);
+    for (let indice = 0; indice < limite; indice += 1) {
+      reduzidos.push(simplificados[Math.round(indice * passo)]);
+    }
+    simplificados = reduzidos;
+  }
+
+  return simplificados.filter(
+    (ponto, indice, lista) =>
+      indice === 0 ||
+      ponto.latitude !== lista[indice - 1].latitude ||
+      ponto.longitude !== lista[indice - 1].longitude,
+  );
+}
+
+async function cmbUniversalLerColecaoDireta({
+  parentId,
+  inicioViagemMs,
+  limiteDocumentos,
+}: {
+  parentId: string;
+  inicioViagemMs: number;
+  limiteDocumentos: number;
+}) {
+  const referencia = db
+    .collection("rastreamento")
+    .doc(parentId)
+    .collection("pontos");
+
+  const pontos: CmbUniversalPonto[] = [];
+  let cursor: any = null;
+  let paginas = 0;
+  let ordem = 0;
+  const tamanhoPagina = 1000;
+  const limiteAntigo = inicioViagemMs
+    ? inicioViagemMs - 3 * 60 * 60 * 1000
+    : Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+  while (pontos.length < limiteDocumentos && paginas < 120) {
+    let consulta: any = referencia
+      .orderBy(admin.firestore.FieldPath.documentId(), "desc")
+      .limit(tamanhoPagina);
+
+    if (cursor) consulta = consulta.startAfter(cursor);
+
+    const snapshot = await consulta.get();
+    if (snapshot.empty) break;
+
+    let maisAntigoPagina = Number.POSITIVE_INFINITY;
+
+    for (const documento of snapshot.docs) {
+      const ponto = cmbUniversalExtrairPonto(
+        documento.data(),
+        documento.id,
+        ordem,
+      );
+      ordem += 1;
+      if (!ponto) continue;
+      pontos.push(ponto);
+      if (ponto.criadoEmMs > 0) {
+        maisAntigoPagina = Math.min(maisAntigoPagina, ponto.criadoEmMs);
+      }
+    }
+
+    cursor = snapshot.docs[snapshot.docs.length - 1];
+    paginas += 1;
+
+    if (
+      Number.isFinite(maisAntigoPagina) &&
+      maisAntigoPagina <= limiteAntigo &&
+      pontos.length > 1
+    ) {
+      break;
+    }
+
+    if (snapshot.docs.length < tamanhoPagina) break;
+  }
+
+  return pontos;
+}
+
+async function cmbUniversalDescobrirParentsPorCampos(aliases: string[]) {
+  const encontrados = new Set<string>();
+  const campos = ["barco_id", "barcoId", "embarcacaoId", "embarcacao_id"];
+
+  for (const campo of campos) {
+    for (let inicio = 0; inicio < aliases.length; inicio += 10) {
+      const lote = aliases.slice(inicio, inicio + 10);
+      if (lote.length === 0) continue;
+
+      try {
+        const snapshot = await db
+          .collectionGroup("pontos")
+          .where(campo, "in", lote)
+          .limit(25)
+          .get();
+
+        for (const documento of snapshot.docs) {
+          const parent = documento.ref.parent.parent;
+          if (parent?.id) encontrados.add(parent.id);
+        }
+      } catch (error) {
+        console.log(`Descoberta de trajeto pelo campo ${campo} falhou.`, error);
+      }
+    }
+  }
+
+  return Array.from(encontrados);
+}
+
+async function cmbUniversalDescobrirParentsPorNome(aliases: string[]) {
+  const normalizados = new Set(aliases.map(cmbUniversalNormalizarId));
+  const encontrados: string[] = [];
+
+  try {
+    const referencias = await db.collection("rastreamento").listDocuments();
+    for (const referencia of referencias) {
+      if (normalizados.has(cmbUniversalNormalizarId(referencia.id))) {
+        encontrados.push(referencia.id);
+      }
+    }
+  } catch (error) {
+    console.log("Não foi possível listar os documentos de rastreamento.", error);
+  }
+
+  return encontrados;
+}
+
+export const obterTrajetoUniversalEmbarcacao = onRequest(
+  {
+    region: "us-central1",
+    cors: true,
+    timeoutSeconds: 300,
+    memory: "1GiB",
+    invoker: "public",
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        res.status(405).json({ erro: "Use POST." });
+        return;
+      }
+
+      const corpo = req.body || {};
+      const aliases = cmbUniversalVariantesIds([
+        corpo.barcoId,
+        ...(Array.isArray(corpo.barcoIds) ? corpo.barcoIds : []),
+      ]);
+
+      if (aliases.length === 0) {
+        res.status(400).json({ erro: "Identificador da embarcação obrigatório." });
+        return;
+      }
+
+      const inicioViagemMs = Math.max(0, Number(corpo.inicioViagemMs) || 0);
+      const origemLat = cmbUniversalNumero(
+        corpo.origemReferencia?.latitude ?? corpo.origemReferencia?.lat,
+      );
+      const origemLng = cmbUniversalNumero(
+        corpo.origemReferencia?.longitude ?? corpo.origemReferencia?.lng,
+      );
+      const origemReferencia =
+        origemLat !== null && origemLng !== null
+          ? { latitude: origemLat, longitude: origemLng }
+          : null;
+
+      const chaveCache = cmbUniversalNormalizarId(aliases[0]);
+      const cacheRef = db.collection("trajetos_compactados").doc(
+        `universal_${chaveCache}`,
+      );
+      const cacheSnapshot = await cacheRef.get();
+
+      if (cacheSnapshot.exists) {
+        const cache = cacheSnapshot.data() || {};
+        const pontosCache = Array.isArray(cache.pontos) ? cache.pontos : [];
+        const mesmoInicio =
+          Number(cache.inicioViagemMs || 0) === inicioViagemMs;
+        const atualizadoEmMs = Number(cache.atualizadoEmMs || 0);
+
+        if (
+          mesmoInicio &&
+          pontosCache.length > 1 &&
+          Date.now() - atualizadoEmMs < 5 * 60 * 1000
+        ) {
+          res.status(200).json({
+            pontos: pontosCache,
+            cache: true,
+            barcoIdUsado: String(cache.barcoIdUsado || aliases[0]),
+            estrategia: String(cache.estrategia || "cache"),
+            aliasesTestados: aliases,
+            totalOriginal: Number(cache.totalOriginal || pontosCache.length),
+          });
+          return;
+        }
+      }
+
+      const parents = new Set<string>(aliases);
+      const encontradosCampo = await cmbUniversalDescobrirParentsPorCampos(
+        aliases,
+      );
+      encontradosCampo.forEach((id) => parents.add(id));
+      const encontradosNome = await cmbUniversalDescobrirParentsPorNome(aliases);
+      encontradosNome.forEach((id) => parents.add(id));
+
+      const parentsTestados: string[] = [];
+      let melhor:
+        | {
+            parentId: string;
+            pontos: CmbUniversalPonto[];
+            viagem: CmbUniversalPonto[];
+          }
+        | null = null;
+
+      for (const parentId of parents) {
+        parentsTestados.push(parentId);
+        let pontos = await cmbUniversalLerColecaoDireta({
+          parentId,
+          inicioViagemMs,
+          limiteDocumentos: 100000,
+        });
+
+        if (pontos.length <= 1 && inicioViagemMs > 0) {
+          pontos = await cmbUniversalLerColecaoDireta({
+            parentId,
+            inicioViagemMs: 0,
+            limiteDocumentos: 100000,
+          });
+        }
+
+        if (pontos.length <= 1) continue;
+
+        const viagem = cmbUniversalSelecionarViagem({
+          pontos,
+          inicioViagemMs,
+          origemReferencia,
+        });
+
+        if (viagem.length <= 1) continue;
+
+        if (!melhor || viagem.length > melhor.viagem.length) {
+          melhor = { parentId, pontos, viagem };
+        }
+      }
+
+      if (!melhor) {
+        res.status(404).json({
+          erro: "Pontos existem, mas nenhum caminho compatível foi localizado.",
+          aliasesTestados: aliases,
+          parentsTestados,
+        });
+        return;
+      }
+
+      const compactados = cmbUniversalCompactar(melhor.viagem, 400);
+      if (compactados.length <= 1) {
+        res.status(404).json({
+          erro: "Foram localizados pontos, mas não houve deslocamento suficiente.",
+          barcoIdUsado: melhor.parentId,
+          totalLido: melhor.pontos.length,
+        });
+        return;
+      }
+
+      const respostaPontos = compactados.map((ponto) => ({
+        latitude: ponto.latitude,
+        longitude: ponto.longitude,
+        criadoEmMs: ponto.criadoEmMs,
+      }));
+
+      await cacheRef.set(
+        {
+          barcoIdUsado: melhor.parentId,
+          inicioViagemMs,
+          atualizadoEmMs: Date.now(),
+          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+          totalOriginal: melhor.viagem.length,
+          totalCompactado: respostaPontos.length,
+          estrategia: encontradosCampo.includes(melhor.parentId)
+            ? "descoberta_por_barco_id_do_ponto"
+            : "caminho_direto_ou_alias",
+          aliasesTestados: aliases,
+          parentsTestados,
+          pontos: respostaPontos,
+        },
+        { merge: true },
+      );
+
+      res.status(200).json({
+        pontos: respostaPontos,
+        cache: false,
+        barcoIdUsado: melhor.parentId,
+        estrategia: encontradosCampo.includes(melhor.parentId)
+          ? "descoberta_por_barco_id_do_ponto"
+          : "caminho_direto_ou_alias",
+        aliasesTestados: aliases,
+        parentsTestados,
+        totalLido: melhor.pontos.length,
+        totalOriginal: melhor.viagem.length,
+        totalCompactado: respostaPontos.length,
+      });
+    } catch (error: any) {
+      console.error("Erro no trajeto universal:", error);
+      res.status(500).json({
+        erro: "Não foi possível localizar e compactar o trajeto.",
+        detalhe: String(error?.message || error || "erro desconhecido"),
+      });
+    }
+  },
+);
+
+
+
+// =========================================================================
+// CMB — HISTÓRICO AUTOMÁTICO DOS RASTREADORES NOVOS
+//
+// O firmware LITE atualiza somente embarcacoes/{barcoId}. Esta função observa
+// a posição oficial e cria o histórico em:
+// rastreamento/{barcoId}/pontos/{pontoId}
+//
+// Não exige alteração no Arduino.
+// =========================================================================
+
+type CmbHistoricoPosicaoEmbarcacao = {
+  latitude: number;
+  longitude: number;
+  velocidade: number;
+  direcao: number;
+  satelites: number;
+  dataMs: number;
+  dataOriginal: unknown;
+};
+
+function cmbHistoricoExtrairPosicao(
+  dados: Record<string, any> | undefined,
+  fallbackMs: number,
+): CmbHistoricoPosicaoEmbarcacao | null {
+  if (!dados) return null;
+
+  const posicao = dados.ultima_posicao;
+  const latitude = cmbUniversalNumero(
+    posicao?.latitude ??
+      posicao?.lat ??
+      posicao?._latitude ??
+      dados.latitude ??
+      dados.lat,
+  );
+  const longitude = cmbUniversalNumero(
+    posicao?.longitude ??
+      posicao?.lng ??
+      posicao?.lon ??
+      posicao?._longitude ??
+      dados.longitude ??
+      dados.lng ??
+      dados.lon,
+  );
+
+  if (
+    latitude === null ||
+    longitude === null ||
+    latitude === 0 ||
+    longitude === 0 ||
+    Math.abs(latitude) > 90 ||
+    Math.abs(longitude) > 180
+  ) {
+    return null;
+  }
+
+  const dataOriginal =
+    dados.ultima_atualizacao ??
+    posicao?.visto_por_ultimo ??
+    dados.atualizadoEm ??
+    dados.updatedAt;
+
+  const dataMs =
+    cmbUniversalDataMs(dataOriginal) ||
+    fallbackMs;
+
+  return {
+    latitude,
+    longitude,
+    velocidade:
+      cmbUniversalNumero(
+        posicao?.velocidade ??
+          posicao?.speed ??
+          dados.velocidade ??
+          dados.vel,
+      ) ?? 0,
+    direcao:
+      cmbUniversalNumero(
+        posicao?.direcao ??
+          posicao?.rumo ??
+          posicao?.course ??
+          dados.direcao ??
+          dados.rumo,
+      ) ?? 0,
+    satelites:
+      cmbUniversalNumero(
+        posicao?.satelites ??
+          dados.satelites,
+      ) ?? 0,
+    dataMs,
+    dataOriginal,
+  };
+}
+
+function cmbHistoricoMesmoPonto(
+  a: CmbHistoricoPosicaoEmbarcacao | null,
+  b: CmbHistoricoPosicaoEmbarcacao | null,
+) {
+  if (!a || !b) return false;
+
+  return (
+    Math.abs(a.latitude - b.latitude) < 0.0000001 &&
+    Math.abs(a.longitude - b.longitude) < 0.0000001 &&
+    a.dataMs === b.dataMs
+  );
+}
+
+function cmbHistoricoAtualizarPontosCache(
+  dadosCache: Record<string, any>,
+  pontoNovo: CmbHistoricoPosicaoEmbarcacao,
+) {
+  const pontosOriginais = Array.isArray(dadosCache.pontos)
+    ? dadosCache.pontos
+    : [];
+
+  if (pontosOriginais.length < 2) {
+    return null;
+  }
+
+  const pontosValidos: CmbUniversalPonto[] = pontosOriginais
+    .map((ponto: any, ordem: number) => {
+      const latitude = cmbUniversalNumero(
+        ponto?.latitude ?? ponto?.lat,
+      );
+      const longitude = cmbUniversalNumero(
+        ponto?.longitude ?? ponto?.lng ?? ponto?.lon,
+      );
+
+      if (
+        latitude === null ||
+        longitude === null ||
+        latitude === 0 ||
+        longitude === 0
+      ) {
+        return null;
+      }
+
+      return {
+        latitude,
+        longitude,
+        criadoEmMs:
+          cmbUniversalDataMs(
+            ponto?.criadoEmMs ??
+              ponto?.criado_em ??
+              ponto?.criadoEm ??
+              ponto?.timestamp,
+          ) || ordem,
+        ordem,
+      };
+    })
+    .filter(
+      (ponto: CmbUniversalPonto | null):
+        ponto is CmbUniversalPonto => ponto !== null,
+    );
+
+  if (pontosValidos.length < 2) {
+    return null;
+  }
+
+  const ultimo = pontosValidos[pontosValidos.length - 1];
+  const distanciaUltimoKm = cmbUniversalDistanciaKm(
+    ultimo,
+    pontoNovo,
+  );
+
+  if (
+    distanciaUltimoKm < 0.004 &&
+    Math.abs(pontoNovo.dataMs - ultimo.criadoEmMs) < 5 * 60 * 1000
+  ) {
+    return pontosOriginais;
+  }
+
+  const comNovoPonto: CmbUniversalPonto[] = [
+    ...pontosValidos,
+    {
+      latitude: pontoNovo.latitude,
+      longitude: pontoNovo.longitude,
+      criadoEmMs: pontoNovo.dataMs,
+      ordem: pontosValidos.length,
+    },
+  ];
+
+  return cmbUniversalCompactar(
+    cmbUniversalOrdenar(comNovoPonto),
+    400,
+  ).map((ponto) => ({
+    latitude: ponto.latitude,
+    longitude: ponto.longitude,
+    criadoEmMs: ponto.criadoEmMs,
+  }));
+}
+
+export const registrarHistoricoAutomaticoGps =
+  onDocumentWritten(
+    {
+      region: REGIAO,
+      document: "embarcacoes/{barcoId}",
+      maxInstances: 50,
+    },
+    async (event) => {
+      const depois = event.data?.after;
+
+      if (!depois?.exists) {
+        return;
+      }
+
+      const barcoId = texto(event.params.barcoId);
+
+      if (
+        !barcoId ||
+        barcoId.length > 150 ||
+        barcoId.includes("/")
+      ) {
+        console.log(
+          "Histórico GPS ignorado: barcoId inválido.",
+          barcoId,
+        );
+        return;
+      }
+
+      const eventoMs =
+        cmbUniversalDataMs((event as any).time) ||
+        Date.now();
+      const dadosDepois =
+        (depois.data() || {}) as Record<string, any>;
+      const dadosAntes = event.data?.before.exists
+        ? ((event.data.before.data() || {}) as Record<string, any>)
+        : undefined;
+
+      const pontoDepois = cmbHistoricoExtrairPosicao(
+        dadosDepois,
+        eventoMs,
+      );
+      const pontoAntes = cmbHistoricoExtrairPosicao(
+        dadosAntes,
+        eventoMs,
+      );
+
+      if (!pontoDepois) {
+        return;
+      }
+
+      // Alterações administrativas, de Wi-Fi ou de configuração não devem
+      // criar pontos repetidos quando a posição oficial não mudou.
+      if (cmbHistoricoMesmoPonto(pontoAntes, pontoDepois)) {
+        return;
+      }
+
+      const distanciaAnteriorKm = pontoAntes
+        ? cmbUniversalDistanciaKm(
+            pontoAntes,
+            pontoDepois,
+          )
+        : Number.POSITIVE_INFINITY;
+      const intervaloAnteriorMs = pontoAntes
+        ? Math.abs(
+            pontoDepois.dataMs - pontoAntes.dataMs,
+          )
+        : Number.POSITIVE_INFINITY;
+
+      const eventoId = texto((event as any).id);
+      const hashPonto = createHash("sha256")
+        .update(
+          [
+            barcoId,
+            pontoDepois.latitude.toFixed(7),
+            pontoDepois.longitude.toFixed(7),
+            String(pontoDepois.dataMs),
+            eventoId,
+          ].join("|"),
+        )
+        .digest("hex")
+        .slice(0, 24);
+      const pontoId =
+        `P_${pontoDepois.dataMs}_${hashPonto}`;
+
+      const rastreamentoRef = db
+        .collection("rastreamento")
+        .doc(barcoId);
+      const pontoRef = rastreamentoRef
+        .collection("pontos")
+        .doc(pontoId);
+      const criadoEm =
+        admin.firestore.Timestamp.fromMillis(
+          pontoDepois.dataMs,
+        );
+      const agoraServidor =
+        admin.firestore.FieldValue.serverTimestamp();
+
+      const cacheDiretoRef = db
+        .collection("trajetos_compactados")
+        .doc(barcoId);
+      const cacheUniversalRef = db
+        .collection("trajetos_compactados")
+        .doc(
+          `universal_${cmbUniversalNormalizarId(barcoId)}`,
+        );
+
+      const [
+        rastreamentoSnap,
+        cacheDiretoSnap,
+        cacheUniversalSnap,
+      ] = await Promise.all([
+        rastreamentoRef.get(),
+        cacheDiretoRef.get(),
+        cacheUniversalRef.get(),
+      ]);
+
+      // Quando o barco estiver parado, preserva um ponto de referência a cada
+      // cinco minutos. O primeiro ponto sempre é criado, mesmo sem deslocamento.
+      if (
+        distanciaAnteriorKm < 0.008 &&
+        intervaloAnteriorMs > 0 &&
+        intervaloAnteriorMs < 5 * 60 * 1000 &&
+        rastreamentoSnap.exists
+      ) {
+        const ultimoPontoMs = cmbUniversalDataMs(
+          rastreamentoSnap.data()?.ultimoPontoEm,
+        );
+
+        if (
+          ultimoPontoMs > 0 &&
+          pontoDepois.dataMs - ultimoPontoMs < 5 * 60 * 1000
+        ) {
+          return;
+        }
+      }
+
+      const batch = db.batch();
+
+      // Cria também o documento-pai. Assim o ID passa a aparecer normalmente
+      // na coleção rastreamento no Console do Firebase.
+      batch.set(
+        rastreamentoRef,
+        {
+          barcoId,
+          barco_id: barcoId,
+          nome:
+            texto(
+              dadosDepois.nome ||
+                dadosDepois.nome_barco ||
+                dadosDepois.nomeBarco ||
+                dadosDepois.apelido,
+            ) || barcoId,
+          deviceId: texto(
+            dadosDepois.deviceId ||
+              dadosDepois.rastreadorDeviceId,
+          ),
+          origemHistorico:
+            "CLOUD_FUNCTION_EMBARCACOES",
+          ativo: dadosDepois.ativo !== false,
+          ultimoPontoId: pontoId,
+          ultimoPontoEm: criadoEm,
+          ultima_posicao: {
+            latitude: pontoDepois.latitude,
+            longitude: pontoDepois.longitude,
+          },
+          atualizadoEm: agoraServidor,
+        },
+        { merge: true },
+      );
+
+      batch.set(
+        pontoRef,
+        {
+          barco_id: barcoId,
+          barcoId,
+          embarcacaoId: barcoId,
+          latitude: pontoDepois.latitude,
+          longitude: pontoDepois.longitude,
+          velocidade: pontoDepois.velocidade,
+          direcao: pontoDepois.direcao,
+          satelites: Math.round(
+            pontoDepois.satelites,
+          ),
+          criado_em: criadoEm,
+          criadoEm,
+          timestamp: criadoEm,
+          dataOrigem:
+            pontoDepois.dataOriginal ?? null,
+          origem:
+            "CLOUD_FUNCTION_EMBARCACOES",
+          deviceId: texto(
+            dadosDepois.deviceId ||
+              dadosDepois.rastreadorDeviceId,
+          ),
+          eventoId: eventoId || null,
+          gravadoEm: agoraServidor,
+        },
+        { merge: false },
+      );
+
+      const caches = [
+        {
+          ref: cacheDiretoRef,
+          snap: cacheDiretoSnap,
+        },
+        {
+          ref: cacheUniversalRef,
+          snap: cacheUniversalSnap,
+        },
+      ];
+
+      for (const cache of caches) {
+        if (!cache.snap.exists) {
+          continue;
+        }
+
+        const dadosCache =
+          (cache.snap.data() || {}) as Record<string, any>;
+        const pontosAtualizados =
+          cmbHistoricoAtualizarPontosCache(
+            dadosCache,
+            pontoDepois,
+          );
+
+        if (!pontosAtualizados) {
+          batch.set(
+            cache.ref,
+            {
+              atualizadoEmMs: 0,
+              invalidadoEm: agoraServidor,
+              motivoInvalidacao:
+                "novo_ponto_historico",
+            },
+            { merge: true },
+          );
+          continue;
+        }
+
+        batch.set(
+          cache.ref,
+          {
+            pontos: pontosAtualizados,
+            atualizadoEmMs: Date.now(),
+            atualizadoEm: agoraServidor,
+            ultimoPontoEm: criadoEm,
+            totalCompactado:
+              pontosAtualizados.length,
+            totalOriginal:
+              Math.max(
+                (Number(dadosCache.totalOriginal) || 0) + 1,
+                pontosAtualizados.length,
+              ),
+            cacheIncremental: true,
+          },
+          { merge: true },
+        );
+      }
+
+      await batch.commit();
+
+      console.log(
+        "Histórico GPS gravado.",
+        {
+          barcoId,
+          pontoId,
+          latitude: pontoDepois.latitude,
+          longitude: pontoDepois.longitude,
+        },
+      );
+    },
+  );
+
+
+
+// =========================================================================
+// CMB — TRAJETO INTELIGENTE V3
+// Cache durável, seleção da viagem atual e remoção de saltos de GPS.
+// =========================================================================
+type CmbV3CandidatoTrajeto = {
+  parentId: string;
+  pontosLidos: CmbUniversalPonto[];
+  viagem: CmbUniversalPonto[];
+  ultimoMs: number;
+  distanciaAtualKm: number;
+  idDireto: boolean;
+};
+
+function cmbV3RemoverPontosIsolados(
+  pontos: CmbUniversalPonto[],
+) {
+  if (pontos.length < 3) return pontos;
+
+  const resultado: CmbUniversalPonto[] = [pontos[0]];
+
+  for (let indice = 1; indice < pontos.length - 1; indice += 1) {
+    const anterior = resultado[resultado.length - 1];
+    const atual = pontos[indice];
+    const proximo = pontos[indice + 1];
+
+    const distanciaAnteriorAtual =
+      cmbUniversalDistanciaKm(anterior, atual);
+    const distanciaAtualProximo =
+      cmbUniversalDistanciaKm(atual, proximo);
+    const distanciaAnteriorProximo =
+      cmbUniversalDistanciaKm(anterior, proximo);
+
+    const isolado =
+      distanciaAnteriorAtual > 3 &&
+      distanciaAtualProximo > 3 &&
+      distanciaAnteriorProximo <
+        Math.min(
+          2,
+          Math.max(
+            distanciaAnteriorAtual,
+            distanciaAtualProximo,
+          ) * 0.25,
+        );
+
+    if (!isolado) {
+      resultado.push(atual);
+    }
+  }
+
+  resultado.push(pontos[pontos.length - 1]);
+  return resultado;
+}
+
+function cmbV3SepararTrechos(
+  pontosOriginais: CmbUniversalPonto[],
+) {
+  const pontos = cmbV3RemoverPontosIsolados(
+    cmbUniversalOrdenar(pontosOriginais),
+  );
+
+  if (pontos.length < 2) return [];
+
+  const trechos: CmbUniversalPonto[][] = [];
+  let trechoAtual: CmbUniversalPonto[] = [pontos[0]];
+
+  for (let indice = 1; indice < pontos.length; indice += 1) {
+    const anterior = pontos[indice - 1];
+    const atual = pontos[indice];
+    const distanciaKm =
+      cmbUniversalDistanciaKm(anterior, atual);
+    const intervaloMs =
+      anterior.criadoEmMs && atual.criadoEmMs
+        ? Math.max(
+            0,
+            atual.criadoEmMs - anterior.criadoEmMs,
+          )
+        : 0;
+    const velocidadeCalculadaKmh =
+      intervaloMs > 0
+        ? distanciaKm / (intervaloMs / 3_600_000)
+        : 0;
+
+    const saltoImpossivel =
+      distanciaKm > 35 ||
+      (intervaloMs <= 0 && distanciaKm > 8) ||
+      (
+        intervaloMs > 0 &&
+        distanciaKm > 1 &&
+        velocidadeCalculadaKmh > 95
+      ) ||
+      (
+        intervaloMs > 0 &&
+        intervaloMs < 60_000 &&
+        distanciaKm > 2.5
+      );
+
+    const novaViagem =
+      intervaloMs >= 8 * 60 * 60 * 1000;
+
+    if (saltoImpossivel || novaViagem) {
+      if (trechoAtual.length > 1) {
+        trechos.push(trechoAtual);
+      }
+
+      trechoAtual = [atual];
+      continue;
+    }
+
+    trechoAtual.push(atual);
+  }
+
+  if (trechoAtual.length > 1) {
+    trechos.push(trechoAtual);
+  }
+
+  return trechos;
+}
+
+function cmbV3SelecionarTrechoAtual({
+  pontos,
+  inicioViagemMs,
+  origemReferencia,
+  posicaoAtual,
+}: {
+  pontos: CmbUniversalPonto[];
+  inicioViagemMs: number;
+  origemReferencia:
+    | {latitude: number; longitude: number}
+    | null;
+  posicaoAtual:
+    | {latitude: number; longitude: number}
+    | null;
+}) {
+  const viagemBase = cmbUniversalSelecionarViagem({
+    pontos,
+    inicioViagemMs,
+    origemReferencia,
+  });
+  const trechos = cmbV3SepararTrechos(viagemBase);
+
+  if (trechos.length === 0) return [];
+  if (trechos.length === 1) return trechos[0];
+
+  return [...trechos].sort((a, b) => {
+    const ultimoA = a[a.length - 1];
+    const ultimoB = b[b.length - 1];
+    const distanciaA = posicaoAtual
+      ? cmbUniversalDistanciaKm(ultimoA, posicaoAtual)
+      : Number.POSITIVE_INFINITY;
+    const distanciaB = posicaoAtual
+      ? cmbUniversalDistanciaKm(ultimoB, posicaoAtual)
+      : Number.POSITIVE_INFINITY;
+    const pertoA = posicaoAtual && distanciaA <= 25 ? 1 : 0;
+    const pertoB = posicaoAtual && distanciaB <= 25 ? 1 : 0;
+
+    if (pertoA !== pertoB) {
+      return pertoB - pertoA;
+    }
+
+    if (ultimoA.criadoEmMs !== ultimoB.criadoEmMs) {
+      return ultimoB.criadoEmMs - ultimoA.criadoEmMs;
+    }
+
+    return distanciaA - distanciaB;
+  })[0];
+}
+
+function cmbV3CandidatoMelhor(
+  novo: CmbV3CandidatoTrajeto,
+  atual: CmbV3CandidatoTrajeto | null,
+  temPosicaoAtual: boolean,
+) {
+  if (!atual) return true;
+
+  if (temPosicaoAtual) {
+    const novoPerto = novo.distanciaAtualKm <= 25;
+    const atualPerto = atual.distanciaAtualKm <= 25;
+
+    if (novoPerto !== atualPerto) {
+      return novoPerto;
+    }
+
+    if (
+      Math.abs(novo.ultimoMs - atual.ultimoMs) >
+      5 * 60 * 1000
+    ) {
+      return novo.ultimoMs > atual.ultimoMs;
+    }
+
+    if (
+      Math.abs(
+        novo.distanciaAtualKm -
+        atual.distanciaAtualKm,
+      ) > 1
+    ) {
+      return novo.distanciaAtualKm <
+        atual.distanciaAtualKm;
+    }
+  } else if (novo.ultimoMs !== atual.ultimoMs) {
+    return novo.ultimoMs > atual.ultimoMs;
+  }
+
+  if (novo.idDireto !== atual.idDireto) {
+    return novo.idDireto;
+  }
+
+  return novo.viagem.length > atual.viagem.length;
+}
+
+export const obterTrajetoInteligenteEmbarcacao =
+  onRequest(
+    {
+      region: REGIAO,
+      cors: true,
+      timeoutSeconds: 300,
+      memory: "1GiB",
+      invoker: "public",
+    },
+    async (req, res) => {
+      try {
+        if (req.method !== "POST") {
+          res.status(405).json({
+            erro: "Use POST.",
+          });
+          return;
+        }
+
+        const corpo =
+          (req.body || {}) as Record<string, any>;
+        const aliases = cmbUniversalVariantesIds([
+          corpo.barcoId,
+          ...(Array.isArray(corpo.barcoIds)
+            ? corpo.barcoIds
+            : []),
+        ]);
+
+        if (aliases.length === 0) {
+          res.status(400).json({
+            erro:
+              "Identificador da embarcação obrigatório.",
+          });
+          return;
+        }
+
+        const inicioViagemMs = Math.max(
+          0,
+          Number(corpo.inicioViagemMs) || 0,
+        );
+        const origemLat = cmbUniversalNumero(
+          corpo.origemReferencia?.latitude ??
+            corpo.origemReferencia?.lat,
+        );
+        const origemLng = cmbUniversalNumero(
+          corpo.origemReferencia?.longitude ??
+            corpo.origemReferencia?.lng,
+        );
+        const origemReferencia =
+          origemLat !== null && origemLng !== null
+            ? {
+                latitude: origemLat,
+                longitude: origemLng,
+              }
+            : null;
+        const atualLat = cmbUniversalNumero(
+          corpo.posicaoAtual?.latitude ??
+            corpo.posicaoAtual?.lat,
+        );
+        const atualLng = cmbUniversalNumero(
+          corpo.posicaoAtual?.longitude ??
+            corpo.posicaoAtual?.lng,
+        );
+        const posicaoAtual =
+          atualLat !== null && atualLng !== null
+            ? {
+                latitude: atualLat,
+                longitude: atualLng,
+              }
+            : null;
+
+        const idOficialNormalizado =
+          cmbUniversalNormalizarId(
+            aliases[0],
+          );
+        const cacheRef = db
+          .collection("trajetos_compactados")
+          .doc(
+            `universal_${idOficialNormalizado}`,
+          );
+        const cacheSnapshot =
+          await cacheRef.get();
+
+        if (cacheSnapshot.exists) {
+          const cache =
+            (cacheSnapshot.data() || {}) as Record<
+              string,
+              any
+            >;
+          const pontosCache = Array.isArray(
+            cache.pontos,
+          )
+            ? cache.pontos
+            : [];
+          const mesmoInicio =
+            Number(cache.inicioViagemMs || 0) ===
+            inicioViagemMs;
+          const versao =
+            Number(cache.versao || 0);
+          const ultimoCache =
+            pontosCache[pontosCache.length - 1];
+          const distanciaCacheAtual =
+            posicaoAtual && ultimoCache
+              ? cmbUniversalDistanciaKm(
+                  {
+                    latitude:
+                      Number(
+                        ultimoCache.latitude,
+                      ),
+                    longitude:
+                      Number(
+                        ultimoCache.longitude,
+                      ),
+                  },
+                  posicaoAtual,
+                )
+              : 0;
+
+          if (
+            versao === 3 &&
+            mesmoInicio &&
+            pontosCache.length > 1 &&
+            (
+              !posicaoAtual ||
+              (
+                Number.isFinite(
+                  distanciaCacheAtual,
+                ) &&
+                distanciaCacheAtual <= 25
+              )
+            )
+          ) {
+            res.status(200).json({
+              pontos: pontosCache,
+              cache: true,
+              versao: 3,
+              barcoIdUsado: String(
+                cache.barcoIdUsado ||
+                  aliases[0],
+              ),
+              estrategia:
+                "cache_incremental_v3",
+              totalOriginal: Number(
+                cache.totalOriginal ||
+                  pontosCache.length,
+              ),
+            });
+            return;
+          }
+        }
+
+        const parents = new Set<string>(
+          aliases,
+        );
+        const encontradosCampo =
+          await cmbUniversalDescobrirParentsPorCampos(
+            aliases,
+          );
+        encontradosCampo.forEach((id) =>
+          parents.add(id),
+        );
+        const encontradosNome =
+          await cmbUniversalDescobrirParentsPorNome(
+            aliases,
+          );
+        encontradosNome.forEach((id) =>
+          parents.add(id),
+        );
+
+        const parentsTestados: string[] = [];
+        let melhor:
+          | CmbV3CandidatoTrajeto
+          | null = null;
+
+        for (const parentId of parents) {
+          parentsTestados.push(parentId);
+
+          let pontos =
+            await cmbUniversalLerColecaoDireta({
+              parentId,
+              inicioViagemMs,
+              limiteDocumentos: 30000,
+            });
+
+          if (
+            pontos.length <= 1 &&
+            inicioViagemMs > 0
+          ) {
+            pontos =
+              await cmbUniversalLerColecaoDireta({
+                parentId,
+                inicioViagemMs: 0,
+                limiteDocumentos: 30000,
+              });
+          }
+
+          if (pontos.length <= 1) {
+            continue;
+          }
+
+          const viagem =
+            cmbV3SelecionarTrechoAtual({
+              pontos,
+              inicioViagemMs,
+              origemReferencia,
+              posicaoAtual,
+            });
+
+          if (viagem.length <= 1) {
+            continue;
+          }
+
+          const ultimo =
+            viagem[viagem.length - 1];
+          const candidato: CmbV3CandidatoTrajeto =
+            {
+              parentId,
+              pontosLidos: pontos,
+              viagem,
+              ultimoMs:
+                Number(
+                  ultimo.criadoEmMs,
+                ) || 0,
+              distanciaAtualKm:
+                posicaoAtual
+                  ? cmbUniversalDistanciaKm(
+                      ultimo,
+                      posicaoAtual,
+                    )
+                  : Number.POSITIVE_INFINITY,
+              idDireto:
+                cmbUniversalNormalizarId(
+                  parentId,
+                ) === idOficialNormalizado,
+            };
+
+          if (
+            cmbV3CandidatoMelhor(
+              candidato,
+              melhor,
+              Boolean(posicaoAtual),
+            )
+          ) {
+            melhor = candidato;
+          }
+        }
+
+        if (!melhor) {
+          res.status(404).json({
+            erro:
+              "Nenhum trecho atual compatível foi localizado.",
+            aliasesTestados: aliases,
+            parentsTestados,
+          });
+          return;
+        }
+
+        const compactados =
+          cmbUniversalCompactar(
+            melhor.viagem,
+            180,
+          );
+
+        if (compactados.length <= 1) {
+          res.status(404).json({
+            erro:
+              "O trecho atual não possui deslocamento suficiente.",
+            barcoIdUsado: melhor.parentId,
+          });
+          return;
+        }
+
+        const respostaPontos =
+          compactados.map((ponto) => ({
+            latitude: ponto.latitude,
+            longitude: ponto.longitude,
+            criadoEmMs: ponto.criadoEmMs,
+          }));
+        const ultimoPonto =
+          compactados[
+            compactados.length - 1
+          ];
+
+        await cacheRef.set(
+          {
+            versao: 3,
+            barcoIdUsado:
+              melhor.parentId,
+            inicioViagemMs,
+            atualizadoEmMs: Date.now(),
+            atualizadoEm:
+              admin.firestore.FieldValue
+                .serverTimestamp(),
+            ultimoPontoMs:
+              Number(
+                ultimoPonto.criadoEmMs,
+              ) || 0,
+            totalOriginal:
+              melhor.viagem.length,
+            totalCompactado:
+              respostaPontos.length,
+            estrategia:
+              melhor.idDireto
+                ? "id_oficial_atual"
+                : encontradosCampo.includes(
+                      melhor.parentId,
+                    )
+                  ? "barco_id_do_ponto_atual"
+                  : "alias_mais_recente",
+            aliasesTestados: aliases,
+            parentsTestados,
+            pontos: respostaPontos,
+          },
+          {merge: true},
+        );
+
+        res.status(200).json({
+          pontos: respostaPontos,
+          cache: false,
+          versao: 3,
+          barcoIdUsado:
+            melhor.parentId,
+          estrategia:
+            melhor.idDireto
+              ? "id_oficial_atual"
+              : encontradosCampo.includes(
+                    melhor.parentId,
+                  )
+                ? "barco_id_do_ponto_atual"
+                : "alias_mais_recente",
+          totalOriginal:
+            melhor.viagem.length,
+          totalCompactado:
+            respostaPontos.length,
+          ultimoPontoMs:
+            Number(
+              ultimoPonto.criadoEmMs,
+            ) || 0,
+          distanciaAtualKm:
+            melhor.distanciaAtualKm,
+        });
+      } catch (error) {
+        console.error(
+          "Erro no trajeto inteligente V3:",
+          error,
+        );
+        res.status(500).json({
+          erro:
+            "Não foi possível montar o trajeto inteligente.",
+        });
+      }
+    },
+  );

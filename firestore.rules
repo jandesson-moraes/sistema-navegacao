@@ -142,14 +142,22 @@ service cloud.firestore {
       );
     }
 
+    match /cidades/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdminSistema() ||
+        funcionarioTemPermissao("rotas");
+    }
+
     match /terminais/{docId} {
       allow read: if true;
-      allow write: if isAdminSistema();
+      allow create, update, delete: if isAdminSistema() ||
+        funcionarioTemPermissao("rotas");
     }
 
     match /portos/{docId} {
       allow read: if true;
-      allow write: if isAdminSistema();
+      allow create, update, delete: if isAdminSistema() ||
+        funcionarioTemPermissao("rotas");
     }
 
     match /grades_viagens/{docId} {
@@ -157,9 +165,49 @@ service cloud.firestore {
       allow write: if estaLogado();
     }
 
+    match /programacoes_viagem/{docId} {
+      allow read: if true;
+      allow create, update, delete: if isAdminSistema() ||
+        funcionarioTemPermissao("rotas");
+    }
+
     match /banners_promocionais/{docId} {
       allow read: if true;
-      allow write: if isAdminSistema();
+      allow create, update, delete: if isAdminSistema() ||
+        funcionarioTemPermissao("banners");
+    }
+
+    match /banner_metricas_eventos/{eventoId} {
+      allow create: if
+        request.resource.data.keys().hasOnly([
+          "bannerId",
+          "tipo",
+          "barcoId",
+          "contexto",
+          "uid",
+          "criadoEm"
+        ]) &&
+        request.resource.data.bannerId is string &&
+        request.resource.data.bannerId.size() > 0 &&
+        request.resource.data.bannerId.size() <= 160 &&
+        request.resource.data.tipo in [
+          "impressao",
+          "clique",
+          "fechamento"
+        ] &&
+        request.resource.data.barcoId is string &&
+        request.resource.data.barcoId.size() <= 160 &&
+        request.resource.data.contexto in [
+          "global",
+          "selecao_embarcacao"
+        ] &&
+        request.resource.data.uid is string &&
+        request.resource.data.uid.size() <= 160;
+
+      allow read, delete: if isAdminSistema() ||
+        funcionarioTemPermissao("banners");
+
+      allow update: if false;
     }
 
     match /push_tokens/{tokenId} {

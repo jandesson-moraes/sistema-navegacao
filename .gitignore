@@ -32,3 +32,5 @@ functions/lib
 *.sw?
 functions/.runtimeconfig.json
 firebase-debug.log
+# Backups locais
+*.backup_*

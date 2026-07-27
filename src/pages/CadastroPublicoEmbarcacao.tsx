@@ -132,6 +132,12 @@ export default function CadastroPublicoEmbarcacao() {
             <label className="font-bold">Porto de saída
               <input name="portoSaida" className={campo} />
             </label>
+            <label className="font-bold">Cidade de origem
+              <input name="origemCidade" className={campo} placeholder="Ex.: Manaus - AM" />
+            </label>
+            <label className="font-bold">Cidade de destino
+              <input name="destinoCidade" className={campo} placeholder="Ex.: Santarém - PA" />
+            </label>
             <label className="font-bold">CNPJ
               <input name="cnpj" inputMode="numeric" className={campo} placeholder="Se a operação possuir" />
             </label>
@@ -143,6 +149,23 @@ export default function CadastroPublicoEmbarcacao() {
               </select>
             </label>
           </div>
+
+          <label className="block font-bold">Descrição da embarcação
+            <textarea
+              name="descricao"
+              rows={5}
+              className={`${campo} py-3`}
+              placeholder="Conte como é a embarcação e quais informações são úteis ao passageiro."
+            />
+          </label>
+          <label className="block font-bold">Escalas
+            <textarea
+              name="escalasTexto"
+              rows={3}
+              className={`${campo} py-3`}
+              placeholder="Uma por linha ou separadas por vírgula. Não informe horários."
+            />
+          </label>
 
           <div className="border-t border-white/10 pt-6">
             <h2 className="text-xl font-black">Quem está cadastrando?</h2>

@@ -7,6 +7,7 @@ type Municipio = {id: number; nome: string};
 type Opcao = {valor: string; rotulo: string; busca?: string};
 
 export type EscalaCadastro = {
+  uf?: string;
   cidade: string;
   porto: string;
   diaRelativo: number;
@@ -50,7 +51,15 @@ const ROTA_VAZIA: RotaCadastro = {
 
 function normalizar(valor: unknown) {
   return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase().replace(/\s+/g, " ").trim();
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function formatarNomeLocal(valor: unknown) {
+  return String(valor || "")
+    .replace(/_+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\s*-\s*([a-z]{2})$/i, (_, uf: string) => ` - ${uf.toUpperCase()}`);
 }
 
 function SeletorLista({
@@ -143,7 +152,7 @@ function SeletorMunicipio({
       <div className="grid grid-cols-[100px_1fr] gap-2">
         <SeletorLista valor={uf} placeholder="UF" pesquisavel={false}
           opcoes={UFS.map((item) => ({valor: item.sigla, rotulo: item.sigla, busca: item.nome}))}
-          onChange={(valor) => {onUf(valor); onCidade("");}} />
+          onChange={onUf} />
         <SeletorLista valor={cidade}
           placeholder={carregando ? "Carregando..." : erro ? "Falha ao carregar" : "Município"}
           desabilitado={!uf || carregando || erro}
@@ -208,11 +217,19 @@ export default function RotasCadastroPublico({
       onSnapshot(collection(db, nomeColecao), (snapshot) => {
         snapshot.docs.forEach((documento) => {
           const item = documento.data() as Record<string, unknown>;
-          const nome = String(item.nome || item.porto || item.terminal || documento.id);
-          const cidade = String(item.cidade || item.municipio || "");
-          dados.set(`${nomeColecao}:${documento.id}`, {
-            valor: nome, rotulo: cidade ? `${nome} — ${cidade}` : nome, busca: cidade,
-          });
+          const nome = formatarNomeLocal(item.nome || item.porto || item.terminal || documento.id);
+          const cidade = formatarNomeLocal(item.cidade || item.municipio || "");
+          const chave = normalizar(nome);
+          const atual = dados.get(chave);
+          if (!atual || (!atual.busca && cidade)) {
+            dados.set(chave, {
+              valor: nome,
+              rotulo: cidade && !normalizar(nome).includes(normalizar(cidade))
+                ? `${nome} — ${cidade}`
+                : nome,
+              busca: cidade,
+            });
+          }
         });
         setPortos(Array.from(dados.values()).sort((a, b) => a.rotulo.localeCompare(b.rotulo)));
       });
@@ -224,15 +241,19 @@ export default function RotasCadastroPublico({
   const rotas = useMemo(() => value.length ? value : [{...ROTA_VAZIA}], [value]);
   const atualizar = (indice: number, campo: keyof RotaCadastro, valor: unknown) =>
     onChange(rotas.map((rota, atual) => atual === indice ? {...rota, [campo]: valor} : rota));
+  const atualizarCampos = (indice: number, campos: Partial<RotaCadastro>) =>
+    onChange(rotas.map((rota, atual) => atual === indice ? {...rota, ...campos} : rota));
   const alternarDia = (indice: number, dia: number) => {
     const atuais = rotas[indice].diasSemana;
     atualizar(indice, "diasSemana", atuais.includes(dia) ? atuais.filter((item) => item !== dia) : [...atuais, dia].sort());
   };
   const adicionarEscala = (indice: number) => atualizar(indice, "escalas", [...rotas[indice].escalas, {
-    cidade: "", porto: "", diaRelativo: 0, horarioChegada: "", horarioSaida: "",
+    uf: "", cidade: "", porto: "", diaRelativo: 0, horarioChegada: "", horarioSaida: "",
   }]);
   const editarEscala = (r: number, e: number, campo: keyof EscalaCadastro, valor: string | number) =>
     atualizar(r, "escalas", rotas[r].escalas.map((escala, i) => i === e ? {...escala, [campo]: valor} : escala));
+  const editarCamposEscala = (r: number, e: number, campos: Partial<EscalaCadastro>) =>
+    atualizar(r, "escalas", rotas[r].escalas.map((escala, i) => i === e ? {...escala, ...campos} : escala));
   const input = "mt-1 min-h-11 w-full rounded-xl border border-white/10 bg-[#10253e] px-3 text-sm text-white outline-none";
 
   return (
@@ -267,9 +288,11 @@ export default function RotasCadastroPublico({
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <SeletorMunicipio titulo="De onde sai?" uf={rota.origemUf} cidade={rota.origemCidade}
-              onUf={(v) => atualizar(indice, "origemUf", v)} onCidade={(v) => atualizar(indice, "origemCidade", v)} />
+              onUf={(v) => atualizarCampos(indice, {origemUf: v, origemCidade: ""})}
+              onCidade={(v) => atualizar(indice, "origemCidade", v)} />
             <SeletorMunicipio titulo="Para onde vai?" uf={rota.destinoUf} cidade={rota.destinoCidade}
-              onUf={(v) => atualizar(indice, "destinoUf", v)} onCidade={(v) => atualizar(indice, "destinoCidade", v)} />
+              onUf={(v) => atualizarCampos(indice, {destinoUf: v, destinoCidade: ""})}
+              onCidade={(v) => atualizar(indice, "destinoCidade", v)} />
             <SeletorPorto titulo="Porto de origem" valor={rota.portoOrigem} cidade={rota.origemCidade} portos={portos}
               onChange={(v) => atualizar(indice, "portoOrigem", v)} />
             <SeletorPorto titulo="Porto de destino" valor={rota.portoDestino} cidade={rota.destinoCidade} portos={portos}
@@ -302,10 +325,9 @@ export default function RotasCadastroPublico({
               {rota.escalas.map((escala, escalaIndice) => (
                 <div key={escalaIndice} className="rounded-2xl bg-white/[0.055] p-3">
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="text-xs font-black uppercase text-slate-300">Cidade ou comunidade
-                      <input value={escala.cidade} onChange={(e) => editarEscala(indice, escalaIndice, "cidade", e.target.value)}
-                        className={input} placeholder="Selecione ou informe" />
-                    </label>
+                    <SeletorMunicipio titulo="Cidade da escala" uf={escala.uf || ""} cidade={escala.cidade}
+                      onUf={(v) => editarCamposEscala(indice, escalaIndice, {uf: v, cidade: ""})}
+                      onCidade={(v) => editarEscala(indice, escalaIndice, "cidade", v)} />
                     <SeletorPorto titulo="Porto da escala" valor={escala.porto} cidade={escala.cidade} portos={portos}
                       onChange={(v) => editarEscala(indice, escalaIndice, "porto", v)} />
                     <HorarioCompacto titulo="Chegada prevista" valor={escala.horarioChegada}

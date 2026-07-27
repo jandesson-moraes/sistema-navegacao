@@ -33,6 +33,7 @@ function rotasValidas(valor: unknown) {
     const escalas = escalasRecebidas.slice(0, 30).map((itemEscala: unknown) => {
       const escala = (itemEscala ?? {}) as Record<string, unknown>;
       return {
+        uf: texto(escala.uf, 2).toUpperCase(),
         cidade: texto(escala.cidade, 120),
         porto: texto(escala.porto, 160),
         diaRelativo: Math.max(0, Math.min(60, Number(escala.diaRelativo) || 0)),

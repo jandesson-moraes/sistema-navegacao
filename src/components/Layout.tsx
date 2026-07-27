@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { getAuth, onAuthStateChanged, signOut, type User } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "../config/firebase";
 
 type PermissaoKey =
@@ -44,6 +44,13 @@ const principal: MenuItem[] = [
     icon: "▰",
     label: "Embarcações",
     match: ["/embarcacoes", "/frota"],
+    permissao: "frota",
+  },
+  {
+    to: "/solicitacoes-cadastro",
+    icon: "✓",
+    label: "Validar cadastros",
+    match: ["/solicitacoes-cadastro"],
     permissao: "frota",
   },
   {
@@ -163,6 +170,7 @@ const titulos: Record<string, string> = {
   "/programacao-viagens": "Programação de Viagens",
   "/embarcacoes": "Gestão de Frota",
   "/frota": "Gestão de Frota",
+  "/solicitacoes-cadastro": "Validação de Embarcações",
   "/terminais": "Terminais e Portos",
   "/banners": "Banners",
   "/gps": "GPS",
@@ -189,6 +197,7 @@ const subtitulos: Record<string, string> = {
     "Cadastre dias, horários, duração e várias saídas por embarcação",
   "/embarcacoes": "Cadastre e acompanhe embarcações do sistema",
   "/frota": "Cadastre e acompanhe embarcações do sistema",
+  "/solicitacoes-cadastro": "Confira o WhatsApp, os dados e a foto antes de publicar",
   "/terminais": "Gerencie portos, terminais e pontos de parada",
   "/banners": "Organize banners e comunicações promocionais",
   "/gps": "Rastreadores, configuração, provisionamento e modo teste",
@@ -358,6 +367,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
   const [carregandoPermissoes, setCarregandoPermissoes] = useState(true);
   const [menuMobileAberto, setMenuMobileAberto] = useState(false);
+  const [cadastrosPendentes, setCadastrosPendentes] = useState(0);
 
   useEffect(() => {
     setMenuMobileAberto(false);
@@ -471,12 +481,32 @@ export function Layout({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!usuario || !permissaoAtiva(permissoesUsuario, "frota")) {
+      setCadastrosPendentes(0);
+      return;
+    }
+    const consulta = query(
+      collection(db, "solicitacoes_cadastro_embarcacoes"),
+      where("status", "in", ["aguardando_whatsapp", "em_analise", "correcao_solicitada"]),
+    );
+    return onSnapshot(
+      consulta,
+      (snapshot) => setCadastrosPendentes(snapshot.size),
+      (erro) => console.warn("Não foi possível contar cadastros pendentes:", erro),
+    );
+  }, [permissoesUsuario, usuario]);
+
   const iniciais = useMemo(() => iniciaisUsuario(usuario), [usuario]);
 
   const principalVisivel = useMemo(() => {
     if (carregandoPermissoes && usuario) return [];
-    return principal.filter((item) => permissaoAtiva(permissoesUsuario, item.permissao));
-  }, [carregandoPermissoes, permissoesUsuario, usuario]);
+    return principal
+      .filter((item) => permissaoAtiva(permissoesUsuario, item.permissao))
+      .map((item) => item.to === "/solicitacoes-cadastro" && cadastrosPendentes > 0
+        ? {...item, badge: String(cadastrosPendentes)}
+        : item);
+  }, [cadastrosPendentes, carregandoPermissoes, permissoesUsuario, usuario]);
 
   const adminVisivel = useMemo(() => {
     if (carregandoPermissoes && usuario) return [];

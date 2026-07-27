@@ -27,6 +27,8 @@ import RelatoriosApp from "../src/pages/RelatoriosApp";
 import ConfiguracaoVendasEmbarcacoes from "../src/pages/ConfiguracaoVendasEmbarcacoes";
 import RelatorioVendasInteligente from "../src/pages/RelatorioVendasInteligente";
 import MetricasLandingPage from "../src/pages/MetricasLandingPage";
+import CadastroPublicoEmbarcacao from "../src/pages/CadastroPublicoEmbarcacao";
+import SolicitacoesCadastroEmbarcacoes from "../src/pages/SolicitacoesCadastroEmbarcacoes";
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
@@ -220,6 +222,7 @@ export default function App() {
           <Route path="/alterar-senha" element={<AlterarSenha />} />
           <Route path="/redefinir-senha" element={<RedefinirSenha />} />
           <Route path="/login-app" element={<LoginApp />} />
+          <Route path="/cadastrar-embarcacao" element={<CadastroPublicoEmbarcacao />} />
           <Route
             path="/"
             element={
@@ -252,6 +255,15 @@ export default function App() {
             element={
               <RotaProtegida permissao="frota">
                 <Embarcacoes />
+              </RotaProtegida>
+            }
+          />
+
+          <Route
+            path="/solicitacoes-cadastro"
+            element={
+              <RotaProtegida permissao="frota">
+                <SolicitacoesCadastroEmbarcacoes />
               </RotaProtegida>
             }
           />

@@ -9,6 +9,9 @@ import {
   type RegraTaxaVenda,
 } from "./motorVendas";
 
+export {processarVencimentoPlanos} from "./vencimentoPlanos";
+export {solicitarCadastroPublicoEmbarcacao} from "./cadastroPublicoEmbarcacoes";
+
 if (!admin.apps.length) {
   admin.initializeApp();
 }

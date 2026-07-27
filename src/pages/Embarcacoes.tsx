@@ -10,6 +10,13 @@ import {
 } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { useAppModal } from "../components/AppModal";
+import {
+  ROTULOS_PLANO,
+  planoEfetivo,
+  statusSinal,
+  type PlanoEmbarcacao,
+  type StatusPlano,
+} from "../domain/planos";
 
 type Embarcacao = {
   id: string;
@@ -19,6 +26,11 @@ type Embarcacao = {
   categoria?: string;
   categoriaPlano?: string;
   planoSistema?: string;
+  planoId?: PlanoEmbarcacao;
+  planoStatus?: StatusPlano;
+  planoValidoAte?: any;
+  statusCadastro?: string;
+  statusPublicacao?: string;
   status?: string;
   online?: boolean;
   ativo?: boolean;
@@ -57,6 +69,9 @@ type FormularioEmbarcacao = {
   senhaComandante: string;
   tipoBarco: string;
   categoriaPlano: string;
+  planoId: PlanoEmbarcacao;
+  planoStatus: StatusPlano;
+  planoValidoAte: string;
   donoNome: string;
   donoEmail: string;
   ownerId: string;
@@ -76,7 +91,18 @@ const TIPOS_BARCO = [
   "Navio",
 ];
 
-const CATEGORIAS_PLANO = ["GPS", "Passagens", "Completo"];
+const PLANOS = [
+  { value: "basico", label: "Básico — gratuito" },
+  { value: "vitrine", label: "Vitrine Digital — R$ 99,90/mês" },
+  { value: "tempo_real", label: "Vitrine + Tempo Real — R$ 299,90/mês" },
+] as const;
+const STATUS_PLANOS: StatusPlano[] = [
+  "ativo",
+  "cortesia",
+  "vencido",
+  "suspenso",
+  "cancelado",
+];
 const TIPOS_USUARIO = ["dono"];
 
 const FORM_PADRAO: FormularioEmbarcacao = {
@@ -85,6 +111,9 @@ const FORM_PADRAO: FormularioEmbarcacao = {
   senhaComandante: "",
   tipoBarco: "Barco regional",
   categoriaPlano: "GPS",
+  planoId: "tempo_real",
+  planoStatus: "ativo",
+  planoValidoAte: "",
   donoNome: "",
   donoEmail: "",
   ownerId: "",
@@ -114,6 +143,12 @@ function ownerIdAutomatico(email: string) {
   return emailNormalizado.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
+function categoriaLegadaDoPlano(plano: PlanoEmbarcacao) {
+  if (plano === "basico") return "Básico";
+  if (plano === "vitrine") return "Vitrine";
+  return "GPS";
+}
+
 function formatarCoord(valor: any) {
   const n = Number(valor);
   if (!Number.isFinite(n)) return "—";
@@ -125,7 +160,15 @@ function tipoEmbarcacao(barco: Embarcacao) {
 }
 
 function categoriaEmbarcacao(barco: Embarcacao) {
-  return barco.categoriaPlano || barco.planoSistema || barco.categoria || "GPS";
+  return ROTULOS_PLANO[planoEfetivo(barco)];
+}
+
+function dataParaInput(valor: any) {
+  if (!valor) return "";
+  const data =
+    typeof valor?.toDate === "function" ? valor.toDate() : new Date(String(valor));
+  if (Number.isNaN(data.getTime())) return "";
+  return data.toISOString().slice(0, 10);
 }
 
 function formularioDoBarco(barco: Embarcacao): FormularioEmbarcacao {
@@ -136,6 +179,9 @@ function formularioDoBarco(barco: Embarcacao): FormularioEmbarcacao {
     tipoBarco:
       tipoEmbarcacao(barco) === "Sem tipo" ? "Barco regional" : tipoEmbarcacao(barco),
     categoriaPlano: categoriaEmbarcacao(barco),
+    planoId: planoEfetivo(barco),
+    planoStatus: barco.planoStatus || "ativo",
+    planoValidoAte: dataParaInput(barco.planoValidoAte),
     donoNome: barco.donoNome || "",
     donoEmail: barco.ownerEmail || barco.emailDono || "",
     ownerId:
@@ -222,7 +268,7 @@ export default function Embarcacoes() {
       comGps: barcos.filter(
         (barco) => barco.rastreadorDeviceId || barco.rastreadorAtivo === true,
       ).length,
-      completos: barcos.filter((barco) => categoriaEmbarcacao(barco) === "Completo")
+      completos: barcos.filter((barco) => planoEfetivo(barco) === "tempo_real")
         .length,
     };
   }, [barcos]);
@@ -248,6 +294,11 @@ export default function Embarcacoes() {
         novo.nomeNaRede = `CMB_${normalizarId(valor)}`;
       }
 
+      if (campo === "planoId") {
+        novo.categoriaPlano = categoriaLegadaDoPlano(valor);
+        if (valor === "basico") novo.planoValidoAte = "";
+      }
+
       return novo;
     });
   }
@@ -262,6 +313,11 @@ export default function Embarcacoes() {
 
       if (campo === "idBarco" && !atual.nomeNaRede.trim()) {
         novo.nomeNaRede = `CMB_${normalizarId(valor)}`;
+      }
+
+      if (campo === "planoId") {
+        novo.categoriaPlano = categoriaLegadaDoPlano(valor);
+        if (valor === "basico") novo.planoValidoAte = "";
       }
 
       return novo;
@@ -316,6 +372,21 @@ export default function Embarcacoes() {
       categoria: dados.categoriaPlano,
       categoriaPlano: dados.categoriaPlano,
       planoSistema: dados.categoriaPlano,
+      planoId: dados.planoId,
+      planoStatus: dados.planoStatus,
+      planoValidoAte: dados.planoValidoAte
+        ? new Date(`${dados.planoValidoAte}T23:59:59.999`)
+        : null,
+      planoEfetivoId: planoEfetivo({
+        planoId: dados.planoId,
+        planoStatus: dados.planoStatus,
+        planoValidoAte: dados.planoValidoAte
+          ? new Date(`${dados.planoValidoAte}T23:59:59.999`)
+          : null,
+      }),
+      planoVersao: 1,
+      statusCadastro: embarcacaoAnterior.statusCadastro || "aprovado",
+      statusPublicacao: embarcacaoAnterior.statusPublicacao || "publicado",
       donoNome: dados.donoNome.trim(),
       emailDono,
       ownerEmail: emailDono,
@@ -356,6 +427,7 @@ export default function Embarcacoes() {
         nomeBarco: dados.nomeBarco.trim(),
         tipoBarco: dados.tipoBarco,
         categoriaPlano: dados.categoriaPlano,
+        planoId: dados.planoId,
         nomeComandante: `Comandante ${dados.nomeBarco.trim()}`,
         senha: dados.senhaComandante.trim(),
         ativo: true,
@@ -451,8 +523,8 @@ export default function Embarcacoes() {
         ? "Ocultar embarcação do aplicativo?"
         : "Publicar embarcação no aplicativo?",
       mensagem: estaVisivel
-        ? `A embarcação ${barco.nome || barco.id} deixará de aparecer na pesquisa e no mapa do app. Os dados, o GPS e o histórico serão mantidos.`
-        : `A embarcação ${barco.nome || barco.id} voltará a aparecer na pesquisa e no mapa do app.`,
+        ? `A embarcação ${barco.nome || barco.id} deixará de aparecer no aplicativo. Os dados, o GPS e o histórico serão mantidos.`
+        : `A embarcação ${barco.nome || barco.id} voltará à pesquisa. Somente o plano Tempo Real poderá aparecer como posição no mapa.`,
       confirmarTexto: estaVisivel ? "Ocultar do app" : "Publicar no app",
       cancelarTexto: "Cancelar",
     });
@@ -719,6 +791,14 @@ export default function Embarcacoes() {
 
                               <Badge texto={tipoAtual} cor="sky" />
                               <Badge texto={categoriaAtual} cor="emerald" />
+                              <Badge
+                                texto={`Sinal: ${statusSinal(barco).replace(/_/g, " ")}`}
+                                cor={
+                                  statusSinal(barco) === "ativo"
+                                    ? "emerald"
+                                    : "amber"
+                                }
+                              />
                               {barco.rastreadorDeviceId && (
                                 <Badge texto="GPS" cor="amber" />
                               )}
@@ -775,6 +855,14 @@ export default function Embarcacoes() {
                             valor={barco.rastreadorDeviceId || "—"}
                           />
                           <Mini label="Plano" valor={categoriaAtual} />
+                          <Mini
+                            label="Situação do plano"
+                            valor={barco.planoStatus || "ativo"}
+                          />
+                          <Mini
+                            label="Validade"
+                            valor={dataParaInput(barco.planoValidoAte) || "Sem vencimento"}
+                          />
                           <Mini
                             label="Latitude"
                             valor={formatarCoord(barco.ultima_posicao?.latitude)}
@@ -854,12 +942,39 @@ function FormularioCadastro({
               options={TIPOS_BARCO}
             />
 
-            <CampoSelect
-              label="Categoria / plano"
-              value={form.categoriaPlano}
-              onChange={(valor) => alterar("categoriaPlano", valor)}
-              options={CATEGORIAS_PLANO}
+            <CampoSelectComValor
+              label="Plano comercial"
+              value={form.planoId}
+              onChange={(valor) => alterar("planoId", valor)}
+              options={PLANOS}
             />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <CampoSelect
+              label="Situação do plano"
+              value={form.planoStatus}
+              onChange={(valor) => alterar("planoStatus", valor)}
+              options={STATUS_PLANOS}
+            />
+
+            <CampoTexto
+              label="Plano válido até"
+              value={form.planoValidoAte}
+              onChange={(valor) => alterar("planoValidoAte", valor)}
+              tipo="date"
+            />
+          </div>
+
+          <div className="rounded-2xl border border-sky-300/15 bg-sky-300/5 px-4 py-3">
+            <p className="text-[10px] font-black uppercase text-sky-200">
+              Regra de publicação
+            </p>
+            <p className="mt-1 text-xs leading-5 text-sky-100/60">
+              Plano pago vencido será exibido como Básico sem apagar fotos,
+              contatos, rotas ou configurações. Somente Tempo Real pode aparecer
+              como posição no mapa.
+            </p>
           </div>
 
           <CampoSenha
@@ -1073,6 +1188,35 @@ function CampoSelect({
         {options.map((opcao) => (
           <option key={opcao} value={opcao}>
             {opcao}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function CampoSelectComValor({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (valor: string) => void;
+  options: ReadonlyArray<{ value: string; label: string }>;
+}) {
+  return (
+    <label>
+      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">{label}</p>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white shadow-sm outline-none focus:border-sky-300/60"
+      >
+        {options.map((opcao) => (
+          <option key={opcao.value} value={opcao.value}>
+            {opcao.label}
           </option>
         ))}
       </select>

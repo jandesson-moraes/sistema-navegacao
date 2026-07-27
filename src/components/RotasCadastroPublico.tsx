@@ -33,7 +33,7 @@ export type RotaCadastro = {
   escalas: EscalaCadastro[];
 };
 
-const DIAS = ["D", "S", "T", "Q", "Q", "S", "S"];
+const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const NOMES_DIAS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const UFS: Uf[] = [
   ["AC", "Acre"], ["AL", "Alagoas"], ["AP", "Amapá"], ["AM", "Amazonas"],
@@ -301,7 +301,7 @@ function ProgramacaoSentido({
   const destaque = cor === "sky" ? "bg-sky-500" : "bg-emerald-500";
   const textoCor = cor === "sky" ? "text-sky-300" : "text-emerald-300";
   return (
-    <section className={`rounded-3xl border p-4 sm:p-5 ${borda}`}>
+    <section className={`rounded-3xl border p-3 sm:p-5 ${borda}`}>
       <div className="flex items-start gap-3">
         <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-lg font-black text-white ${destaque}`}>
           {rota.sentido === "ida" ? "→" : "←"}
@@ -312,15 +312,15 @@ function ProgramacaoSentido({
         </div>
       </div>
 
-      <div className="mt-4 rounded-2xl border border-white/10 bg-[#071a2f]/80 p-3">
+      <div className="mt-4 border-t border-white/10 pt-4 sm:rounded-2xl sm:border sm:bg-[#071a2f]/80 sm:p-4">
         <p className="text-xs font-black uppercase tracking-wide text-slate-300">Quando esta viagem sai?</p>
         <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_180px]">
           <div className="min-w-0">
             <p className="mb-1.5 text-xs font-black uppercase tracking-wide text-slate-300">Dias de saída</p>
-            <div className="flex flex-nowrap gap-1 overflow-x-auto pb-1">
+            <div className="grid grid-cols-7 gap-1">
               {DIAS.map((dia, numero) => (
                 <button type="button" key={numero} title={NOMES_DIAS[numero]} onClick={() => onAlternarDia(numero)}
-                  className={`h-11 min-w-9 flex-1 rounded-xl px-2 text-xs font-black ${rota.diasSemana.includes(numero) ? `${destaque} text-white` : "bg-white/8 text-slate-300"}`}>
+                  className={`h-11 min-w-0 rounded-xl px-0.5 text-[10px] font-black sm:text-xs ${rota.diasSemana.includes(numero) ? `${destaque} text-white` : "bg-white/8 text-slate-300"}`}>
                   {dia}
                 </button>
               ))}
@@ -340,7 +340,7 @@ function ProgramacaoSentido({
           <p className="mt-1 text-xs text-slate-400">Informe chegada e nova saída somente quando souber.</p>
           <div className="mt-3 space-y-2">
             {rota.escalas.map((escala, indice) => (
-              <div key={`${escala.cidade}_${escala.porto}_${indice}`} className="rounded-2xl bg-white/[0.055] p-3">
+              <div key={`${escala.cidade}_${escala.porto}_${indice}`} className="border-t border-white/10 py-3 first:border-t-0 sm:rounded-2xl sm:border-0 sm:bg-white/[0.055] sm:p-3">
                 <div className="flex items-center gap-2">
                   <span className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs font-black text-white ${destaque}`}>{indice + 1}</span>
                   <div className="min-w-0">
@@ -363,7 +363,7 @@ function ProgramacaoSentido({
         </div>
       )}
 
-      <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+      <div className="mt-4 border-t border-white/10 pt-4 sm:rounded-2xl sm:border sm:bg-white/[0.035] sm:p-4">
         <p className="text-xs font-black uppercase tracking-wide text-slate-300">
           Chegada ao destino final: {rota.destinoCidade || "destino ainda não selecionado"}
         </p>

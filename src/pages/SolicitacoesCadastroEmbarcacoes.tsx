@@ -38,6 +38,7 @@ type Solicitacao = {
 };
 
 const pendentes = ["aguardando_whatsapp", "em_analise", "correcao_solicitada"];
+const NOMES_DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 function separarEscalas(valor?: string) {
   return String(valor || "")
@@ -52,6 +53,34 @@ function formatarCnpj(valor?: string) {
     .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
     .replace(/\.(\d{3})(\d)/, ".$1/$2")
     .replace(/(\d{4})(\d)/, "$1-$2");
+}
+
+function formatarWhatsApp(valor?: string) {
+  let numeros = String(valor || "").replace(/\D/g, "");
+  if (numeros.startsWith("55")) numeros = numeros.slice(2);
+  numeros = numeros.slice(0, 11);
+  if (!numeros) return "";
+  if (numeros.length <= 2) return `+55 (${numeros}`;
+  if (numeros.length <= 7) return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
+  if (numeros.length <= 10) return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2, 6)}-${numeros.slice(6)}`;
+  return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7)}`;
+}
+
+function nomeVinculo(valor?: string) {
+  return {
+    dono: "Proprietário",
+    tripulante: "Tripulante",
+    representante: "Representante",
+    passageiro: "Passageiro/colaborador",
+  }[valor || ""] || valor || "Não informado";
+}
+
+function nomePlano(valor?: string) {
+  return {
+    basico: "Básico gratuito",
+    vitrine: "Vitrine",
+    tempo_real: "Tempo Real",
+  }[valor || ""] || valor || "Não informado";
 }
 
 function normalizarIdEmbarcacao(nome?: string) {
@@ -117,6 +146,25 @@ export default function SolicitacoesCadastroEmbarcacoes() {
     setRascunho((atual) => atual ? {...atual, [campo]: valor} : atual);
   }
 
+  function editarRota(indice: number, campos: Partial<RotaCadastro>) {
+    setRascunho((atual) => atual ? {
+      ...atual,
+      rotas: (atual.rotas || []).map((rota, atualIndice) =>
+        atualIndice === indice ? {...rota, ...campos} : rota),
+    } : atual);
+  }
+
+  function editarEscala(indiceRota: number, indiceEscala: number, campos: Partial<RotaCadastro["escalas"][number]>) {
+    setRascunho((atual) => atual ? {
+      ...atual,
+      rotas: (atual.rotas || []).map((rota, atualIndice) => atualIndice === indiceRota ? {
+        ...rota,
+        escalas: rota.escalas.map((escala, escalaAtual) =>
+          escalaAtual === indiceEscala ? {...escala, ...campos} : escala),
+      } : rota),
+    } : atual);
+  }
+
   async function alterarStatus(status: string, extras: Record<string, unknown> = {}) {
     if (!selecionada) return;
     setOcupado(true);
@@ -151,7 +199,13 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         descricao: rascunho.descricao || "",
         escalasTexto: rascunho.escalasTexto || "",
         cnpj: rascunho.cnpj || "",
+        nomeSolicitante: rascunho.nomeSolicitante || "",
         telefone: rascunho.telefone || "",
+        vinculo: rascunho.vinculo || "",
+        planoInteresse: rascunho.planoInteresse || "basico",
+        autorizaMelhoria: rascunho.autorizaMelhoria === true,
+        observacoes: rascunho.observacoes || "",
+        rotas: rascunho.rotas || [],
         fotoOriginalUrl: rascunho.fotoOriginalUrl || "",
         revisadoPelaEquipe: true,
         atualizadoEm: serverTimestamp(),
@@ -178,7 +232,7 @@ export default function SolicitacoesCadastroEmbarcacoes() {
     try {
       await salvarRevisao();
       const foto = rascunho.fotoOriginalUrl || "";
-      const escalas = separarEscalas(rascunho.escalasTexto);
+      const escalasLegadas = separarEscalas(rascunho.escalasTexto);
       const idBase = normalizarIdEmbarcacao(rascunho.nomeEmbarcacao);
       let idEmbarcacao = idBase;
       let sufixo = 2;
@@ -199,7 +253,11 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         origemCidade: rascunho.origemCidade || "",
         destino: rascunho.destinoCidade || "",
         destinoCidade: rascunho.destinoCidade || "",
-        escalasBasicas: escalas,
+        escalasBasicas: Array.from(new Set(
+          (rascunho.rotas || []).flatMap((rota) => rota.escalas.map((escala) => escala.cidade))
+            .concat(escalasLegadas)
+            .filter(Boolean),
+        )),
         cnpj: rascunho.cnpj || "",
         codigoEmbarcacao: rascunho.codigoProvisorio || "",
         foto,
@@ -217,6 +275,12 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         nomeNaRede: `CMB_${idEmbarcacao}`,
         rastreadorAtivo: false,
         contatoPrincipal: rascunho.telefone || "",
+        nomeSolicitanteCadastro: rascunho.nomeSolicitante || "",
+        vinculoSolicitante: rascunho.vinculo || "",
+        planoInteresseCadastro: rascunho.planoInteresse || "basico",
+        autorizaMelhoriaCadastro: rascunho.autorizaMelhoria === true,
+        observacoesCadastro: rascunho.observacoes || "",
+        rotasCadastro: rascunho.rotas || [],
         origemCadastro: "cadastro_publico",
         solicitacaoCadastroId: selecionada.id,
         criadoEm: serverTimestamp(),
@@ -234,7 +298,7 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         diasSemana: [],
         horarioSaida: "",
         duracaoHoras: 0,
-        escalas: escalas.map((cidade) => ({
+        escalas: escalasLegadas.map((cidade) => ({
           cidade, porto: cidade, diaRelativo: 0, horarioChegada: "", horarioSaida: "",
         })),
       }];
@@ -261,8 +325,9 @@ export default function SolicitacoesCadastroEmbarcacoes() {
           {
             id: "destino", tipo: "destino", ordem: intermediarios.length + 1,
             cidade: rota.destinoCidade, portoNome: rota.portoDestino,
-            diaRelativo: Math.max(0, ...rota.escalas.map((item) => item.diaRelativo)),
-            horarioChegada: "", horarioSaida: "",
+            diaRelativo: rota.destinoDiaRelativo ??
+              Math.max(0, ...rota.escalas.map((item) => item.diaRelativo)),
+            horarioChegada: rota.destinoHorarioChegada || "", horarioSaida: "",
           },
         ].filter((ponto) => ponto.cidade || ponto.portoNome);
         if (!itinerario.length) continue;
@@ -280,8 +345,13 @@ export default function SolicitacoesCadastroEmbarcacoes() {
           destinoPortoNome: rota.portoDestino,
           portoOrigem: rota.portoOrigem,
           portoDestino: rota.portoDestino,
+          origemUf: rota.origemUf,
+          destinoUf: rota.destinoUf,
           diasSemana: rota.diasSemana,
           horarioSaida: rota.horarioSaida,
+          destinoDiaRelativo: rota.destinoDiaRelativo || 0,
+          destinoHorarioChegada: rota.destinoHorarioChegada || "",
+          itinerarioPersonalizado: rota.itinerarioPersonalizado === true,
           duracaoPrevistaMinutos: rota.duracaoNaoInformada ? null : rota.duracaoHoras * 60,
           duracaoInformada: rota.duracaoNaoInformada !== true,
           timezone: "America/Manaus",
@@ -377,6 +447,9 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                     <CampoEdicao label="Tipo" value={rascunho.tipoEmbarcacao} onChange={(v) => editar("tipoEmbarcacao", v)} />
                     <CampoEdicao label="CNPJ" value={formatarCnpj(rascunho.cnpj)} onChange={(v) => editar("cnpj", v.replace(/\D/g, "").slice(0, 14))} />
                   </div>
+                  <p className="-mt-1 text-xs font-semibold text-slate-500">
+                    CNPJ opcional. Quando informado, pode agilizar a conferência.
+                  </p>
                   <CampoEdicao label="Porto de saída" value={rascunho.portoSaida} onChange={(v) => editar("portoSaida", v)} />
                   <div className="grid grid-cols-2 gap-3">
                     <CampoEdicao label="Origem" value={rascunho.origemCidade || rascunho.cidade} onChange={(v) => editar("origemCidade", v)} />
@@ -384,7 +457,35 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                   </div>
                   <CampoEdicao label="Descrição" value={rascunho.descricao} multiline onChange={(v) => editar("descricao", v)} />
                   <CampoEdicao label="Escalas sem horários" value={rascunho.escalasTexto} multiline onChange={(v) => editar("escalasTexto", v)} />
-                  <CampoEdicao label="WhatsApp" value={rascunho.telefone} onChange={(v) => editar("telefone", v)} />
+                  <CampoEdicao label="Nome completo do solicitante" value={rascunho.nomeSolicitante}
+                    onChange={(v) => editar("nomeSolicitante", v)} />
+                  <CampoEdicao label="WhatsApp" value={formatarWhatsApp(rascunho.telefone)}
+                    onChange={(v) => editar("telefone", v.replace(/\D/g, "").replace(/^55/, "").slice(0, 11))} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
+                      Relação com a embarcação
+                      <select value={rascunho.vinculo || ""} onChange={(e) => editar("vinculo", e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-800">
+                        <option value="">Não informado</option>
+                        <option value="dono">Proprietário</option>
+                        <option value="tripulante">Tripulante</option>
+                        <option value="representante">Representante</option>
+                        <option value="passageiro">Passageiro/colaborador</option>
+                      </select>
+                    </label>
+                    <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
+                      Plano de interesse
+                      <select value={rascunho.planoInteresse || "basico"}
+                        onChange={(e) => editar("planoInteresse", e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-800">
+                        <option value="basico">Básico gratuito</option>
+                        <option value="vitrine">Vitrine</option>
+                        <option value="tempo_real">Tempo Real</option>
+                      </select>
+                    </label>
+                  </div>
+                  <CampoEdicao label="Observações" value={rascunho.observacoes} multiline
+                    onChange={(v) => editar("observacoes", v)} />
                   <CampoEdicao label="URL da foto aprovada" value={rascunho.fotoOriginalUrl} onChange={(v) => editar("fotoOriginalUrl", v)} />
                 </div>
 
@@ -393,11 +494,95 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                     <h3 className="font-black text-[#0f2240]">Rotas completas para aprovação</h3>
                     <div className="mt-3 space-y-3">
                       {rascunho.rotas.map((rota, indice) => (
-                        <div key={indice} className="rounded-xl bg-white p-3 text-sm">
-                          <p className="font-black uppercase text-sky-700">{rota.sentido}</p>
-                          <p className="mt-1 font-bold">{rota.origemCidade || "Origem"} → {rota.destinoCidade || "Destino"}</p>
-                          <p className="text-slate-500">{rota.portoOrigem || "Porto não informado"} · saída {rota.horarioSaida || "sem horário"}</p>
-                          <p className="mt-1 text-slate-600">{rota.escalas.length} escala(s) · {rota.diasSemana.length} dia(s) de saída</p>
+                        <div key={indice} className="rounded-2xl border border-sky-100 bg-white p-3 text-sm">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="font-black uppercase text-sky-700">
+                              Programação da {rota.sentido}
+                            </p>
+                            {rota.itinerarioPersonalizado && (
+                              <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">
+                                caminho diferente
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <CampoEdicao label="UF de origem" value={rota.origemUf}
+                              onChange={(v) => editarRota(indice, {origemUf: v.toUpperCase().slice(0, 2)})} />
+                            <CampoEdicao label="Cidade de origem" value={rota.origemCidade}
+                              onChange={(v) => editarRota(indice, {origemCidade: v})} />
+                            <CampoEdicao label="Porto de origem" value={rota.portoOrigem}
+                              onChange={(v) => editarRota(indice, {portoOrigem: v})} />
+                            <CampoEdicao label="Horário de saída" value={rota.horarioSaida}
+                              onChange={(v) => editarRota(indice, {horarioSaida: v})} />
+                          </div>
+
+                          <div className="mt-3">
+                            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Dias de saída</p>
+                            <div className="mt-2 grid grid-cols-7 gap-1">
+                              {NOMES_DIAS.map((dia, numero) => {
+                                const ativo = rota.diasSemana.includes(numero);
+                                return (
+                                  <button type="button" key={dia}
+                                    onClick={() => editarRota(indice, {
+                                      diasSemana: ativo
+                                        ? rota.diasSemana.filter((item) => item !== numero)
+                                        : [...rota.diasSemana, numero].sort(),
+                                    })}
+                                    className={`rounded-lg px-1 py-2 text-[10px] font-black ${
+                                      ativo ? "bg-sky-600 text-white" : "bg-slate-100 text-slate-500"
+                                    }`}>
+                                    {dia}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {!!rota.escalas.length && (
+                            <div className="mt-4 space-y-2">
+                              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                                Escalas — todos os dados recebidos
+                              </p>
+                              {rota.escalas.map((escala, escalaIndice) => (
+                                <div key={escalaIndice} className="rounded-xl bg-slate-50 p-2">
+                                  <p className="mb-2 text-xs font-black text-slate-700">Escala {escalaIndice + 1}</p>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <CampoEdicao label="UF" value={escala.uf}
+                                      onChange={(v) => editarEscala(indice, escalaIndice, {uf: v.toUpperCase().slice(0, 2)})} />
+                                    <CampoEdicao label="Cidade/comunidade" value={escala.cidade}
+                                      onChange={(v) => editarEscala(indice, escalaIndice, {cidade: v})} />
+                                    <CampoEdicao label="Porto" value={escala.porto}
+                                      onChange={(v) => editarEscala(indice, escalaIndice, {porto: v})} />
+                                    <CampoEdicao label="Dias após saída" value={String(escala.diaRelativo)}
+                                      onChange={(v) => editarEscala(indice, escalaIndice, {diaRelativo: Number(v) || 0})} />
+                                    <CampoEdicao label="Chegada" value={escala.horarioChegada}
+                                      onChange={(v) => editarEscala(indice, escalaIndice, {horarioChegada: v})} />
+                                    <CampoEdicao label="Nova saída" value={escala.horarioSaida}
+                                      onChange={(v) => editarEscala(indice, escalaIndice, {horarioSaida: v})} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
+                            <CampoEdicao label="UF do destino" value={rota.destinoUf}
+                              onChange={(v) => editarRota(indice, {destinoUf: v.toUpperCase().slice(0, 2)})} />
+                            <CampoEdicao label="Cidade de destino" value={rota.destinoCidade}
+                              onChange={(v) => editarRota(indice, {destinoCidade: v})} />
+                            <CampoEdicao label="Porto de destino" value={rota.portoDestino}
+                              onChange={(v) => editarRota(indice, {portoDestino: v})} />
+                            <CampoEdicao label="Dia de chegada" value={String(rota.destinoDiaRelativo || 0)}
+                              onChange={(v) => editarRota(indice, {destinoDiaRelativo: Number(v) || 0})} />
+                            <CampoEdicao label="Horário de chegada" value={rota.destinoHorarioChegada}
+                              onChange={(v) => editarRota(indice, {destinoHorarioChegada: v})} />
+                            <CampoEdicao label="Duração aproximada (horas)"
+                              value={rota.duracaoNaoInformada ? "Não informada" : String(rota.duracaoHoras || 0)}
+                              onChange={(v) => editarRota(indice, {
+                                duracaoNaoInformada: normalizarIdEmbarcacao(v) === "CMD_NAO_INFORMADA",
+                                duracaoHoras: Number(v) || 0,
+                              })} />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -408,13 +593,12 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                 )}
 
                 <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <div><dt className="font-bold text-slate-400">Solicitante</dt><dd className="font-bold">{selecionada.nomeSolicitante}</dd></div>
-                  <div><dt className="font-bold text-slate-400">Vínculo</dt><dd className="font-bold">{selecionada.vinculo}</dd></div>
-                  <div><dt className="font-bold text-slate-400">Plano desejado</dt><dd className="font-bold">{selecionada.planoInteresse}</dd></div>
+                  <div><dt className="font-bold text-slate-400">Solicitante</dt><dd className="font-bold">{rascunho.nomeSolicitante}</dd></div>
+                  <div><dt className="font-bold text-slate-400">Vínculo</dt><dd className="font-bold">{nomeVinculo(rascunho.vinculo)}</dd></div>
+                  <div><dt className="font-bold text-slate-400">Plano desejado</dt><dd className="font-bold">{nomePlano(rascunho.planoInteresse)}</dd></div>
                   <div><dt className="font-bold text-slate-400">Status</dt><dd className="font-bold">{chip(selecionada.status)}</dd></div>
                 </dl>
 
-                {selecionada.observacoes && <p className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm">{selecionada.observacoes}</p>}
                 <div className="mt-5 grid gap-2">
                   <button disabled={ocupado} onClick={salvarRevisao}
                     className="min-h-12 rounded-2xl border border-sky-600 bg-white font-black text-sky-700">Salvar revisão</button>

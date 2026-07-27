@@ -143,9 +143,9 @@ export default function CadastroPublicoEmbarcacao() {
               className="h-20 w-20 shrink-0 rounded-2xl object-cover shadow-xl sm:h-24 sm:w-24" />
             <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300">Cadastro gratuito</p>
-              <h1 className="mt-1 text-2xl font-black leading-tight sm:text-4xl">Coloque sua embarcação no mapa</h1>
+              <h1 className="mt-1 text-2xl font-black leading-tight sm:text-4xl">A navegação da Amazônia mais conectada.</h1>
               <p className="mt-2 text-sm leading-5 text-slate-300 sm:text-base">
-                Preencha, confirme seu WhatsApp e nossa equipe cuidará da revisão.
+                Informações, presença digital e acompanhamento em tempo real para aproximar embarcações e passageiros.
               </p>
             </div>
           </div>
@@ -167,10 +167,13 @@ export default function CadastroPublicoEmbarcacao() {
                 {TIPOS_EMBARCACAO.map((tipo) => <option key={tipo} value={tipo} className="text-black">{tipo}</option>)}
               </select>
             </label>
-            <label className="font-bold">CNPJ
+            <label className="font-bold">CNPJ <span className="font-normal text-slate-400">(opcional)</span>
               <input name="cnpj" inputMode="numeric" value={cnpj}
                 onChange={(e) => setCnpj(formatarCnpj(e.target.value))}
                 className={campo} placeholder="00.000.000/0000-00" />
+              <span className="mt-1.5 block text-xs font-normal leading-5 text-emerald-300">
+                Se informado, poderá agilizar a análise e a aprovação.
+              </span>
             </label>
             <label className="font-bold">Plano de interesse
               <select name="planoInteresse" className={campo} defaultValue="basico">

@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
+import RotasCadastroPublico, {type RotaCadastro} from "../components/RotasCadastroPublico";
+import {TIPOS_EMBARCACAO} from "../domain/tiposEmbarcacao";
 
 const URL_CADASTRO =
   "https://us-central1-sistema-navegacao.cloudfunctions.net/solicitarCadastroPublicoEmbarcacao";
@@ -26,6 +28,17 @@ export default function CadastroPublicoEmbarcacao() {
   const [erro, setErro] = useState("");
   const [codigo, setCodigo] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [cnpj, setCnpj] = useState("");
+  const [rotas, setRotas] = useState<RotaCadastro[]>([]);
+
+  function formatarCnpj(valor: string) {
+    const numeros = valor.replace(/\D/g, "").slice(0, 14);
+    return numeros
+      .replace(/^(\d{2})(\d)/, "$1.$2")
+      .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d)/, ".$1/$2")
+      .replace(/(\d{4})(\d)/, "$1-$2");
+  }
 
   async function enviar(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -37,6 +50,8 @@ export default function CadastroPublicoEmbarcacao() {
       const corpo: Record<string, unknown> = Object.fromEntries(formulario.entries());
       delete corpo.foto;
       corpo.autorizaMelhoria = formulario.get("autorizaMelhoria") === "on";
+      corpo.cnpj = cnpj.replace(/\D/g, "");
+      corpo.rotas = rotas;
       if (foto instanceof File && foto.size > 0) corpo.fotoBase64 = await fotoParaBase64(foto);
 
       const resposta = await fetch(URL_CADASTRO, {
@@ -120,26 +135,16 @@ export default function CadastroPublicoEmbarcacao() {
             <label className="font-bold">Tipo
               <select name="tipoEmbarcacao" className={campo} defaultValue="">
                 <option value="" className="text-black">Selecione</option>
-                <option value="barco regional" className="text-black">Barco regional</option>
-                <option value="lancha" className="text-black">Lancha</option>
-                <option value="balsa" className="text-black">Balsa</option>
-                <option value="outro" className="text-black">Outro</option>
+                {TIPOS_EMBARCACAO.map((tipo) => <option key={tipo} value={tipo} className="text-black">{tipo}</option>)}
               </select>
             </label>
             <label className="font-bold">Cidade
               <input name="cidade" className={campo} placeholder="Ex.: Manaus" />
             </label>
-            <label className="font-bold">Porto de saída
-              <input name="portoSaida" className={campo} />
-            </label>
-            <label className="font-bold">Cidade de origem
-              <input name="origemCidade" className={campo} placeholder="Ex.: Manaus - AM" />
-            </label>
-            <label className="font-bold">Cidade de destino
-              <input name="destinoCidade" className={campo} placeholder="Ex.: Santarém - PA" />
-            </label>
             <label className="font-bold">CNPJ
-              <input name="cnpj" inputMode="numeric" className={campo} placeholder="Se a operação possuir" />
+              <input name="cnpj" inputMode="numeric" value={cnpj}
+                onChange={(e) => setCnpj(formatarCnpj(e.target.value))}
+                className={campo} placeholder="00.000.000/0000-00" />
             </label>
             <label className="font-bold">Plano de interesse
               <select name="planoInteresse" className={campo} defaultValue="basico">
@@ -158,14 +163,15 @@ export default function CadastroPublicoEmbarcacao() {
               placeholder="Conte como é a embarcação e quais informações são úteis ao passageiro."
             />
           </label>
-          <label className="block font-bold">Escalas
-            <textarea
-              name="escalasTexto"
-              rows={3}
-              className={`${campo} py-3`}
-              placeholder="Uma por linha ou separadas por vírgula. Não informe horários."
-            />
-          </label>
+          <div className="border-t border-white/10 pt-6">
+            <h2 className="text-xl font-black">Rotas, dias e horários</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Essas informações serão analisadas agora e o sistema decidirá o que mostrar conforme o plano.
+            </p>
+            <div className="mt-5">
+              <RotasCadastroPublico value={rotas} onChange={setRotas} />
+            </div>
+          </div>
 
           <div className="border-t border-white/10 pt-6">
             <h2 className="text-xl font-black">Quem está cadastrando?</h2>

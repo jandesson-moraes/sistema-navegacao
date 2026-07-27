@@ -11,6 +11,7 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import {db} from "../config/firebase";
+import type {RotaCadastro} from "../components/RotasCadastroPublico";
 
 type Solicitacao = {
   id: string;
@@ -33,6 +34,7 @@ type Solicitacao = {
   observacoes?: string;
   status?: string;
   telefoneValidado?: boolean;
+  rotas?: RotaCadastro[];
 };
 
 const pendentes = ["aguardando_whatsapp", "em_analise", "correcao_solicitada"];
@@ -42,6 +44,14 @@ function separarEscalas(valor?: string) {
     .split(/[\n,;]+/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function formatarCnpj(valor?: string) {
+  return String(valor || "").replace(/\D/g, "").slice(0, 14)
+    .replace(/^(\d{2})(\d)/, "$1.$2")
+    .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+    .replace(/\.(\d{3})(\d)/, ".$1/$2")
+    .replace(/(\d{4})(\d)/, "$1-$2");
 }
 
 function CampoEdicao({
@@ -191,62 +201,87 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         atualizadoEm: serverTimestamp(),
       });
 
-      const intermediarios = escalas.map((cidade, indice) => ({
-        id: `escala_${indice + 1}`,
-        tipo: "escala",
-        ordem: indice + 1,
-        cidade,
-        portoNome: cidade,
-        diaRelativo: 0,
-        horarioChegada: "",
+      const rotasCompletas = rascunho.rotas?.length ? rascunho.rotas : [{
+        sentido: "ida" as const,
+        origemUf: "",
+        origemCidade: rascunho.origemCidade || rascunho.cidade || "",
+        portoOrigem: rascunho.portoSaida || "",
+        destinoUf: "",
+        destinoCidade: rascunho.destinoCidade || "",
+        portoDestino: "",
+        diasSemana: [],
         horarioSaida: "",
-      }));
-      const itinerario = [
-        {
-          id: "origem",
-          tipo: "origem",
-          ordem: 0,
-          cidade: rascunho.origemCidade || rascunho.cidade || "",
-          portoNome: rascunho.portoSaida || "",
-          diaRelativo: 0,
-          horarioSaida: "",
-        },
-        ...intermediarios,
-        {
-          id: "destino",
-          tipo: "destino",
-          ordem: intermediarios.length + 1,
-          cidade: rascunho.destinoCidade || "",
-          portoNome: "",
-          diaRelativo: 0,
-          horarioChegada: "",
-          horarioSaida: "",
-        },
-      ].filter((ponto) => ponto.cidade || ponto.portoNome);
+        duracaoHoras: 0,
+        escalas: escalas.map((cidade) => ({
+          cidade, porto: cidade, diaRelativo: 0, horarioChegada: "", horarioSaida: "",
+        })),
+      }];
 
-      if (itinerario.length > 0) {
-        await setDoc(doc(db, "programacoes_viagem", `${barco.id}_cadastro_basico`), {
-          id: `${barco.id}_cadastro_basico`,
+      for (let indiceRota = 0; indiceRota < rotasCompletas.length; indiceRota += 1) {
+        const rota = rotasCompletas[indiceRota];
+        const intermediarios = rota.escalas.map((escala, indice) => ({
+          id: `escala_${indice + 1}`,
+          tipo: "escala",
+          ordem: indice + 1,
+          cidade: escala.cidade,
+          portoNome: escala.porto,
+          diaRelativo: escala.diaRelativo,
+          horarioChegada: escala.horarioChegada,
+          horarioSaida: escala.horarioSaida,
+        }));
+        const itinerario = [
+          {
+            id: "origem", tipo: "origem", ordem: 0,
+            cidade: rota.origemCidade, portoNome: rota.portoOrigem,
+            diaRelativo: 0, horarioSaida: rota.horarioSaida,
+          },
+          ...intermediarios,
+          {
+            id: "destino", tipo: "destino", ordem: intermediarios.length + 1,
+            cidade: rota.destinoCidade, portoNome: rota.portoDestino,
+            diaRelativo: Math.max(0, ...rota.escalas.map((item) => item.diaRelativo)),
+            horarioChegada: "", horarioSaida: "",
+          },
+        ].filter((ponto) => ponto.cidade || ponto.portoNome);
+        if (!itinerario.length) continue;
+        const idProgramacao = `${barco.id}_cadastro_${rota.sentido}_${indiceRota + 1}`;
+        await setDoc(doc(db, "programacoes_viagem", idProgramacao), {
+          id: idProgramacao,
           barcoId: barco.id,
           barcoNome: rascunho.nomeEmbarcacao,
-          sentido: "ida",
-          origem: rascunho.origemCidade || rascunho.cidade || "",
-          destino: rascunho.destinoCidade || "",
-          origemCidade: rascunho.origemCidade || rascunho.cidade || "",
-          destinoCidade: rascunho.destinoCidade || "",
-          portoOrigem: rascunho.portoSaida || "",
-          origemPortoNome: rascunho.portoSaida || "",
+          sentido: rota.sentido,
+          origem: rota.origemCidade,
+          destino: rota.destinoCidade,
+          origemCidade: rota.origemCidade,
+          destinoCidade: rota.destinoCidade,
+          origemPortoNome: rota.portoOrigem,
+          destinoPortoNome: rota.portoDestino,
+          portoOrigem: rota.portoOrigem,
+          portoDestino: rota.portoDestino,
+          diasSemana: rota.diasSemana,
+          horarioSaida: rota.horarioSaida,
+          duracaoPrevistaMinutos: rota.duracaoHoras * 60,
+          timezone: "America/Manaus",
           itinerario,
           escalas: itinerario,
-          diasSemana: [],
-          horarioSaida: "",
           ativo: true,
-          cadastroBasicoSemHorarios: true,
+          conteudoCompletoAprovado: true,
+          visibilidadeControladaPeloPlano: true,
           criadoEm: serverTimestamp(),
           atualizadoEm: serverTimestamp(),
         });
       }
       await alterarStatus("aprovado", {embarcacaoId: barco.id, aprovadoEm: serverTimestamp()});
+      const telefone = String(rascunho.telefone || "").replace(/\D/g, "");
+      if (telefone) {
+        const numero = telefone.startsWith("55") ? telefone : `55${telefone}`;
+        const mensagem = encodeURIComponent(
+          `Olá, ${rascunho.nomeSolicitante || ""}! A embarcação ${rascunho.nomeEmbarcacao} foi aprovada e já está cadastrada no aplicativo Cadê Meu Barco. Código: ${rascunho.codigoProvisorio || ""}.`,
+        );
+        if (window.confirm("Embarcação aprovada. Deseja avisar o solicitante pelo WhatsApp agora?")) {
+          window.open(`https://wa.me/${numero}?text=${mensagem}`, "_blank", "noopener,noreferrer");
+        }
+      }
     } finally {
       setOcupado(false);
     }
@@ -295,6 +330,14 @@ export default function SolicitacoesCadastroEmbarcacoes() {
             {selecionada && rascunho ? (
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-lg">
                 {rascunho.fotoOriginalUrl && <img src={rascunho.fotoOriginalUrl} alt="" className="h-52 w-full rounded-2xl object-cover" />}
+                {rascunho.fotoOriginalUrl && (
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <a href={rascunho.fotoOriginalUrl} target="_blank" rel="noreferrer"
+                      className="rounded-xl bg-slate-100 p-2 text-center text-xs font-black text-slate-700">Ver original</a>
+                    <a href={rascunho.fotoOriginalUrl} download
+                      className="rounded-xl bg-sky-100 p-2 text-center text-xs font-black text-sky-800">Baixar imagem</a>
+                  </div>
+                )}
                 <p className="mt-5 text-xs font-black uppercase tracking-widest text-sky-700">{selecionada.codigoProvisorio}</p>
                 <h2 className="mt-1 text-2xl font-black text-[#0f2240]">Revisar antes de publicar</h2>
                 <p className={`mt-3 rounded-2xl p-3 text-sm font-bold ${selecionada.autorizaMelhoria ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
@@ -305,7 +348,7 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                   <CampoEdicao label="Nome da embarcação" value={rascunho.nomeEmbarcacao} onChange={(v) => editar("nomeEmbarcacao", v)} />
                   <div className="grid grid-cols-2 gap-3">
                     <CampoEdicao label="Tipo" value={rascunho.tipoEmbarcacao} onChange={(v) => editar("tipoEmbarcacao", v)} />
-                    <CampoEdicao label="CNPJ" value={rascunho.cnpj} onChange={(v) => editar("cnpj", v)} />
+                    <CampoEdicao label="CNPJ" value={formatarCnpj(rascunho.cnpj)} onChange={(v) => editar("cnpj", v.replace(/\D/g, "").slice(0, 14))} />
                   </div>
                   <CampoEdicao label="Porto de saída" value={rascunho.portoSaida} onChange={(v) => editar("portoSaida", v)} />
                   <div className="grid grid-cols-2 gap-3">
@@ -317,6 +360,25 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                   <CampoEdicao label="WhatsApp" value={rascunho.telefone} onChange={(v) => editar("telefone", v)} />
                   <CampoEdicao label="URL da foto aprovada" value={rascunho.fotoOriginalUrl} onChange={(v) => editar("fotoOriginalUrl", v)} />
                 </div>
+
+                {!!rascunho.rotas?.length && (
+                  <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                    <h3 className="font-black text-[#0f2240]">Rotas completas para aprovação</h3>
+                    <div className="mt-3 space-y-3">
+                      {rascunho.rotas.map((rota, indice) => (
+                        <div key={indice} className="rounded-xl bg-white p-3 text-sm">
+                          <p className="font-black uppercase text-sky-700">{rota.sentido}</p>
+                          <p className="mt-1 font-bold">{rota.origemCidade || "Origem"} → {rota.destinoCidade || "Destino"}</p>
+                          <p className="text-slate-500">{rota.portoOrigem || "Porto não informado"} · saída {rota.horarioSaida || "sem horário"}</p>
+                          <p className="mt-1 text-slate-600">{rota.escalas.length} escala(s) · {rota.diasSemana.length} dia(s) de saída</p>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-3 text-xs font-semibold text-sky-900">
+                      Os horários serão armazenados, mas o aplicativo os ocultará enquanto o plano for Básico.
+                    </p>
+                  </div>
+                )}
 
                 <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                   <div><dt className="font-bold text-slate-400">Solicitante</dt><dd className="font-bold">{selecionada.nomeSolicitante}</dd></div>

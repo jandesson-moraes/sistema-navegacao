@@ -22,6 +22,43 @@ function normalizar(valor: unknown) {
     .trim();
 }
 
+function rotasValidas(valor: unknown) {
+  if (!Array.isArray(valor)) return [];
+  return valor.slice(0, 12).map((item: unknown) => {
+    const rota = (item ?? {}) as Record<string, unknown>;
+    const dias = Array.isArray(rota.diasSemana) ?
+      rota.diasSemana.map(Number).filter((dia) => Number.isInteger(dia) && dia >= 0 && dia <= 6) :
+      [];
+    const escalasRecebidas = Array.isArray(rota.escalas) ? rota.escalas : [];
+    const escalas = escalasRecebidas.slice(0, 30).map((itemEscala: unknown) => {
+      const escala = (itemEscala ?? {}) as Record<string, unknown>;
+      return {
+        cidade: texto(escala.cidade, 120),
+        porto: texto(escala.porto, 160),
+        diaRelativo: Math.max(0, Math.min(60, Number(escala.diaRelativo) || 0)),
+        horarioChegada: /^\d{2}:\d{2}$/.test(texto(escala.horarioChegada)) ?
+          texto(escala.horarioChegada) : "",
+        horarioSaida: /^\d{2}:\d{2}$/.test(texto(escala.horarioSaida)) ?
+          texto(escala.horarioSaida) : "",
+      };
+    }).filter((escala) => escala.cidade || escala.porto);
+    return {
+      sentido: texto(rota.sentido) === "volta" ? "volta" : "ida",
+      origemUf: texto(rota.origemUf, 2).toUpperCase(),
+      origemCidade: texto(rota.origemCidade, 120),
+      portoOrigem: texto(rota.portoOrigem, 160),
+      destinoUf: texto(rota.destinoUf, 2).toUpperCase(),
+      destinoCidade: texto(rota.destinoCidade, 120),
+      portoDestino: texto(rota.portoDestino, 160),
+      diasSemana: Array.from(new Set(dias)).sort(),
+      horarioSaida: /^\d{2}:\d{2}$/.test(texto(rota.horarioSaida)) ?
+        texto(rota.horarioSaida) : "",
+      duracaoHoras: Math.max(0, Math.min(1440, Number(rota.duracaoHoras) || 0)),
+      escalas,
+    };
+  }).filter((rota) => rota.origemCidade || rota.destinoCidade || rota.escalas.length);
+}
+
 function cnpjValido(valor: string) {
   const cnpj = somenteDigitos(valor);
   if (!cnpj) return true;
@@ -82,6 +119,9 @@ export const solicitarCadastroPublicoEmbarcacao = onRequest(
       const cidade = texto(dados.cidade, 100);
       const portoSaida = texto(dados.portoSaida, 120);
       const cnpj = somenteDigitos(dados.cnpj);
+      const rotasCadastro = rotasValidas(dados.rotas);
+      const rotaPrincipal = rotasCadastro.find((rota) => rota.sentido === "ida") ||
+        rotasCadastro[0];
 
       if (nomeEmbarcacao.length < 2 || nomeSolicitante.length < 2) {
         res.status(400).json({erro: "Informe o nome da embarcação e do responsável."});
@@ -161,11 +201,12 @@ export const solicitarCadastroPublicoEmbarcacao = onRequest(
           nomeNormalizado: normalizar(nomeEmbarcacao),
           tipoEmbarcacao: texto(dados.tipoEmbarcacao, 80),
           cidade,
-          portoSaida,
+          portoSaida: portoSaida || rotaPrincipal?.portoOrigem || "",
           descricao: texto(dados.descricao, 1500),
-          origemCidade: texto(dados.origemCidade, 100),
-          destinoCidade: texto(dados.destinoCidade, 100),
+          origemCidade: texto(dados.origemCidade, 100) || rotaPrincipal?.origemCidade || "",
+          destinoCidade: texto(dados.destinoCidade, 100) || rotaPrincipal?.destinoCidade || "",
           escalasTexto: texto(dados.escalasTexto, 800),
+          rotas: rotasCadastro,
           cnpj,
           nomeSolicitante,
           telefone,

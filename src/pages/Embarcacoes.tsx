@@ -17,6 +17,7 @@ import {
   type PlanoEmbarcacao,
   type StatusPlano,
 } from "../domain/planos";
+import {TIPOS_EMBARCACAO} from "../domain/tiposEmbarcacao";
 
 type Embarcacao = {
   id: string;
@@ -81,15 +82,7 @@ type FormularioEmbarcacao = {
   ativarGps: boolean;
 };
 
-const TIPOS_BARCO = [
-  "Barco regional",
-  "Lancha",
-  "Lancha a jato",
-  "Balsa",
-  "Empurrador",
-  "Ferry Boat",
-  "Navio",
-];
+const TIPOS_BARCO = [...TIPOS_EMBARCACAO];
 
 const PLANOS = [
   { value: "basico", label: "Básico — gratuito" },

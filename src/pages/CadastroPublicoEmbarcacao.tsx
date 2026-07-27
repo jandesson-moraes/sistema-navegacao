@@ -192,7 +192,7 @@ export default function CadastroPublicoEmbarcacao() {
           <div className="border-t border-white/10 pt-5">
             <h2 className="text-lg font-black">Como a embarcação viaja?</h2>
             <p className="mt-1 text-xs leading-5 text-slate-400">
-              Selecione as opções. O app cuidará do que cada plano pode mostrar.
+              Informe o percurso uma vez. Depois escolha separadamente os dias e horários da ida e da volta.
             </p>
             <div className="mt-3">
               <RotasCadastroPublico value={rotas} onChange={setRotas} />

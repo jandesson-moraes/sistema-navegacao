@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
 import RotasCadastroPublico, {type RotaCadastro} from "../components/RotasCadastroPublico";
 import {TIPOS_EMBARCACAO} from "../domain/tiposEmbarcacao";
 
@@ -116,18 +115,26 @@ export default function CadastroPublicoEmbarcacao() {
   return (
     <main className="min-h-screen bg-[#020817] px-4 py-7 text-white sm:py-12">
       <section className="mx-auto max-w-3xl">
-        <header className="mb-7">
-          <Link to="/login" className="text-sm font-bold text-sky-300">← Área da equipe</Link>
-          <p className="mt-7 text-xs font-black uppercase tracking-[0.22em] text-amber-300">
-            Cadê o Meu Barco
-          </p>
-          <h1 className="mt-2 text-3xl font-black sm:text-5xl">Cadastre sua embarcação</h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
-            É gratuito começar. Envie os dados, confirme seu WhatsApp e aguarde a análise.
-          </p>
+        <header className="mb-5 overflow-hidden rounded-[28px] border border-sky-400/15 bg-gradient-to-br from-[#08294b] to-[#041225] p-4 shadow-2xl sm:p-6">
+          <div className="flex items-center gap-4">
+            <img src="/logo-cade-meu-barco.png" alt="Cadê Meu Barco"
+              className="h-20 w-20 shrink-0 rounded-2xl object-cover shadow-xl sm:h-24 sm:w-24" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300">Cadastro gratuito</p>
+              <h1 className="mt-1 text-2xl font-black leading-tight sm:text-4xl">Coloque sua embarcação no mapa</h1>
+              <p className="mt-2 text-sm leading-5 text-slate-300 sm:text-base">
+                Preencha, confirme seu WhatsApp e nossa equipe cuidará da revisão.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[10px] font-black uppercase tracking-wide text-sky-100">
+            <span className="rounded-xl bg-white/[0.07] px-2 py-2">1. Dados</span>
+            <span className="rounded-xl bg-white/[0.07] px-2 py-2">2. Revisão</span>
+            <span className="rounded-xl bg-white/[0.07] px-2 py-2">3. Publicação</span>
+          </div>
         </header>
 
-        <form onSubmit={enviar} className="space-y-6 rounded-[32px] border border-white/10 bg-[#071a2f] p-5 shadow-2xl sm:p-8">
+        <form onSubmit={enviar} className="space-y-5 rounded-[28px] border border-white/10 bg-[#071a2f] p-4 shadow-2xl sm:p-6">
           <div className="grid gap-5 sm:grid-cols-2">
             <label className="font-bold">Nome da embarcação *
               <input name="nomeEmbarcacao" required minLength={2} className={campo} />
@@ -137,9 +144,6 @@ export default function CadastroPublicoEmbarcacao() {
                 <option value="" className="text-black">Selecione</option>
                 {TIPOS_EMBARCACAO.map((tipo) => <option key={tipo} value={tipo} className="text-black">{tipo}</option>)}
               </select>
-            </label>
-            <label className="font-bold">Cidade
-              <input name="cidade" className={campo} placeholder="Ex.: Manaus" />
             </label>
             <label className="font-bold">CNPJ
               <input name="cnpj" inputMode="numeric" value={cnpj}
@@ -158,17 +162,17 @@ export default function CadastroPublicoEmbarcacao() {
           <label className="block font-bold">Descrição da embarcação
             <textarea
               name="descricao"
-              rows={5}
+              rows={3}
               className={`${campo} py-3`}
               placeholder="Conte como é a embarcação e quais informações são úteis ao passageiro."
             />
           </label>
-          <div className="border-t border-white/10 pt-6">
-            <h2 className="text-xl font-black">Rotas, dias e horários</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-400">
-              Essas informações serão analisadas agora e o sistema decidirá o que mostrar conforme o plano.
+          <div className="border-t border-white/10 pt-5">
+            <h2 className="text-lg font-black">Como a embarcação viaja?</h2>
+            <p className="mt-1 text-xs leading-5 text-slate-400">
+              Selecione as opções. O app cuidará do que cada plano pode mostrar.
             </p>
-            <div className="mt-5">
+            <div className="mt-3">
               <RotasCadastroPublico value={rotas} onChange={setRotas} />
             </div>
           </div>

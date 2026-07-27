@@ -127,8 +127,9 @@ export const solicitarCadastroPublicoEmbarcacao = onRequest(
       const rotaPrincipal = rotasCadastro.find((rota) => rota.sentido === "ida") ||
         rotasCadastro[0];
 
-      if (nomeEmbarcacao.length < 2 || nomeSolicitante.length < 2) {
-        res.status(400).json({erro: "Informe o nome da embarcação e do responsável."});
+      const partesNome = nomeSolicitante.split(/\s+/).filter((parte) => parte.length >= 2);
+      if (nomeEmbarcacao.length < 2 || partesNome.length < 2) {
+        res.status(400).json({erro: "Informe o nome da embarcação e o nome completo do responsável."});
         return;
       }
       if (telefone.length < 10 || telefone.length > 13) {

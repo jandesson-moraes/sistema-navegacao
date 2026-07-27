@@ -93,9 +93,9 @@ function SeletorLista({
         <span className="text-sky-300">⌄</span>
       </button>
       {aberto && (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-3 sm:items-center">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/70 p-3 pt-[max(12px,env(safe-area-inset-top))]">
           <button type="button" aria-label="Fechar" onClick={() => setAberto(false)} className="absolute inset-0" />
-          <div className="relative z-10 max-h-[78vh] w-full max-w-lg overflow-hidden rounded-3xl border border-white/10 bg-[#071a2f] shadow-2xl">
+          <div className="relative z-10 flex h-[min(680px,calc(100svh-24px))] w-full max-w-lg flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#071a2f] shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 p-4">
               <strong>{titulo || "Selecione uma opção"}</strong>
               <button type="button" onClick={() => setAberto(false)} className="h-9 w-9 rounded-xl bg-white/10 text-xl">×</button>
@@ -107,7 +107,7 @@ function SeletorLista({
                   className="min-h-11 w-full rounded-xl border border-sky-400/20 bg-white/[0.07] px-3 text-white outline-none" />
               </div>
             )}
-            <div className="max-h-[56vh] overflow-y-auto px-3 pb-3">
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
               {filtradas.map((item) => (
                 <button type="button" key={item.valor} onClick={() => {onChange(item.valor); setAberto(false); setBusca("");}}
                   className={`mb-1 min-h-11 w-full rounded-xl px-3 text-left text-sm font-bold ${item.valor === valor ? "bg-sky-500 text-white" : "bg-white/[0.05] text-slate-200"}`}>
@@ -133,6 +133,8 @@ function SeletorMunicipio({
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(false);
   const [tentativa, setTentativa] = useState(0);
+  const [cadastroManual, setCadastroManual] = useState(false);
+  const [localidadeManual, setLocalidadeManual] = useState("");
   useEffect(() => {
     if (!uf) {setMunicipios([]); return;}
     setCarregando(true); setErro(false);
@@ -156,9 +158,56 @@ function SeletorMunicipio({
         <SeletorLista valor={cidade}
           placeholder={carregando ? "Carregando..." : erro ? "Falha ao carregar" : "Município"}
           desabilitado={!uf || carregando || erro}
-          opcoes={municipios.map((item) => ({valor: `${item.nome} - ${uf}`, rotulo: item.nome}))}
-          onChange={onCidade} />
+          opcoes={[
+            ...(cidade && !municipios.some((item) => `${item.nome} - ${uf}` === cidade)
+              ? [{valor: cidade, rotulo: cidade.replace(/\s-\s[A-Z]{2}$/, "")}]
+              : []),
+            ...municipios.map((item) => ({valor: `${item.nome} - ${uf}`, rotulo: item.nome})),
+            {valor: "__nova_localidade__", rotulo: "+ Minha comunidade/localidade não está na lista"},
+          ]}
+          onChange={(valor) => {
+            if (valor === "__nova_localidade__") {
+              setCadastroManual(true);
+              onCidade("");
+              return;
+            }
+            setCadastroManual(false);
+            onCidade(valor);
+          }} />
       </div>
+      {cadastroManual && (
+        <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-3">
+          <label className="text-xs font-black uppercase tracking-wide text-amber-200">
+            Nome correto da comunidade ou localidade
+            <input
+              autoFocus
+              value={localidadeManual}
+              onChange={(e) => setLocalidadeManual(e.target.value)}
+              className="mt-2 min-h-11 w-full rounded-xl border border-white/10 bg-[#10253e] px-3 text-sm normal-case text-white outline-none"
+              placeholder="Ex.: Comunidade São Francisco - Manaus"
+            />
+          </label>
+          <p className="mt-2 text-xs leading-5 text-slate-400">
+            Use nome completo e acentuação. Se precisar indicar o município, use um traço:
+            <strong className="text-slate-200"> Comunidade São Francisco - Manaus</strong>.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => {setCadastroManual(false); setLocalidadeManual("");}}
+              className="min-h-10 rounded-xl bg-white/10 text-xs font-black text-slate-200">
+              Cancelar
+            </button>
+            <button type="button" disabled={localidadeManual.trim().length < 3}
+              onClick={() => {
+                const local = formatarNomeLocal(localidadeManual);
+                onCidade(`${local} - ${uf}`);
+                setCadastroManual(false);
+              }}
+              className="min-h-10 rounded-xl bg-amber-400 text-xs font-black text-slate-950 disabled:opacity-40">
+              Usar esta localidade
+            </button>
+          </div>
+        </div>
+      )}
       {erro && <button type="button" onClick={() => setTentativa((v) => v + 1)}
         className="mt-2 text-xs font-black text-amber-300">Tentar carregar novamente</button>}
     </div>
@@ -191,18 +240,31 @@ function SeletorPorto({
   titulo, valor, cidade, portos, onChange,
 }: {titulo: string; valor: string; cidade: string; portos: Opcao[]; onChange: (valor: string) => void}) {
   const [novo, setNovo] = useState(false);
-  const filtrados = portos.filter((item) => !cidade || normalizar(item.busca).includes(normalizar(cidade.replace(/\s-\s[A-Z]{2}$/, ""))));
+  const localSemUf = cidade.replace(/\s-\s[A-Z]{2}$/, "").trim();
+  const nomeCidade = localSemUf.split(/\s-\s/).pop()?.trim() || localSemUf;
+  const filtrados = portos.filter((item) =>
+    Boolean(cidade) && normalizar(item.busca).includes(normalizar(nomeCidade)));
   const input = "mt-1 min-h-11 w-full rounded-xl border border-white/10 bg-[#10253e] px-3 text-sm text-white outline-none";
   return (
     <div>
-      <SeletorLista titulo={titulo} valor={novo ? "" : valor} placeholder="Selecione o porto"
+      <SeletorLista titulo={cidade ? `${titulo} · ${filtrados.length} ${filtrados.length === 1 ? "opção" : "opções"}` : titulo}
+        valor={novo ? "" : valor}
+        placeholder={cidade ? "Selecione o porto" : "Selecione primeiro a cidade"}
+        desabilitado={!cidade}
         opcoes={[...filtrados, {valor: "__novo__", rotulo: "+ Não encontrei — informar novo porto"}]}
         onChange={(escolha) => {
           if (escolha === "__novo__") {setNovo(true); onChange("");}
           else {setNovo(false); onChange(escolha);}
         }} />
       {novo && <input autoFocus value={valor} onChange={(e) => onChange(e.target.value)}
-        className={input} placeholder="Nome do novo porto ou ponto de embarque" />}
+        className={input} placeholder="Ex.: Porto da Manaus Moderna" />}
+      {cidade && !novo && (
+        <p className="mt-1.5 text-xs text-slate-400">
+          {filtrados.length
+            ? "Toque para ver e selecionar os portos desta localidade."
+            : "Nenhum porto cadastrado nesta localidade. Você poderá informar um novo."}
+        </p>
+      )}
     </div>
   );
 }

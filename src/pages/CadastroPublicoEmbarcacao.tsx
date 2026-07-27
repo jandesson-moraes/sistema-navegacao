@@ -29,6 +29,7 @@ export default function CadastroPublicoEmbarcacao() {
   const [telefone, setTelefone] = useState("");
   const [cnpj, setCnpj] = useState("");
   const [rotas, setRotas] = useState<RotaCadastro[]>([]);
+  const [vinculo, setVinculo] = useState("dono");
 
   function formatarCnpj(valor: string) {
     const numeros = valor.replace(/\D/g, "").slice(0, 14);
@@ -37,6 +38,22 @@ export default function CadastroPublicoEmbarcacao() {
       .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
       .replace(/\.(\d{3})(\d)/, ".$1/$2")
       .replace(/(\d{4})(\d)/, "$1-$2");
+  }
+
+  function formatarWhatsApp(valor: string) {
+    let numeros = valor.replace(/\D/g, "");
+    if (numeros.startsWith("55")) numeros = numeros.slice(2);
+    numeros = numeros.slice(0, 11);
+    if (numeros.length <= 2) return numeros ? `+55 (${numeros}` : "";
+    if (numeros.length <= 7) return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
+    if (numeros.length <= 10) {
+      return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2, 6)}-${numeros.slice(6)}`;
+    }
+    return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7)}`;
+  }
+
+  function nomeCompletoValido(valor: string) {
+    return valor.trim().split(/\s+/).filter((parte) => parte.length >= 2).length >= 2;
   }
 
   async function enviar(evento: React.FormEvent<HTMLFormElement>) {
@@ -50,7 +67,12 @@ export default function CadastroPublicoEmbarcacao() {
       delete corpo.foto;
       corpo.autorizaMelhoria = formulario.get("autorizaMelhoria") === "on";
       corpo.cnpj = cnpj.replace(/\D/g, "");
+      corpo.telefone = telefone.replace(/\D/g, "");
+      corpo.vinculo = vinculo;
       corpo.rotas = rotas;
+      if (!nomeCompletoValido(String(corpo.nomeSolicitante ?? ""))) {
+        throw new Error("Informe seu nome completo, com nome e sobrenome.");
+      }
       if (foto instanceof File && foto.size > 0) corpo.fotoBase64 = await fotoParaBase64(foto);
 
       const resposta = await fetch(URL_CADASTRO, {
@@ -117,7 +139,7 @@ export default function CadastroPublicoEmbarcacao() {
       <section className="mx-auto max-w-3xl">
         <header className="mb-5 overflow-hidden rounded-[28px] border border-sky-400/15 bg-gradient-to-br from-[#08294b] to-[#041225] p-4 shadow-2xl sm:p-6">
           <div className="flex items-center gap-4">
-            <img src="/logo-cade-meu-barco.png" alt="Cadê Meu Barco"
+            <img src="/icone-oficial-cade-meu-barco.png" alt="Cadê Meu Barco"
               className="h-20 w-20 shrink-0 rounded-2xl object-cover shadow-xl sm:h-24 sm:w-24" />
             <div className="min-w-0">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300">Cadastro gratuito</p>
@@ -180,24 +202,51 @@ export default function CadastroPublicoEmbarcacao() {
           <div className="border-t border-white/10 pt-6">
             <h2 className="text-xl font-black">Quem está cadastrando?</h2>
             <div className="mt-4 grid gap-5 sm:grid-cols-2">
-              <label className="font-bold">Seu nome *
-                <input name="nomeSolicitante" required minLength={2} className={campo} />
+              <label className="font-bold">Nome completo *
+                <input name="nomeSolicitante" required minLength={5} autoComplete="name"
+                  className={campo} placeholder="Ex.: João da Silva"
+                  onBlur={(e) => e.currentTarget.setCustomValidity(
+                    nomeCompletoValido(e.currentTarget.value) ? "" : "Informe seu nome e sobrenome."
+                  )}
+                  onInput={(e) => e.currentTarget.setCustomValidity("")} />
               </label>
               <label className="font-bold">WhatsApp *
-                <input name="telefone" required inputMode="tel" className={campo} placeholder="92999999999" />
-              </label>
-              <label className="font-bold">Sua relação com o barco
-                <select name="vinculo" className={campo}>
-                  <option value="dono" className="text-black">Sou proprietário</option>
-                  <option value="tripulante" className="text-black">Sou tripulante</option>
-                  <option value="representante" className="text-black">Sou representante</option>
-                  <option value="passageiro" className="text-black">Sou passageiro/colaborador</option>
-                </select>
+                <input name="telefone" required inputMode="tel" autoComplete="tel"
+                  value={telefone} onChange={(e) => setTelefone(formatarWhatsApp(e.target.value))}
+                  className={campo} placeholder="+55 (92) 99999-9999" />
+                <span className="mt-1.5 block text-xs font-normal text-slate-400">
+                  Inclua o DDD. Usaremos este número para confirmar o cadastro.
+                </span>
               </label>
               <label className="font-bold">Foto limpa da embarcação
                 <input name="foto" type="file" accept="image/jpeg,image/png,image/webp" className={`${campo} py-3`} />
               </label>
             </div>
+            <fieldset className="mt-5">
+              <legend className="font-bold">Qual é sua relação com a embarcação?</legend>
+              <p className="mt-1 text-xs text-slate-400">Escolha a opção que melhor representa você.</p>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  ["dono", "⚓", "Proprietário"],
+                  ["tripulante", "🧭", "Tripulante"],
+                  ["representante", "🤝", "Representante"],
+                  ["passageiro", "👤", "Colaborador"],
+                ].map(([valor, icone, rotulo]) => (
+                  <button key={valor} type="button" onClick={() => setVinculo(valor)}
+                    className={`min-h-24 rounded-2xl border p-3 text-left transition ${
+                      vinculo === valor
+                        ? "border-sky-400 bg-sky-400/15 shadow-lg shadow-sky-950"
+                        : "border-white/10 bg-white/[0.04]"
+                    }`}>
+                    <span className="block text-2xl">{icone}</span>
+                    <span className="mt-2 block text-xs font-black text-white">{rotulo}</span>
+                    <span className={`mt-1 block text-[10px] font-bold ${
+                      vinculo === valor ? "text-sky-300" : "text-slate-500"
+                    }`}>{vinculo === valor ? "Selecionado" : "Selecionar"}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
           </div>
 
           <label className="flex items-start gap-3 rounded-2xl bg-sky-400/8 p-4 text-sm leading-6 text-slate-200">

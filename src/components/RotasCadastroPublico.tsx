@@ -22,10 +22,22 @@ export type RotaCadastro = {
   diasSemana: number[];
   horarioSaida: string;
   duracaoHoras: number;
+  duracaoNaoInformada?: boolean;
   escalas: EscalaCadastro[];
 };
 
 const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const UFS: Uf[] = [
+  ["AC", "Acre"], ["AL", "Alagoas"], ["AP", "Amapá"], ["AM", "Amazonas"],
+  ["BA", "Bahia"], ["CE", "Ceará"], ["DF", "Distrito Federal"],
+  ["ES", "Espírito Santo"], ["GO", "Goiás"], ["MA", "Maranhão"],
+  ["MT", "Mato Grosso"], ["MS", "Mato Grosso do Sul"], ["MG", "Minas Gerais"],
+  ["PA", "Pará"], ["PB", "Paraíba"], ["PR", "Paraná"], ["PE", "Pernambuco"],
+  ["PI", "Piauí"], ["RJ", "Rio de Janeiro"], ["RN", "Rio Grande do Norte"],
+  ["RS", "Rio Grande do Sul"], ["RO", "Rondônia"], ["RR", "Roraima"],
+  ["SC", "Santa Catarina"], ["SP", "São Paulo"], ["SE", "Sergipe"],
+  ["TO", "Tocantins"],
+].map(([sigla, nome], indice) => ({id: indice + 1, sigla, nome}));
 const ROTA_VAZIA: RotaCadastro = {
   sentido: "ida",
   origemUf: "",
@@ -37,6 +49,7 @@ const ROTA_VAZIA: RotaCadastro = {
   diasSemana: [],
   horarioSaida: "",
   duracaoHoras: 0,
+  duracaoNaoInformada: true,
   escalas: [],
 };
 
@@ -57,18 +70,27 @@ function SeletorMunicipio({
 }) {
   const [municipios, setMunicipios] = useState<Municipio[]>([]);
   const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState(false);
+  const [tentativa, setTentativa] = useState(0);
   useEffect(() => {
     if (!uf) {
       setMunicipios([]);
       return;
     }
     setCarregando(true);
+    setErro(false);
     fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${uf}/municipios?orderBy=nome`)
-      .then((resposta) => resposta.json())
+      .then((resposta) => {
+        if (!resposta.ok) throw new Error("IBGE indisponível");
+        return resposta.json();
+      })
       .then((dados) => setMunicipios(Array.isArray(dados) ? dados : []))
-      .catch(() => setMunicipios([]))
+      .catch(() => {
+        setMunicipios([]);
+        setErro(true);
+      })
       .finally(() => setCarregando(false));
-  }, [uf]);
+  }, [tentativa, uf]);
 
   const classe = "mt-1 min-h-11 w-full rounded-xl border border-white/10 bg-[#10253e] px-3 text-sm text-white";
   return (
@@ -80,10 +102,16 @@ function SeletorMunicipio({
           {ufs.map((item) => <option key={item.id} value={item.sigla}>{item.sigla}</option>)}
         </select>
         <select value={cidade} onChange={(e) => onCidade(e.target.value)} className={classe} disabled={!uf || carregando}>
-          <option value="">{carregando ? "Carregando..." : "Selecione o município"}</option>
+          <option value="">{carregando ? "Carregando..." : erro ? "Não foi possível carregar" : "Selecione o município"}</option>
           {municipios.map((item) => <option key={item.id} value={`${item.nome} - ${uf}`}>{item.nome}</option>)}
         </select>
       </div>
+      {erro && (
+        <button type="button" onClick={() => setTentativa((valor) => valor + 1)}
+          className="mt-2 text-xs font-black text-amber-300">
+          Tentar carregar os municípios novamente
+        </button>
+      )}
     </div>
   );
 }
@@ -95,14 +123,6 @@ export default function RotasCadastroPublico({
   value: RotaCadastro[];
   onChange: (rotas: RotaCadastro[]) => void;
 }) {
-  const [ufs, setUfs] = useState<Uf[]>([]);
-  useEffect(() => {
-    fetch("https://servicodados.ibge.gov.br/api/v1/localidades/estados?orderBy=nome")
-      .then((resposta) => resposta.json())
-      .then((dados) => setUfs(Array.isArray(dados) ? dados : []))
-      .catch(() => setUfs([]));
-  }, []);
-
   const rotas = useMemo(() => value.length ? value : [{...ROTA_VAZIA}], [value]);
   function atualizar(indice: number, campo: keyof RotaCadastro, valor: unknown) {
     onChange(rotas.map((rota, atual) => atual === indice ? {...rota, [campo]: valor} : rota));
@@ -137,12 +157,21 @@ export default function RotasCadastroPublico({
                 <option value="ida">Ida</option><option value="volta">Volta</option>
               </select>
             </label>
-            <label className="text-sm font-bold">Duração aproximada em horas
-              <input type="number" min={0} value={rota.duracaoHoras || ""} onChange={(e) => atualizar(indice, "duracaoHoras", Number(e.target.value))} className={input} />
-            </label>
-            <SeletorMunicipio titulo="Origem" uf={rota.origemUf} cidade={rota.origemCidade} ufs={ufs}
+            <div>
+              <label className="text-sm font-bold">Duração aproximada em horas (opcional)
+                <input type="number" min={0} disabled={rota.duracaoNaoInformada}
+                  value={rota.duracaoNaoInformada ? "" : rota.duracaoHoras || ""}
+                  onChange={(e) => atualizar(indice, "duracaoHoras", Number(e.target.value))} className={input} />
+              </label>
+              <label className="mt-2 flex items-center gap-2 text-xs font-bold text-slate-300">
+                <input type="checkbox" checked={rota.duracaoNaoInformada !== false}
+                  onChange={(e) => atualizar(indice, "duracaoNaoInformada", e.target.checked)} />
+                Não sei informar a duração
+              </label>
+            </div>
+            <SeletorMunicipio titulo="Origem" uf={rota.origemUf} cidade={rota.origemCidade} ufs={UFS}
               onUf={(v) => atualizar(indice, "origemUf", v)} onCidade={(v) => atualizar(indice, "origemCidade", v)} />
-            <SeletorMunicipio titulo="Destino" uf={rota.destinoUf} cidade={rota.destinoCidade} ufs={ufs}
+            <SeletorMunicipio titulo="Destino" uf={rota.destinoUf} cidade={rota.destinoCidade} ufs={UFS}
               onUf={(v) => atualizar(indice, "destinoUf", v)} onCidade={(v) => atualizar(indice, "destinoCidade", v)} />
             <label className="text-sm font-bold">Porto de origem
               <input value={rota.portoOrigem} onChange={(e) => atualizar(indice, "portoOrigem", e.target.value)} className={input} />
@@ -177,11 +206,12 @@ export default function RotasCadastroPublico({
                   <label className="text-xs font-bold">Chegada prevista
                     <input type="time" value={escala.horarioChegada} onChange={(e) => editarEscala(indice, escalaIndice, "horarioChegada", e.target.value)} className={input} />
                   </label>
-                  <label className="text-xs font-bold">Nova saída prevista
-                    <input type="time" value={escala.horarioSaida} onChange={(e) => editarEscala(indice, escalaIndice, "horarioSaida", e.target.value)} className={input} />
-                  </label>
                   <label className="text-xs font-bold">Dias após a partida
-                    <input type="number" min={0} value={escala.diaRelativo} onChange={(e) => editarEscala(indice, escalaIndice, "diaRelativo", Number(e.target.value))} className={input} />
+                    <select value={escala.diaRelativo} onChange={(e) => editarEscala(indice, escalaIndice, "diaRelativo", Number(e.target.value))} className={input}>
+                      {Array.from({length: 31}, (_, dia) => (
+                        <option key={dia} value={dia}>{dia === 0 ? "Mesmo dia da partida" : dia === 1 ? "1 dia após" : `${dia} dias após`}</option>
+                      ))}
+                    </select>
                   </label>
                 </div>
                 <button type="button" onClick={() => atualizar(indice, "escalas", rota.escalas.filter((_, i) => i !== escalaIndice))}

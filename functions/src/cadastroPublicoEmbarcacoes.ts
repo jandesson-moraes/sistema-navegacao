@@ -53,7 +53,10 @@ function rotasValidas(valor: unknown) {
       diasSemana: Array.from(new Set(dias)).sort(),
       horarioSaida: /^\d{2}:\d{2}$/.test(texto(rota.horarioSaida)) ?
         texto(rota.horarioSaida) : "",
-      duracaoHoras: Math.max(0, Math.min(1440, Number(rota.duracaoHoras) || 0)),
+      duracaoNaoInformada: rota.duracaoNaoInformada !== false,
+      duracaoHoras: rota.duracaoNaoInformada !== false ?
+        0 :
+        Math.max(0, Math.min(1440, Number(rota.duracaoHoras) || 0)),
       escalas,
     };
   }).filter((rota) => rota.origemCidade || rota.destinoCidade || rota.escalas.length);

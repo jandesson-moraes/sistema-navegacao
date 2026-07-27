@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  addDoc,
   collection,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -52,6 +52,17 @@ function formatarCnpj(valor?: string) {
     .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
     .replace(/\.(\d{3})(\d)/, ".$1/$2")
     .replace(/(\d{4})(\d)/, "$1-$2");
+}
+
+function normalizarIdEmbarcacao(nome?: string) {
+  const base = String(nome || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 70);
+  return `CMD_${base || "EMBARCACAO"}`;
 }
 
 function CampoEdicao({
@@ -168,7 +179,16 @@ export default function SolicitacoesCadastroEmbarcacoes() {
       await salvarRevisao();
       const foto = rascunho.fotoOriginalUrl || "";
       const escalas = separarEscalas(rascunho.escalasTexto);
-      const barco = await addDoc(collection(db, "embarcacoes"), {
+      const idBase = normalizarIdEmbarcacao(rascunho.nomeEmbarcacao);
+      let idEmbarcacao = idBase;
+      let sufixo = 2;
+      while ((await getDoc(doc(db, "embarcacoes", idEmbarcacao))).exists()) {
+        idEmbarcacao = `${idBase}_${sufixo}`;
+        sufixo += 1;
+      }
+      const barco = doc(db, "embarcacoes", idEmbarcacao);
+      await setDoc(barco, {
+        id: idEmbarcacao,
         nome: rascunho.nomeEmbarcacao.trim(),
         tipo: rascunho.tipoEmbarcacao || "",
         tipoBarco: rascunho.tipoEmbarcacao || "",
@@ -194,6 +214,8 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         status: "ativo",
         ativo: true,
         visivelNoApp: true,
+        nomeNaRede: `CMB_${idEmbarcacao}`,
+        rastreadorAtivo: false,
         contatoPrincipal: rascunho.telefone || "",
         origemCadastro: "cadastro_publico",
         solicitacaoCadastroId: selecionada.id,
@@ -260,7 +282,8 @@ export default function SolicitacoesCadastroEmbarcacoes() {
           portoDestino: rota.portoDestino,
           diasSemana: rota.diasSemana,
           horarioSaida: rota.horarioSaida,
-          duracaoPrevistaMinutos: rota.duracaoHoras * 60,
+          duracaoPrevistaMinutos: rota.duracaoNaoInformada ? null : rota.duracaoHoras * 60,
+          duracaoInformada: rota.duracaoNaoInformada !== true,
           timezone: "America/Manaus",
           itinerario,
           escalas: itinerario,
@@ -340,6 +363,10 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                 )}
                 <p className="mt-5 text-xs font-black uppercase tracking-widest text-sky-700">{selecionada.codigoProvisorio}</p>
                 <h2 className="mt-1 text-2xl font-black text-[#0f2240]">Revisar antes de publicar</h2>
+                <div className="mt-3 rounded-2xl bg-[#0f2240] p-3 text-white">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">ID que será criado</p>
+                  <p className="mt-1 break-all font-mono text-sm font-black">{normalizarIdEmbarcacao(rascunho.nomeEmbarcacao)}</p>
+                </div>
                 <p className={`mt-3 rounded-2xl p-3 text-sm font-bold ${selecionada.autorizaMelhoria ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
                   {selecionada.autorizaMelhoria ? "✓ Autorizado melhorar foto, texto e organização dos dados." : "Melhorias não autorizadas. Peça correção para mudanças editoriais."}
                 </p>

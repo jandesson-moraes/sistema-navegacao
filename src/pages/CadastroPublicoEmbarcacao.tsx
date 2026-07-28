@@ -175,13 +175,14 @@ export default function CadastroPublicoEmbarcacao() {
                 Se informado, poderá agilizar a análise e a aprovação.
               </span>
             </label>
-            <label className="font-bold">Plano de interesse
-              <select name="planoInteresse" className={campo} defaultValue="basico">
-                <option value="basico" className="text-black">Básico gratuito</option>
-                <option value="vitrine" className="text-black">Vitrine</option>
-                <option value="tempo_real" className="text-black">Tempo Real</option>
-              </select>
-            </label>
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.06] p-4">
+              <input type="hidden" name="planoInteresse" value="basico" />
+              <p className="text-xs font-black uppercase tracking-wide text-emerald-300">Plano inicial</p>
+              <p className="mt-1 font-black">Básico gratuito</p>
+              <p className="mt-1 text-xs leading-5 text-slate-300">
+                Depois da aprovação, você poderá completar os dados e escolher um plano pago.
+              </p>
+            </div>
           </div>
 
           <label className="block font-bold">Descrição da embarcação
@@ -195,7 +196,7 @@ export default function CadastroPublicoEmbarcacao() {
           <div className="border-t border-white/10 pt-5">
             <h2 className="text-lg font-black">Como a embarcação viaja?</h2>
             <p className="mt-1 text-xs leading-5 text-slate-400">
-              Informe o percurso uma vez. Depois escolha separadamente os dias e horários da ida e da volta.
+              Informe o percurso, os dias de saída e os dias previstos de passagem nas escalas.
             </p>
             <div className="mt-3">
               <RotasCadastroPublico value={rotas} onChange={setRotas} />

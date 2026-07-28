@@ -16,6 +16,7 @@ import type {RotaCadastro} from "../components/RotasCadastroPublico";
 type Solicitacao = {
   id: string;
   codigoProvisorio?: string;
+  idEmbarcacaoSugerido?: string;
   nomeEmbarcacao?: string;
   tipoEmbarcacao?: string;
   cidade?: string;
@@ -84,14 +85,13 @@ function nomePlano(valor?: string) {
 }
 
 function normalizarIdEmbarcacao(nome?: string) {
-  const base = String(nome || "")
+  return String(nome || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 70);
-  return `CMD_${base || "EMBARCACAO"}`;
 }
 
 function CampoEdicao({
@@ -233,7 +233,13 @@ export default function SolicitacoesCadastroEmbarcacoes() {
       await salvarRevisao();
       const foto = rascunho.fotoOriginalUrl || "";
       const escalasLegadas = separarEscalas(rascunho.escalasTexto);
-      const idBase = normalizarIdEmbarcacao(rascunho.nomeEmbarcacao);
+      const idBase = normalizarIdEmbarcacao(
+        rascunho.idEmbarcacaoSugerido || rascunho.nomeEmbarcacao,
+      );
+      if (!idBase) {
+        window.alert("Não foi possível gerar o ID operacional da embarcação.");
+        return;
+      }
       let idEmbarcacao = idBase;
       let sufixo = 2;
       while ((await getDoc(doc(db, "embarcacoes", idEmbarcacao))).exists()) {
@@ -258,6 +264,14 @@ export default function SolicitacoesCadastroEmbarcacoes() {
             .concat(escalasLegadas)
             .filter(Boolean),
         )),
+        escalasBasicasDetalhadas: (rascunho.rotas || []).flatMap((rota) =>
+          rota.escalas.map((escala) => ({
+            sentido: rota.sentido,
+            uf: escala.uf || "",
+            cidade: escala.cidade,
+            porto: escala.porto,
+            diasPassagem: escala.diasPassagem || [],
+          }))),
         cnpj: rascunho.cnpj || "",
         codigoEmbarcacao: rascunho.codigoProvisorio || "",
         foto,
@@ -311,6 +325,7 @@ export default function SolicitacoesCadastroEmbarcacoes() {
           ordem: indice + 1,
           cidade: escala.cidade,
           portoNome: escala.porto,
+          diasPassagem: escala.diasPassagem || [],
           diaRelativo: escala.diaRelativo,
           horarioChegada: escala.horarioChegada,
           horarioSaida: escala.horarioSaida,
@@ -435,7 +450,12 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                 <h2 className="mt-1 text-2xl font-black text-[#0f2240]">Revisar antes de publicar</h2>
                 <div className="mt-3 rounded-2xl bg-[#0f2240] p-3 text-white">
                   <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">ID que será criado</p>
-                  <p className="mt-1 break-all font-mono text-sm font-black">{normalizarIdEmbarcacao(rascunho.nomeEmbarcacao)}</p>
+                  <p className="mt-1 break-all font-mono text-sm font-black">
+                    {normalizarIdEmbarcacao(rascunho.idEmbarcacaoSugerido || rascunho.nomeEmbarcacao)}
+                  </p>
+                  <p className="mt-1 text-[11px] text-slate-300">
+                    Este será o ID do documento em embarcações e o vínculo usado pelo GPS.
+                  </p>
                 </div>
                 <p className={`mt-3 rounded-2xl p-3 text-sm font-bold ${selecionada.autorizaMelhoria ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
                   {selecionada.autorizaMelhoria ? "✓ Autorizado melhorar foto, texto e organização dos dados." : "Melhorias não autorizadas. Peça correção para mudanças editoriais."}
@@ -560,6 +580,30 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                                     <CampoEdicao label="Nova saída" value={escala.horarioSaida}
                                       onChange={(v) => editarEscala(indice, escalaIndice, {horarioSaida: v})} />
                                   </div>
+                                  <div className="mt-2">
+                                    <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+                                      Dias previstos de passagem
+                                    </p>
+                                    <div className="mt-1 grid grid-cols-7 gap-1">
+                                      {NOMES_DIAS.map((dia, numero) => {
+                                        const dias = escala.diasPassagem || [];
+                                        const ativo = dias.includes(numero);
+                                        return (
+                                          <button type="button" key={dia}
+                                            onClick={() => editarEscala(indice, escalaIndice, {
+                                              diasPassagem: ativo
+                                                ? dias.filter((item) => item !== numero)
+                                                : [...dias, numero].sort(),
+                                            })}
+                                            className={`rounded-lg px-0.5 py-2 text-[9px] font-black ${
+                                              ativo ? "bg-amber-400 text-slate-950" : "bg-white text-slate-500"
+                                            }`}>
+                                            {dia}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -579,7 +623,7 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                             <CampoEdicao label="Duração aproximada (horas)"
                               value={rota.duracaoNaoInformada ? "Não informada" : String(rota.duracaoHoras || 0)}
                               onChange={(v) => editarRota(indice, {
-                                duracaoNaoInformada: normalizarIdEmbarcacao(v) === "CMD_NAO_INFORMADA",
+                                duracaoNaoInformada: normalizarIdEmbarcacao(v) === "NAO_INFORMADA",
                                 duracaoHoras: Number(v) || 0,
                               })} />
                           </div>

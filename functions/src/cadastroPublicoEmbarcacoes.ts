@@ -22,6 +22,16 @@ function normalizar(valor: unknown) {
     .trim();
 }
 
+function idOperacional(valor: unknown) {
+  return texto(valor, 120)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 70);
+}
+
 function rotasValidas(valor: unknown) {
   if (!Array.isArray(valor)) return [];
   return valor.slice(0, 12).map((item: unknown) => {
@@ -36,6 +46,11 @@ function rotasValidas(valor: unknown) {
         uf: texto(escala.uf, 2).toUpperCase(),
         cidade: texto(escala.cidade, 120),
         porto: texto(escala.porto, 160),
+        diasPassagem: Array.from(new Set(
+          (Array.isArray(escala.diasPassagem) ? escala.diasPassagem : [])
+            .map(Number)
+            .filter((dia) => Number.isInteger(dia) && dia >= 0 && dia <= 6),
+        )).sort(),
         diaRelativo: Math.max(0, Math.min(60, Number(escala.diaRelativo) || 0)),
         horarioChegada: /^\d{2}:\d{2}$/.test(texto(escala.horarioChegada)) ?
           texto(escala.horarioChegada) : "",
@@ -209,6 +224,7 @@ export const solicitarCadastroPublicoEmbarcacao = onRequest(
         transacao.set(limiteRef, {quantidade: quantidade + 1, atualizadoEm: agora}, {merge: true});
         transacao.set(ref, {
           codigoProvisorio: codigo,
+          idEmbarcacaoSugerido: idOperacional(nomeEmbarcacao),
           nomeEmbarcacao,
           nomeNormalizado: normalizar(nomeEmbarcacao),
           tipoEmbarcacao: texto(dados.tipoEmbarcacao, 80),

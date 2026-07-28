@@ -10,6 +10,7 @@ export type EscalaCadastro = {
   uf?: string;
   cidade: string;
   porto: string;
+  diasPassagem?: number[];
   diaRelativo: number;
   horarioChegada: string;
   horarioSaida: string;
@@ -280,6 +281,41 @@ function opcoesDiasApos() {
   }));
 }
 
+function SeletorDias({
+  titulo,
+  dias,
+  cor = "sky",
+  onChange,
+}: {
+  titulo: string;
+  dias: number[];
+  cor?: "sky" | "emerald" | "amber";
+  onChange: (dias: number[]) => void;
+}) {
+  const ativo = cor === "emerald" ? "bg-emerald-500" : cor === "amber" ? "bg-amber-400 text-slate-950" : "bg-sky-500";
+  return (
+    <div className="min-w-0">
+      <p className="mb-1.5 text-xs font-black uppercase tracking-wide text-slate-300">{titulo}</p>
+      <div className="grid grid-cols-7 gap-1">
+        {DIAS.map((dia, numero) => {
+          const selecionado = dias.includes(numero);
+          return (
+            <button type="button" key={numero} title={NOMES_DIAS[numero]}
+              onClick={() => onChange(selecionado
+                ? dias.filter((item) => item !== numero)
+                : [...dias, numero].sort())}
+              className={`h-11 min-w-0 rounded-xl px-0.5 text-[10px] font-black sm:text-xs ${
+                selecionado ? `${ativo} text-white` : "bg-white/8 text-slate-300"
+              }`}>
+              {dia}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ProgramacaoSentido({
   rota,
   cor,
@@ -439,6 +475,7 @@ export default function RotasCadastroPublico({
         normalizar(`${item.cidade}|${item.porto}`) === normalizar(`${escala.cidade}|${escala.porto}`));
       return {
         ...escala,
+        diasPassagem: existente?.diasPassagem || [],
         diaRelativo: existente?.diaRelativo || 0,
         horarioChegada: existente?.horarioChegada || "",
         horarioSaida: existente?.horarioSaida || "",
@@ -451,7 +488,7 @@ export default function RotasCadastroPublico({
     volta.itinerarioPersonalizado ? volta : {...volta, escalas: inverterEscalas(escalas, volta)},
   );
   const adicionarEscala = (sentido: "ida" | "volta") => {
-    const nova = {uf: "", cidade: "", porto: "", diaRelativo: 0, horarioChegada: "", horarioSaida: ""};
+    const nova = {uf: "", cidade: "", porto: "", diasPassagem: [], diaRelativo: 0, horarioChegada: "", horarioSaida: ""};
     if (sentido === "ida") atualizarEscalasIda([...ida.escalas, nova]);
     else atualizarVolta({escalas: [...volta.escalas, nova]});
   };
@@ -535,6 +572,18 @@ export default function RotasCadastroPublico({
                   <SeletorPorto titulo="Porto da escala" valor={escala.porto} cidade={escala.cidade} portos={portos}
                     onChange={(valor) => editarLocalEscala("ida", indice, {porto: valor})} />
                 </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <SeletorDias titulo="Dia previsto na ida" dias={escala.diasPassagem || []}
+                    onChange={(diasPassagem) => editarLocalEscala("ida", indice, {diasPassagem})} />
+                  <SeletorDias titulo="Dia previsto na volta" cor="emerald"
+                    dias={volta.escalas.find((item) =>
+                      normalizar(`${item.cidade}|${item.porto}`) === normalizar(`${escala.cidade}|${escala.porto}`))?.diasPassagem || []}
+                    onChange={(diasPassagem) => {
+                      const indiceVolta = volta.escalas.findIndex((item) =>
+                        normalizar(`${item.cidade}|${item.porto}`) === normalizar(`${escala.cidade}|${escala.porto}`));
+                      if (indiceVolta >= 0) editarLocalEscala("volta", indiceVolta, {diasPassagem});
+                    }} />
+                </div>
               </div>
             ))}
             {!ida.escalas.length && (
@@ -546,68 +595,32 @@ export default function RotasCadastroPublico({
         </div>
       </section>
 
-      <div className="rounded-3xl border border-white/10 bg-[#071a2f] p-3 sm:p-4">
-        <p className="mb-3 text-xs font-black uppercase tracking-[0.18em] text-slate-400">2. Dias e horários</p>
-        <div className="grid gap-4 xl:grid-cols-2">
-          <ProgramacaoSentido rota={ida} cor="sky" titulo="Programação da ida"
-            subtitulo={`${nomeOrigem} → ${nomeDestino}`}
-            onAtualizar={atualizarIda} onAlternarDia={(dia) => alternarDia("ida", dia)}
-            onEditarHorarioEscala={(indice, campos) => editarLocalEscala("ida", indice, campos)} />
-          <ProgramacaoSentido rota={volta} cor="emerald" titulo="Programação da volta"
-            subtitulo={`${nomeDestino} → ${nomeOrigem}`}
-            onAtualizar={atualizarVolta} onAlternarDia={(dia) => alternarDia("volta", dia)}
-            onEditarHorarioEscala={(indice, campos) => editarLocalEscala("volta", indice, campos)} />
+      <section className="rounded-3xl border border-white/10 bg-[#071a2f] p-4 sm:p-5">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">2. Dias de saída</p>
+        <h3 className="mt-1 text-xl font-black">Quando a embarcação inicia cada viagem?</h3>
+        <p className="mt-1 text-xs leading-5 text-slate-400">
+          No Plano Básico não pedimos horários. Informe somente os dias normalmente utilizados.
+        </p>
+        <div className="mt-4 grid gap-5 border-t border-white/10 pt-4 sm:grid-cols-2">
+          <div>
+            <p className="mb-2 text-sm font-black text-sky-300">IDA · {nomeOrigem} → {nomeDestino}</p>
+            <SeletorDias titulo="Dias de saída da origem" dias={ida.diasSemana}
+              onChange={(diasSemana) => atualizarIda({diasSemana})} />
+          </div>
+          <div className="border-t border-white/10 pt-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
+            <p className="mb-2 text-sm font-black text-emerald-300">VOLTA · {nomeDestino} → {nomeOrigem}</p>
+            <SeletorDias titulo="Dias de saída do destino" cor="emerald" dias={volta.diasSemana}
+              onChange={(diasSemana) => atualizarVolta({diasSemana})} />
+          </div>
         </div>
+      </section>
+
+      <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.055] p-4">
+        <p className="text-sm font-black text-emerald-200">Cadastro rápido do Plano Básico</p>
+        <p className="mt-1 text-xs leading-5 text-slate-300">
+          Horários, contatos comerciais, galeria e acompanhamento em tempo real serão preenchidos depois, em um link exclusivo, caso você escolha um plano pago.
+        </p>
       </div>
-
-      <label className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-4 text-sm">
-        <input type="checkbox" checked={volta.itinerarioPersonalizado === true}
-          onChange={(evento) => {
-            const personalizado = evento.target.checked;
-            atualizarVolta({
-              itinerarioPersonalizado: personalizado,
-              escalas: personalizado ? volta.escalas : inverterEscalas(ida.escalas, volta),
-            });
-          }} className="mt-0.5 h-5 w-5" />
-        <span>
-          <strong className="block">A volta utiliza outro caminho</strong>
-          <span className="mt-1 block text-xs leading-5 text-slate-400">
-            Marque somente se as escalas da volta forem diferentes. Caso contrário, o sistema inverte a ida automaticamente.
-          </span>
-        </span>
-      </label>
-
-      {volta.itinerarioPersonalizado && (
-        <section className="rounded-3xl border border-emerald-400/20 bg-emerald-400/[0.045] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div><h4 className="font-black">Escalas diferentes na volta</h4><p className="mt-1 text-xs text-slate-400">Cadastre na ordem da volta.</p></div>
-            <button type="button" onClick={() => adicionarEscala("volta")}
-              className="rounded-xl bg-emerald-400 px-3 py-2 text-xs font-black text-slate-950">+ Escala</button>
-          </div>
-          <div className="mt-3 space-y-2">
-            {volta.escalas.map((escala, indice) => (
-              <div key={indice} className="rounded-2xl bg-white/[0.055] p-3">
-                <div className="mb-3 flex items-center justify-between">
-                  <strong className="text-sm">Escala da volta {indice + 1}</strong>
-                  <button type="button" onClick={() => removerEscala("volta", indice)}
-                    className="text-xs font-black text-red-300">Remover</button>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <SeletorMunicipio titulo="Cidade ou comunidade" uf={escala.uf || ""} cidade={escala.cidade}
-                    onUf={(valor) => editarLocalEscala("volta", indice, {uf: valor, cidade: "", porto: ""})}
-                    onCidade={(valor) => editarLocalEscala("volta", indice, {cidade: valor, porto: ""})} />
-                  <SeletorPorto titulo="Porto da escala" valor={escala.porto} cidade={escala.cidade} portos={portos}
-                    onChange={(valor) => editarLocalEscala("volta", indice, {porto: valor})} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <p className="text-xs leading-5 text-slate-400">
-        O sistema salvará automaticamente uma programação de ida e outra de volta, sem exigir que a pessoa escolha o sentido.
-      </p>
     </div>
   );
 }

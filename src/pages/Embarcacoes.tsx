@@ -119,8 +119,12 @@ const FORM_PADRAO: FormularioEmbarcacao = {
 function normalizarId(valor: string) {
   return String(valor || "")
     .trim()
-    .replace(/[\\/\s]+/g, "_")
-    .toUpperCase();
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 70);
 }
 
 function normalizarEmail(email: string) {

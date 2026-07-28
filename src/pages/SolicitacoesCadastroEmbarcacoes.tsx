@@ -15,7 +15,9 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import {db} from "../config/firebase";
-import type {RotaCadastro} from "../components/RotasCadastroPublico";
+import RotasCadastroPublico, {
+  type RotaCadastro,
+} from "../components/RotasCadastroPublico";
 
 type Solicitacao = {
   id: string;

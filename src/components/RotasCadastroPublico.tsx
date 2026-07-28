@@ -242,7 +242,7 @@ function SeletorMunicipio({
               autoFocus
               value={localidadeManual}
               onChange={(e) => setLocalidadeManual(e.target.value)}
-              className="mt-2 min-h-11 w-full rounded-xl border border-white/10 bg-[#10253e] px-3 text-sm normal-case text-white outline-none"
+              className="mt-2 min-h-11 w-full rounded-xl border border-white/10 bg-[#10253e] px-3 text-sm uppercase text-white outline-none"
               placeholder="Ex.: Comunidade São Francisco - Manaus"
             />
           </label>
@@ -313,7 +313,7 @@ function SeletorPorto({
   const nomeCidade = localSemUf.split(/\s-\s/).pop()?.trim() || localSemUf;
   const filtrados = portos.filter((item) =>
     Boolean(cidade) && normalizar(item.busca).includes(normalizar(nomeCidade)));
-  const input = "mt-1 min-h-11 w-full rounded-xl border border-white/10 bg-[#10253e] px-3 text-sm text-white outline-none";
+  const input = "mt-1 min-h-11 w-full rounded-xl border border-white/10 bg-[#10253e] px-3 text-sm uppercase text-white outline-none";
   return (
     <div>
       <SeletorLista titulo={cidade ? `${titulo} · ${filtrados.length} ${filtrados.length === 1 ? "opção" : "opções"}` : titulo}

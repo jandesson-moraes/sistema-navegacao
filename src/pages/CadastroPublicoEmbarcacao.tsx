@@ -187,6 +187,7 @@ export default function CadastroPublicoEmbarcacao() {
 
   const campo =
     "mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 text-base text-white outline-none placeholder:text-slate-500 focus:border-sky-400";
+  const campoMaiusculo = `${campo} uppercase`;
   return (
     <main className="min-h-screen bg-[#020817] px-4 py-7 text-white sm:py-12">
       <section className="mx-auto max-w-3xl">
@@ -216,7 +217,7 @@ export default function CadastroPublicoEmbarcacao() {
           className="space-y-5 rounded-[28px] border border-white/10 bg-[#071a2f] p-4 shadow-2xl sm:p-6">
           <div className="grid gap-5 sm:grid-cols-2">
             <label className="font-bold">Nome da embarcação *
-              <input name="nomeEmbarcacao" required minLength={2} className={campo}
+              <input name="nomeEmbarcacao" required minLength={2} className={campoMaiusculo}
                 defaultValue={String(dadosIniciais.nomeEmbarcacao || "")} />
             </label>
             <label className="font-bold">Tipo
@@ -267,7 +268,7 @@ export default function CadastroPublicoEmbarcacao() {
             <div className="mt-4 grid gap-5 sm:grid-cols-2">
               <label className="font-bold">Nome completo *
                 <input name="nomeSolicitante" required minLength={5} autoComplete="name"
-                  className={campo} placeholder="Ex.: João da Silva"
+                  className={campoMaiusculo} placeholder="Ex.: JOÃO DA SILVA"
                   defaultValue={String(dadosIniciais.nomeSolicitante || "")}
                   onBlur={(e) => e.currentTarget.setCustomValidity(
                     nomeCompletoValido(e.currentTarget.value) ? "" : "Informe seu nome e sobrenome."

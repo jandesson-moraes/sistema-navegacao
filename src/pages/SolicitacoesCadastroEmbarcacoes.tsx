@@ -111,6 +111,10 @@ function normalizarIdEmbarcacao(nome?: string) {
     .slice(0, 70);
 }
 
+function caixaAlta(valor?: string) {
+  return String(valor || "").trim().toLocaleUpperCase("pt-BR");
+}
+
 function idEhAleatorio(id?: string) {
   const valor = String(id || "").trim();
   return /^[A-Za-z0-9]{18,24}$/.test(valor) && !valor.includes("_");
@@ -291,23 +295,37 @@ export default function SolicitacoesCadastroEmbarcacoes() {
     setOcupado(true);
     try {
       const campos = {
-        nomeEmbarcacao: rascunho.nomeEmbarcacao || "",
-        tipoEmbarcacao: rascunho.tipoEmbarcacao || "",
-        cidade: rascunho.cidade || "",
-        portoSaida: rascunho.portoSaida || "",
-        origemCidade: rascunho.origemCidade || "",
-        destinoCidade: rascunho.destinoCidade || "",
+        nomeEmbarcacao: caixaAlta(rascunho.nomeEmbarcacao),
+        tipoEmbarcacao: caixaAlta(rascunho.tipoEmbarcacao),
+        cidade: caixaAlta(rascunho.cidade),
+        portoSaida: caixaAlta(rascunho.portoSaida),
+        origemCidade: caixaAlta(rascunho.origemCidade),
+        destinoCidade: caixaAlta(rascunho.destinoCidade),
         descricao: rascunho.descricao || "",
-        escalasTexto: rascunho.escalasTexto || "",
+        escalasTexto: caixaAlta(rascunho.escalasTexto),
         cnpj: rascunho.cnpj || "",
-        nomeSolicitante: rascunho.nomeSolicitante || "",
+        nomeSolicitante: caixaAlta(rascunho.nomeSolicitante),
         telefone: rascunho.telefone || "",
         vinculo: rascunho.vinculo || "",
         planoInteresse: rascunho.planoInteresse || "basico",
         autorizaMelhoria: rascunho.autorizaMelhoria === true,
         observacoes: rascunho.observacoes || "",
         tipoImagem: rascunho.tipoImagem || "foto_embarcacao",
-        rotas: rascunho.rotas || [],
+        rotas: (rascunho.rotas || []).map((rota) => ({
+          ...rota,
+          origemUf: caixaAlta(rota.origemUf),
+          origemCidade: caixaAlta(rota.origemCidade),
+          portoOrigem: caixaAlta(rota.portoOrigem),
+          destinoUf: caixaAlta(rota.destinoUf),
+          destinoCidade: caixaAlta(rota.destinoCidade),
+          portoDestino: caixaAlta(rota.portoDestino),
+          escalas: rota.escalas.map((escala) => ({
+            ...escala,
+            uf: caixaAlta(escala.uf),
+            cidade: caixaAlta(escala.cidade),
+            porto: caixaAlta(escala.porto),
+          })),
+        })),
         fotoOriginalUrl: rascunho.fotoOriginalUrl || "",
         revisadoPelaEquipe: true,
         atualizadoEm: serverTimestamp(),

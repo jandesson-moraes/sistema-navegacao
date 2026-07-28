@@ -9,6 +9,10 @@ function texto(valor: unknown, limite = 160) {
   return String(valor ?? "").trim().slice(0, limite);
 }
 
+function caixaAlta(valor: unknown, limite = 160) {
+  return texto(valor, limite).toLocaleUpperCase("pt-BR");
+}
+
 function somenteDigitos(valor: unknown) {
   return texto(valor).replace(/\D/g, "");
 }
@@ -43,9 +47,9 @@ function rotasValidas(valor: unknown) {
     const escalas = escalasRecebidas.slice(0, 30).map((itemEscala: unknown) => {
       const escala = (itemEscala ?? {}) as Record<string, unknown>;
       return {
-        uf: texto(escala.uf, 2).toUpperCase(),
-        cidade: texto(escala.cidade, 120),
-        porto: texto(escala.porto, 160),
+        uf: caixaAlta(escala.uf, 2),
+        cidade: caixaAlta(escala.cidade, 120),
+        porto: caixaAlta(escala.porto, 160),
         diasPassagem: Array.from(new Set(
           (Array.isArray(escala.diasPassagem) ? escala.diasPassagem : [])
             .map(Number)
@@ -60,12 +64,12 @@ function rotasValidas(valor: unknown) {
     }).filter((escala) => escala.cidade || escala.porto);
     return {
       sentido: texto(rota.sentido) === "volta" ? "volta" : "ida",
-      origemUf: texto(rota.origemUf, 2).toUpperCase(),
-      origemCidade: texto(rota.origemCidade, 120),
-      portoOrigem: texto(rota.portoOrigem, 160),
-      destinoUf: texto(rota.destinoUf, 2).toUpperCase(),
-      destinoCidade: texto(rota.destinoCidade, 120),
-      portoDestino: texto(rota.portoDestino, 160),
+      origemUf: caixaAlta(rota.origemUf, 2),
+      origemCidade: caixaAlta(rota.origemCidade, 120),
+      portoOrigem: caixaAlta(rota.portoOrigem, 160),
+      destinoUf: caixaAlta(rota.destinoUf, 2),
+      destinoCidade: caixaAlta(rota.destinoCidade, 120),
+      portoDestino: caixaAlta(rota.portoDestino, 160),
       diasSemana: Array.from(new Set(dias)).sort(),
       horarioSaida: /^\d{2}:\d{2}$/.test(texto(rota.horarioSaida)) ?
         texto(rota.horarioSaida) : "",
@@ -140,8 +144,8 @@ export const solicitarCadastroPublicoEmbarcacao = onRequest(
     try {
       const dados = (req.body ?? {}) as Record<string, unknown>;
       if (texto(dados.acao, 40) === "sugerir_porto") {
-        const nomePorto = texto(dados.nome, 160);
-        const cidadePorto = texto(dados.cidade, 140);
+        const nomePorto = caixaAlta(dados.nome, 160);
+        const cidadePorto = caixaAlta(dados.cidade, 140);
         if (nomePorto.length < 3 || cidadePorto.length < 3) {
           res.status(400).json({erro: "Informe o nome completo do porto e a localidade."});
           return;
@@ -178,11 +182,11 @@ export const solicitarCadastroPublicoEmbarcacao = onRequest(
         return;
       }
 
-      const nomeEmbarcacao = texto(dados.nomeEmbarcacao, 120);
-      const nomeSolicitante = texto(dados.nomeSolicitante, 120);
+      const nomeEmbarcacao = caixaAlta(dados.nomeEmbarcacao, 120);
+      const nomeSolicitante = caixaAlta(dados.nomeSolicitante, 120);
       const telefone = somenteDigitos(dados.telefone);
-      const cidade = texto(dados.cidade, 100);
-      const portoSaida = texto(dados.portoSaida, 120);
+      const cidade = caixaAlta(dados.cidade, 100);
+      const portoSaida = caixaAlta(dados.portoSaida, 120);
       const cnpj = somenteDigitos(dados.cnpj);
       const rotasCadastro = rotasValidas(dados.rotas);
       const rotaPrincipal = rotasCadastro.find((rota) => rota.sentido === "ida") ||
@@ -266,13 +270,13 @@ export const solicitarCadastroPublicoEmbarcacao = onRequest(
           idEmbarcacaoSugerido: idOperacional(nomeEmbarcacao),
           nomeEmbarcacao,
           nomeNormalizado: normalizar(nomeEmbarcacao),
-          tipoEmbarcacao: texto(dados.tipoEmbarcacao, 80),
+          tipoEmbarcacao: caixaAlta(dados.tipoEmbarcacao, 80),
           cidade,
           portoSaida: portoSaida || rotaPrincipal?.portoOrigem || "",
           descricao: texto(dados.descricao, 1500),
-          origemCidade: texto(dados.origemCidade, 100) || rotaPrincipal?.origemCidade || "",
-          destinoCidade: texto(dados.destinoCidade, 100) || rotaPrincipal?.destinoCidade || "",
-          escalasTexto: texto(dados.escalasTexto, 800),
+          origemCidade: caixaAlta(dados.origemCidade, 100) || rotaPrincipal?.origemCidade || "",
+          destinoCidade: caixaAlta(dados.destinoCidade, 100) || rotaPrincipal?.destinoCidade || "",
+          escalasTexto: caixaAlta(dados.escalasTexto, 800),
           rotas: rotasCadastro,
           cnpj,
           nomeSolicitante,

@@ -256,13 +256,25 @@ function SeletorPorto({
         valor={novo ? "" : valor}
         placeholder={cidade ? "Selecione o porto" : "Selecione primeiro a cidade"}
         desabilitado={!cidade}
-        opcoes={[...filtrados, {valor: "__novo__", rotulo: "+ Não encontrei — informar novo porto"}]}
-        onChange={(escolha) => {
-          if (escolha === "__novo__") {setNovo(true); onChange("");}
-          else {setNovo(false); onChange(escolha);}
-        }} />
-      {novo && <input autoFocus value={valor} onChange={(e) => onChange(e.target.value)}
-        className={input} placeholder="Ex.: Porto da Manaus Moderna" />}
+        opcoes={filtrados}
+        onChange={(escolha) => {setNovo(false); onChange(escolha);}} />
+      {cidade && (
+        <button type="button" onClick={() => {setNovo(true); onChange("");}}
+          className="mt-2 min-h-10 w-full rounded-xl border border-dashed border-amber-300/30 bg-amber-300/[0.06] px-3 text-left text-xs font-black text-amber-200">
+          + Cadastrar um novo porto ou ponto de embarque
+        </button>
+      )}
+      {novo && (
+        <div className="mt-2 rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-2">
+          <input autoFocus value={valor} onChange={(e) => onChange(e.target.value)}
+            className={input} placeholder="Ex.: Porto da Manaus Moderna" />
+          <p className="mt-1.5 text-xs leading-5 text-slate-400">
+            Escreva o nome completo e correto. A equipe confirmará antes da aprovação.
+          </p>
+          <button type="button" onClick={() => {setNovo(false); onChange("");}}
+            className="mt-2 text-xs font-black text-slate-300">Cancelar novo porto</button>
+        </div>
+      )}
       {cidade && !novo && (
         <p className="mt-1.5 text-xs text-slate-400">
           {filtrados.length
@@ -419,6 +431,7 @@ export default function RotasCadastroPublico({
   value, onChange,
 }: {value: RotaCadastro[]; onChange: (rotas: RotaCadastro[]) => void}) {
   const [portos, setPortos] = useState<Opcao[]>([]);
+  const [abaAtiva, setAbaAtiva] = useState<"ida" | "volta">("ida");
   useEffect(() => {
     const dados = new Map<string, Opcao>();
     const carregar = (nomeColecao: "portos" | "terminais") =>
@@ -447,9 +460,6 @@ export default function RotasCadastroPublico({
     const idaSalva = value.find((rota) => rota.sentido === "ida");
     const ida: RotaCadastro = {...ROTA_VAZIA, ...idaSalva, sentido: "ida"};
     const voltaSalva = value.find((rota) => rota.sentido === "volta");
-    const escalasInvertidas = [...ida.escalas].reverse().map((escala) => ({
-      ...escala, diaRelativo: 0, horarioChegada: "", horarioSaida: "",
-    }));
     const volta: RotaCadastro = {
       ...ROTA_VAZIA,
       sentido: "volta",
@@ -459,7 +469,7 @@ export default function RotasCadastroPublico({
       destinoUf: ida.origemUf,
       destinoCidade: ida.origemCidade,
       portoDestino: ida.portoOrigem,
-      escalas: escalasInvertidas,
+      escalas: [],
       ...voltaSalva,
     };
     return [ida, volta] as [RotaCadastro, RotaCadastro];
@@ -469,39 +479,23 @@ export default function RotasCadastroPublico({
   const emitir = (novaIda: RotaCadastro, novaVolta: RotaCadastro) => onChange([novaIda, novaVolta]);
   const atualizarIda = (campos: Partial<RotaCadastro>) => emitir({...ida, ...campos}, volta);
   const atualizarVolta = (campos: Partial<RotaCadastro>) => emitir(ida, {...volta, ...campos});
-  const inverterEscalas = (escalas: EscalaCadastro[], voltaAtual: RotaCadastro) =>
-    [...escalas].reverse().map((escala) => {
-      const existente = voltaAtual.escalas.find((item) =>
-        normalizar(`${item.cidade}|${item.porto}`) === normalizar(`${escala.cidade}|${escala.porto}`));
-      return {
-        ...escala,
-        diasPassagem: existente?.diasPassagem || [],
-        diaRelativo: existente?.diaRelativo || 0,
-        horarioChegada: existente?.horarioChegada || "",
-        horarioSaida: existente?.horarioSaida || "",
-      };
-    });
   const atualizarPercurso = (camposIda: Partial<RotaCadastro>, camposVolta: Partial<RotaCadastro>) =>
     emitir({...ida, ...camposIda}, {...volta, ...camposVolta});
-  const atualizarEscalasIda = (escalas: EscalaCadastro[]) => emitir(
-    {...ida, escalas},
-    volta.itinerarioPersonalizado ? volta : {...volta, escalas: inverterEscalas(escalas, volta)},
-  );
   const adicionarEscala = (sentido: "ida" | "volta") => {
     const nova = {uf: "", cidade: "", porto: "", diasPassagem: [], diaRelativo: 0, horarioChegada: "", horarioSaida: ""};
-    if (sentido === "ida") atualizarEscalasIda([...ida.escalas, nova]);
+    if (sentido === "ida") atualizarIda({escalas: [...ida.escalas, nova]});
     else atualizarVolta({escalas: [...volta.escalas, nova]});
   };
   const editarLocalEscala = (sentido: "ida" | "volta", indice: number, campos: Partial<EscalaCadastro>) => {
     const rota = sentido === "ida" ? ida : volta;
     const escalas = rota.escalas.map((escala, atual) => atual === indice ? {...escala, ...campos} : escala);
-    if (sentido === "ida") atualizarEscalasIda(escalas);
+    if (sentido === "ida") atualizarIda({escalas});
     else atualizarVolta({escalas});
   };
   const removerEscala = (sentido: "ida" | "volta", indice: number) => {
     const rota = sentido === "ida" ? ida : volta;
     const escalas = rota.escalas.filter((_, atual) => atual !== indice);
-    if (sentido === "ida") atualizarEscalasIda(escalas);
+    if (sentido === "ida") atualizarIda({escalas});
     else atualizarVolta({escalas});
   };
   const alternarDia = (sentido: "ida" | "volta", dia: number) => {
@@ -521,7 +515,7 @@ export default function RotasCadastroPublico({
         <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-300">1. Percurso principal</p>
         <h3 className="mt-1 text-xl font-black">Informe os locais apenas uma vez</h3>
         <p className="mt-1 text-xs leading-5 text-slate-400">
-          O sistema usará os mesmos locais na ida e inverterá automaticamente para a volta.
+          A origem e o destino serão reutilizados. As escalas serão preenchidas separadamente nas abas de ida e volta.
         </p>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <SeletorMunicipio titulo="Local de partida" uf={ida.origemUf} cidade={ida.origemCidade}
@@ -548,71 +542,97 @@ export default function RotasCadastroPublico({
             onChange={(valor) => atualizarPercurso({portoDestino: valor}, {portoOrigem: valor})} />
         </div>
 
-        <div className="mt-5 border-t border-white/10 pt-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h4 className="font-black">Escalas do percurso de ida</h4>
-              <p className="mt-1 text-xs text-slate-400">Cadastre na ordem em que a embarcação passa.</p>
-            </div>
-            <button type="button" onClick={() => adicionarEscala("ida")}
-              className="shrink-0 rounded-xl bg-amber-400 px-3 py-2 text-xs font-black text-slate-950">+ Escala</button>
-          </div>
-          <div className="mt-3 space-y-2">
-            {ida.escalas.map((escala, indice) => (
-              <div key={indice} className="rounded-2xl bg-white/[0.055] p-3">
-                <div className="mb-3 flex items-center justify-between">
-                  <strong className="text-sm">Escala {indice + 1}</strong>
-                  <button type="button" onClick={() => removerEscala("ida", indice)}
-                    className="text-xs font-black text-red-300">Remover</button>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <SeletorMunicipio titulo="Cidade ou comunidade" uf={escala.uf || ""} cidade={escala.cidade}
-                    onUf={(valor) => editarLocalEscala("ida", indice, {uf: valor, cidade: "", porto: ""})}
-                    onCidade={(valor) => editarLocalEscala("ida", indice, {cidade: valor, porto: ""})} />
-                  <SeletorPorto titulo="Porto da escala" valor={escala.porto} cidade={escala.cidade} portos={portos}
-                    onChange={(valor) => editarLocalEscala("ida", indice, {porto: valor})} />
-                </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <SeletorDias titulo="Dia previsto na ida" dias={escala.diasPassagem || []}
-                    onChange={(diasPassagem) => editarLocalEscala("ida", indice, {diasPassagem})} />
-                  <SeletorDias titulo="Dia previsto na volta" cor="emerald"
-                    dias={volta.escalas.find((item) =>
-                      normalizar(`${item.cidade}|${item.porto}`) === normalizar(`${escala.cidade}|${escala.porto}`))?.diasPassagem || []}
-                    onChange={(diasPassagem) => {
-                      const indiceVolta = volta.escalas.findIndex((item) =>
-                        normalizar(`${item.cidade}|${item.porto}`) === normalizar(`${escala.cidade}|${escala.porto}`));
-                      if (indiceVolta >= 0) editarLocalEscala("volta", indiceVolta, {diasPassagem});
-                    }} />
-                </div>
-              </div>
-            ))}
-            {!ida.escalas.length && (
-              <p className="rounded-2xl border border-dashed border-white/10 p-4 text-center text-xs text-slate-400">
-                Viagem direta, sem escalas intermediárias.
-              </p>
-            )}
-          </div>
-        </div>
       </section>
 
       <section className="rounded-3xl border border-white/10 bg-[#071a2f] p-4 sm:p-5">
-        <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">2. Dias de saída</p>
-        <h3 className="mt-1 text-xl font-black">Quando a embarcação inicia cada viagem?</h3>
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-400">2. Rotas e escalas</p>
+        <h3 className="mt-1 text-xl font-black">Preencha cada sentido separadamente</h3>
         <p className="mt-1 text-xs leading-5 text-slate-400">
-          No Plano Básico não pedimos horários. Informe somente os dias normalmente utilizados.
+          Alterne entre as abas. As informações de ida e volta não serão misturadas.
         </p>
-        <div className="mt-4 grid gap-5 border-t border-white/10 pt-4 sm:grid-cols-2">
-          <div>
-            <p className="mb-2 text-sm font-black text-sky-300">IDA · {nomeOrigem} → {nomeDestino}</p>
-            <SeletorDias titulo="Dias de saída da origem" dias={ida.diasSemana}
-              onChange={(diasSemana) => atualizarIda({diasSemana})} />
-          </div>
-          <div className="border-t border-white/10 pt-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
-            <p className="mb-2 text-sm font-black text-emerald-300">VOLTA · {nomeDestino} → {nomeOrigem}</p>
-            <SeletorDias titulo="Dias de saída do destino" cor="emerald" dias={volta.diasSemana}
-              onChange={(diasSemana) => atualizarVolta({diasSemana})} />
-          </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-white/[0.045] p-1.5">
+          <button type="button" onClick={() => setAbaAtiva("ida")}
+            className={`min-h-12 rounded-xl px-3 text-sm font-black ${
+              abaAtiva === "ida" ? "bg-sky-500 text-white shadow-lg" : "text-slate-400"
+            }`}>
+            IDA · {nomeOrigem} → {nomeDestino}
+          </button>
+          <button type="button" onClick={() => setAbaAtiva("volta")}
+            className={`min-h-12 rounded-xl px-3 text-sm font-black ${
+              abaAtiva === "volta" ? "bg-emerald-500 text-white shadow-lg" : "text-slate-400"
+            }`}>
+            VOLTA · {nomeDestino} → {nomeOrigem}
+          </button>
         </div>
+
+        {(["ida", "volta"] as const).map((sentido) => {
+          if (sentido !== abaAtiva) return null;
+          const rota = sentido === "ida" ? ida : volta;
+          const cor = sentido === "ida" ? "sky" : "emerald";
+          const atualizarRota = sentido === "ida" ? atualizarIda : atualizarVolta;
+          return (
+            <div key={sentido} className="mt-5">
+              <p className={`text-sm font-black ${sentido === "ida" ? "text-sky-300" : "text-emerald-300"}`}>
+                {sentido === "ida"
+                  ? `${nomeOrigem} → ${nomeDestino}`
+                  : `${nomeDestino} → ${nomeOrigem}`}
+              </p>
+              <div className="mt-3 border-t border-white/10 pt-4">
+                <SeletorDias
+                  titulo={sentido === "ida" ? "Dias de saída da origem" : "Dias de saída do destino"}
+                  cor={cor}
+                  dias={rota.diasSemana}
+                  onChange={(diasSemana) => atualizarRota({diasSemana})}
+                />
+              </div>
+
+              <div className="mt-5 border-t border-white/10 pt-4">
+                <h4 className="font-black">Escalas da {sentido}</h4>
+                <p className="mt-1 text-xs text-slate-400">
+                  Cadastre na ordem em que a embarcação passa neste sentido.
+                </p>
+                <div className="mt-3 space-y-3">
+                  {rota.escalas.map((escala, indice) => (
+                    <div key={indice} className="border-t border-white/10 pt-4 first:border-t-0 first:pt-0">
+                      <div className="mb-3 flex items-center justify-between">
+                        <strong className="text-sm">Escala {indice + 1}</strong>
+                        <button type="button" onClick={() => removerEscala(sentido, indice)}
+                          className="text-xs font-black text-red-300">Remover</button>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <SeletorMunicipio titulo="Cidade ou comunidade" uf={escala.uf || ""} cidade={escala.cidade}
+                          onUf={(valor) => editarLocalEscala(sentido, indice, {uf: valor, cidade: "", porto: ""})}
+                          onCidade={(valor) => editarLocalEscala(sentido, indice, {cidade: valor, porto: ""})} />
+                        <SeletorPorto titulo="Porto ou ponto de parada" valor={escala.porto}
+                          cidade={escala.cidade} portos={portos}
+                          onChange={(valor) => editarLocalEscala(sentido, indice, {porto: valor})} />
+                      </div>
+                      <div className="mt-3">
+                        <SeletorDias titulo={`Dias previstos de passagem na ${sentido}`} cor={cor}
+                          dias={escala.diasPassagem || []}
+                          onChange={(diasPassagem) => editarLocalEscala(sentido, indice, {diasPassagem})} />
+                      </div>
+                    </div>
+                  ))}
+                  {!rota.escalas.length && (
+                    <p className="border-y border-dashed border-white/10 py-5 text-center text-xs text-slate-400">
+                      Nenhuma escala cadastrada para a {sentido}.
+                    </p>
+                  )}
+                </div>
+                <button type="button" onClick={() => adicionarEscala(sentido)}
+                  className={`mt-4 min-h-12 w-full rounded-xl border border-dashed px-4 text-sm font-black ${
+                    sentido === "ida"
+                      ? "border-sky-400/35 bg-sky-400/[0.07] text-sky-200"
+                      : "border-emerald-400/35 bg-emerald-400/[0.07] text-emerald-200"
+                  }`}>
+                  + Adicionar outra escala na {sentido}
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </section>
 
       <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.055] p-4">

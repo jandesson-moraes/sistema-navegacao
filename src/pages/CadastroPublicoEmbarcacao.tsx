@@ -222,9 +222,23 @@ export default function CadastroPublicoEmbarcacao() {
                   Inclua o DDD. Usaremos este número para confirmar o cadastro.
                 </span>
               </label>
-              <label className="font-bold">Foto limpa da embarcação
+              <label className="font-bold">Tipo da imagem
+                <select name="tipoImagem" className={campo} defaultValue="foto_embarcacao">
+                  <option value="foto_embarcacao" className="text-black">Foto da embarcação</option>
+                  <option value="logo_oficial" className="text-black">Logomarca oficial</option>
+                </select>
+              </label>
+              <label className="font-bold">Imagem principal
                 <input name="foto" type="file" accept="image/jpeg,image/png,image/webp" className={`${campo} py-3`} />
               </label>
+            </div>
+            <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/[0.06] p-4">
+              <p className="text-sm font-black text-amber-200">Atenção à imagem enviada</p>
+              <p className="mt-1 text-xs leading-5 text-slate-300">
+                Envie preferencialmente uma foto nítida da embarcação ou sua logomarca oficial.
+                Selfie, foto de perfil pessoal, print, imagem de outra embarcação ou conteúdo sem relação
+                com o cadastro não será aprovado.
+              </p>
             </div>
             <fieldset className="mt-5">
               <legend className="font-bold">Qual é sua relação com a embarcação?</legend>

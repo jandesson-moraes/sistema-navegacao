@@ -242,7 +242,11 @@ export const solicitarCadastroPublicoEmbarcacao = onRequest(
           planoInteresse: texto(dados.planoInteresse, 30) || "basico",
           autorizaMelhoria: dados.autorizaMelhoria === true,
           observacoes: texto(dados.observacoes, 1000),
+          tipoImagem: texto(dados.tipoImagem, 30) === "logo_oficial" ?
+            "logo_oficial" :
+            "foto_embarcacao",
           fotoOriginalUrl: fotoUrl,
+          imagemValidada: false,
           status: "aguardando_whatsapp",
           telefoneValidado: false,
           criadoEm: agora,

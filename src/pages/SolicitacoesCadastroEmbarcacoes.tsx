@@ -31,6 +31,8 @@ type Solicitacao = {
   vinculo?: string;
   planoInteresse?: string;
   autorizaMelhoria?: boolean;
+  tipoImagem?: string;
+  imagemValidada?: boolean;
   fotoOriginalUrl?: string;
   observacoes?: string;
   status?: string;
@@ -179,6 +181,22 @@ export default function SolicitacoesCadastroEmbarcacoes() {
     }
   }
 
+  async function confirmarImagem() {
+    if (!selecionada || !rascunho?.fotoOriginalUrl) {
+      window.alert("Não existe imagem para validar.");
+      return;
+    }
+    setOcupado(true);
+    try {
+      const campos = {imagemValidada: true, imagemValidadaEm: serverTimestamp()};
+      await updateDoc(doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id), campos);
+      setSelecionada((atual) => atual ? {...atual, imagemValidada: true} : atual);
+      setRascunho((atual) => atual ? {...atual, imagemValidada: true} : atual);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
   async function salvarRevisao() {
     if (!selecionada || !rascunho) return;
     if (!selecionada.autorizaMelhoria) {
@@ -205,6 +223,7 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         planoInteresse: rascunho.planoInteresse || "basico",
         autorizaMelhoria: rascunho.autorizaMelhoria === true,
         observacoes: rascunho.observacoes || "",
+        tipoImagem: rascunho.tipoImagem || "foto_embarcacao",
         rotas: rascunho.rotas || [],
         fotoOriginalUrl: rascunho.fotoOriginalUrl || "",
         revisadoPelaEquipe: true,
@@ -226,6 +245,14 @@ export default function SolicitacoesCadastroEmbarcacoes() {
     }
     if (!rascunho.nomeEmbarcacao?.trim()) {
       window.alert("Informe o nome da embarcação.");
+      return;
+    }
+    if (!rascunho.fotoOriginalUrl) {
+      window.alert("Solicite uma foto da embarcação ou logomarca oficial antes de aprovar.");
+      return;
+    }
+    if (!rascunho.imagemValidada) {
+      window.alert("Confira e valide a imagem antes de aprovar.");
       return;
     }
     setOcupado(true);
@@ -278,6 +305,7 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         fotoUrl: foto,
         imagem: foto,
         fotos: foto ? [foto] : [],
+        tipoImagemPrincipal: rascunho.tipoImagem || "foto_embarcacao",
         planoId: "basico",
         planoStatus: "ativo",
         planoEfetivoId: "basico",
@@ -446,6 +474,22 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                       className="rounded-xl bg-sky-100 p-2 text-center text-xs font-black text-sky-800">Baixar imagem</a>
                   </div>
                 )}
+                <div className={`mt-3 rounded-2xl p-3 text-sm font-bold ${
+                  rascunho.imagemValidada ? "bg-emerald-50 text-emerald-800" :
+                    rascunho.fotoOriginalUrl ? "bg-sky-50 text-sky-900" : "bg-red-50 text-red-800"
+                }`}>
+                  {rascunho.imagemValidada
+                    ? "✓ Imagem conferida e validada pela equipe."
+                    : rascunho.fotoOriginalUrl
+                    ? `Imagem declarada como: ${rascunho.tipoImagem === "logo_oficial" ? "logomarca oficial" : "foto da embarcação"}. Confira se corresponde ao cadastro.`
+                    : "Nenhuma imagem foi enviada. Solicite uma foto da embarcação ou logomarca oficial antes de aprovar."}
+                </div>
+                {rascunho.fotoOriginalUrl && !rascunho.imagemValidada && (
+                  <button type="button" disabled={ocupado} onClick={confirmarImagem}
+                    className="mt-2 min-h-11 w-full rounded-xl bg-emerald-600 px-4 text-sm font-black text-white">
+                    Confirmar que a imagem é válida
+                  </button>
+                )}
                 <p className="mt-5 text-xs font-black uppercase tracking-widest text-sky-700">{selecionada.codigoProvisorio}</p>
                 <h2 className="mt-1 text-2xl font-black text-[#0f2240]">Revisar antes de publicar</h2>
                 <div className="mt-3 rounded-2xl bg-[#0f2240] p-3 text-white">
@@ -506,6 +550,15 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                   </div>
                   <CampoEdicao label="Observações" value={rascunho.observacoes} multiline
                     onChange={(v) => editar("observacoes", v)} />
+                  <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
+                    Tipo da imagem
+                    <select value={rascunho.tipoImagem || "foto_embarcacao"}
+                      onChange={(e) => editar("tipoImagem", e.target.value)}
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-800">
+                      <option value="foto_embarcacao">Foto da embarcação</option>
+                      <option value="logo_oficial">Logomarca oficial</option>
+                    </select>
+                  </label>
                   <CampoEdicao label="URL da foto aprovada" value={rascunho.fotoOriginalUrl} onChange={(v) => editar("fotoOriginalUrl", v)} />
                 </div>
 

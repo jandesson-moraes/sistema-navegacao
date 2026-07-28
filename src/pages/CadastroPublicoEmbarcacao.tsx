@@ -1,10 +1,28 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import RotasCadastroPublico, {type RotaCadastro} from "../components/RotasCadastroPublico";
+import EscolhaTipoImagem from "../components/EscolhaTipoImagem";
 import {TIPOS_EMBARCACAO} from "../domain/tiposEmbarcacao";
 
 const URL_CADASTRO =
   "https://us-central1-sistema-navegacao.cloudfunctions.net/solicitarCadastroPublicoEmbarcacao";
 const WHATSAPP_EQUIPE = "5592991903278";
+const CHAVE_RASCUNHO = "cmb_cadastro_embarcacao_rascunho_v2";
+
+type RascunhoCadastro = Record<string, unknown> & {
+  rotas?: RotaCadastro[];
+  telefone?: string;
+  cnpj?: string;
+  vinculo?: string;
+  tipoImagem?: string;
+};
+
+function carregarRascunho(): RascunhoCadastro {
+  try {
+    return JSON.parse(localStorage.getItem(CHAVE_RASCUNHO) || "{}") as RascunhoCadastro;
+  } catch {
+    return {};
+  }
+}
 
 type RetornoCadastro = {
   sucesso?: boolean;
@@ -23,13 +41,47 @@ async function fotoParaBase64(arquivo: File) {
 }
 
 export default function CadastroPublicoEmbarcacao() {
+  const [dadosIniciais] = useState<RascunhoCadastro>(() => carregarRascunho());
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
   const [codigo, setCodigo] = useState("");
-  const [telefone, setTelefone] = useState("");
-  const [cnpj, setCnpj] = useState("");
-  const [rotas, setRotas] = useState<RotaCadastro[]>([]);
-  const [vinculo, setVinculo] = useState("dono");
+  const [telefone, setTelefone] = useState(String(dadosIniciais.telefone || ""));
+  const [cnpj, setCnpj] = useState(String(dadosIniciais.cnpj || ""));
+  const [rotas, setRotas] = useState<RotaCadastro[]>(
+    Array.isArray(dadosIniciais.rotas) ? dadosIniciais.rotas : [],
+  );
+  const [vinculo, setVinculo] = useState(String(dadosIniciais.vinculo || "dono"));
+  const [tipoImagem, setTipoImagem] = useState(String(dadosIniciais.tipoImagem || "foto_embarcacao"));
+
+  function salvarRascunho(campos: Record<string, unknown> = {}) {
+    const atual = carregarRascunho();
+    localStorage.setItem(CHAVE_RASCUNHO, JSON.stringify({
+      ...atual,
+      ...campos,
+      telefone,
+      cnpj,
+      rotas,
+      vinculo,
+      tipoImagem,
+      salvoEm: new Date().toISOString(),
+    }));
+  }
+
+  useEffect(() => {
+    salvarRascunho();
+    // O rascunho acompanha somente os estados relevantes do formulário.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [telefone, cnpj, rotas, vinculo, tipoImagem]);
+
+  function capturarCampos(evento: React.FormEvent<HTMLFormElement>) {
+    const formulario = new FormData(evento.currentTarget);
+    const campos: Record<string, unknown> = {};
+    formulario.forEach((valor, chave) => {
+      if (!(valor instanceof File)) campos[chave] = valor;
+    });
+    campos.autorizaMelhoria = formulario.get("autorizaMelhoria") === "on";
+    salvarRascunho(campos);
+  }
 
   function formatarCnpj(valor: string) {
     const numeros = valor.replace(/\D/g, "").slice(0, 14);
@@ -86,6 +138,7 @@ export default function CadastroPublicoEmbarcacao() {
       }
       setCodigo(retorno.codigoProvisorio);
       setTelefone(String(corpo.telefone ?? ""));
+      localStorage.removeItem(CHAVE_RASCUNHO);
       window.scrollTo({top: 0, behavior: "smooth"});
     } catch (falha) {
       setErro(falha instanceof Error ? falha.message : "Não foi possível enviar.");
@@ -137,32 +190,37 @@ export default function CadastroPublicoEmbarcacao() {
   return (
     <main className="min-h-screen bg-[#020817] px-4 py-7 text-white sm:py-12">
       <section className="mx-auto max-w-3xl">
-        <header className="mb-5 overflow-hidden rounded-[28px] border border-sky-400/15 bg-gradient-to-br from-[#08294b] to-[#041225] p-4 shadow-2xl sm:p-6">
-          <div className="flex items-center gap-4">
+        <header className="relative mb-5 overflow-hidden rounded-[30px] border border-sky-400/20 bg-gradient-to-br from-[#0a3157] via-[#071d38] to-[#031020] p-5 shadow-2xl sm:p-7">
+          <div className="absolute -right-20 -top-24 h-56 w-56 rounded-full bg-sky-400/10 blur-3xl" />
+          <div className="relative flex flex-col items-center gap-4 text-center sm:flex-row sm:text-left">
             <img src="/icone-oficial-cade-meu-barco.png" alt="Cadê Meu Barco"
-              className="h-20 w-20 shrink-0 rounded-2xl object-cover shadow-xl sm:h-24 sm:w-24" />
+              className="h-20 w-20 shrink-0 rounded-[22px] object-cover shadow-2xl ring-1 ring-white/15 sm:h-24 sm:w-24" />
             <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-300">Cadastro gratuito</p>
+              <div className="mb-2 inline-flex rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-amber-300">
+                Cadastro gratuito
+              </div>
               <h1 className="mt-1 text-2xl font-black leading-tight sm:text-4xl">A navegação da Amazônia mais conectada.</h1>
               <p className="mt-2 text-sm leading-5 text-slate-300 sm:text-base">
                 Informações, presença digital e acompanhamento em tempo real para aproximar embarcações e passageiros.
               </p>
             </div>
           </div>
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[10px] font-black uppercase tracking-wide text-sky-100">
-            <span className="rounded-xl bg-white/[0.07] px-2 py-2">1. Dados</span>
-            <span className="rounded-xl bg-white/[0.07] px-2 py-2">2. Revisão</span>
-            <span className="rounded-xl bg-white/[0.07] px-2 py-2">3. Publicação</span>
+          <div className="relative mt-5 grid grid-cols-3 gap-2 text-center text-[10px] font-black uppercase tracking-wide text-sky-100">
+            <span className="rounded-xl border border-sky-400/20 bg-sky-400/10 px-2 py-2.5">1 · Dados</span>
+            <span className="rounded-xl border border-white/10 bg-white/[0.05] px-2 py-2.5">2 · Análise</span>
+            <span className="rounded-xl border border-white/10 bg-white/[0.05] px-2 py-2.5">3 · Publicação</span>
           </div>
         </header>
 
-        <form onSubmit={enviar} className="space-y-5 rounded-[28px] border border-white/10 bg-[#071a2f] p-4 shadow-2xl sm:p-6">
+        <form onSubmit={enviar} onInput={capturarCampos} onChange={capturarCampos}
+          className="space-y-5 rounded-[28px] border border-white/10 bg-[#071a2f] p-4 shadow-2xl sm:p-6">
           <div className="grid gap-5 sm:grid-cols-2">
             <label className="font-bold">Nome da embarcação *
-              <input name="nomeEmbarcacao" required minLength={2} className={campo} />
+              <input name="nomeEmbarcacao" required minLength={2} className={campo}
+                defaultValue={String(dadosIniciais.nomeEmbarcacao || "")} />
             </label>
             <label className="font-bold">Tipo
-              <select name="tipoEmbarcacao" className={campo} defaultValue="">
+              <select name="tipoEmbarcacao" className={campo} defaultValue={String(dadosIniciais.tipoEmbarcacao || "")}>
                 <option value="" className="text-black">Selecione</option>
                 {TIPOS_EMBARCACAO.map((tipo) => <option key={tipo} value={tipo} className="text-black">{tipo}</option>)}
               </select>
@@ -190,6 +248,7 @@ export default function CadastroPublicoEmbarcacao() {
               name="descricao"
               rows={3}
               className={`${campo} py-3`}
+              defaultValue={String(dadosIniciais.descricao || "")}
               placeholder="Conte como é a embarcação e quais informações são úteis ao passageiro."
             />
           </label>
@@ -209,6 +268,7 @@ export default function CadastroPublicoEmbarcacao() {
               <label className="font-bold">Nome completo *
                 <input name="nomeSolicitante" required minLength={5} autoComplete="name"
                   className={campo} placeholder="Ex.: João da Silva"
+                  defaultValue={String(dadosIniciais.nomeSolicitante || "")}
                   onBlur={(e) => e.currentTarget.setCustomValidity(
                     nomeCompletoValido(e.currentTarget.value) ? "" : "Informe seu nome e sobrenome."
                   )}
@@ -222,13 +282,14 @@ export default function CadastroPublicoEmbarcacao() {
                   Inclua o DDD. Usaremos este número para confirmar o cadastro.
                 </span>
               </label>
-              <label className="font-bold">Tipo da imagem
-                <select name="tipoImagem" className={campo} defaultValue="foto_embarcacao">
-                  <option value="foto_embarcacao" className="text-black">Foto da embarcação</option>
-                  <option value="logo_oficial" className="text-black">Logomarca oficial</option>
-                </select>
-              </label>
-              <label className="font-bold">Imagem principal
+              <div className="sm:col-span-2">
+                <p className="font-bold">Qual imagem você vai enviar?</p>
+                <input type="hidden" name="tipoImagem" value={tipoImagem} />
+                <div className="mt-2">
+                  <EscolhaTipoImagem valor={tipoImagem} onChange={setTipoImagem} />
+                </div>
+              </div>
+              <label className="font-bold sm:col-span-2">Imagem principal
                 <input name="foto" type="file" accept="image/jpeg,image/png,image/webp" className={`${campo} py-3`} />
               </label>
             </div>
@@ -268,12 +329,14 @@ export default function CadastroPublicoEmbarcacao() {
           </div>
 
           <label className="flex items-start gap-3 rounded-2xl bg-sky-400/8 p-4 text-sm leading-6 text-slate-200">
-            <input name="autorizaMelhoria" type="checkbox" className="mt-1 h-5 w-5" />
+            <input name="autorizaMelhoria" type="checkbox" className="mt-1 h-5 w-5"
+              defaultChecked={dadosIniciais.autorizaMelhoria === true} />
             Autorizo a equipe a melhorar a foto e o texto, sem inventar informações e sem
             alterar a identidade da embarcação.
           </label>
           <label className="block font-bold">Observações
-            <textarea name="observacoes" rows={4} className={`${campo} py-3`} />
+            <textarea name="observacoes" rows={4} className={`${campo} py-3`}
+              defaultValue={String(dadosIniciais.observacoes || "")} />
           </label>
           {erro && <p className="rounded-2xl bg-red-500/15 p-4 font-bold text-red-200">{erro}</p>}
           <button disabled={enviando} className="min-h-14 w-full rounded-2xl bg-sky-500 px-5 text-lg font-black disabled:opacity-60">

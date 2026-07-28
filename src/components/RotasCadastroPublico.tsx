@@ -37,15 +37,13 @@ export type RotaCadastro = {
 const DIAS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const NOMES_DIAS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 const UFS: Uf[] = [
-  ["AC", "Acre"], ["AL", "Alagoas"], ["AP", "Amapá"], ["AM", "Amazonas"],
-  ["BA", "Bahia"], ["CE", "Ceará"], ["DF", "Distrito Federal"], ["ES", "Espírito Santo"],
-  ["GO", "Goiás"], ["MA", "Maranhão"], ["MT", "Mato Grosso"], ["MS", "Mato Grosso do Sul"],
-  ["MG", "Minas Gerais"], ["PA", "Pará"], ["PB", "Paraíba"], ["PR", "Paraná"],
-  ["PE", "Pernambuco"], ["PI", "Piauí"], ["RJ", "Rio de Janeiro"],
-  ["RN", "Rio Grande do Norte"], ["RS", "Rio Grande do Sul"], ["RO", "Rondônia"],
-  ["RR", "Roraima"], ["SC", "Santa Catarina"], ["SP", "São Paulo"],
-  ["SE", "Sergipe"], ["TO", "Tocantins"],
+  ["AC", "Acre"], ["AP", "Amapá"], ["AM", "Amazonas"],
+  ["MA", "Maranhão"], ["MT", "Mato Grosso"], ["PA", "Pará"],
+  ["RO", "Rondônia"], ["RR", "Roraima"], ["TO", "Tocantins"],
 ].map(([sigla, nome], indice) => ({id: indice + 1, sigla, nome}));
+
+const URL_CADASTRO_PUBLICO =
+  "https://us-central1-sistema-navegacao.cloudfunctions.net/solicitarCadastroPublicoEmbarcacao";
 
 const ROTA_VAZIA: RotaCadastro = {
   sentido: "ida", origemUf: "", origemCidade: "", portoOrigem: "",
@@ -298,9 +296,19 @@ function HorarioCompacto({
 }
 
 function SeletorPorto({
-  titulo, valor, cidade, portos, onChange,
-}: {titulo: string; valor: string; cidade: string; portos: Opcao[]; onChange: (valor: string) => void}) {
+  titulo, valor, cidade, portos, onChange, onCadastrar,
+}: {
+  titulo: string;
+  valor: string;
+  cidade: string;
+  portos: Opcao[];
+  onChange: (valor: string) => void;
+  onCadastrar: (nome: string, cidade: string) => Promise<void>;
+}) {
   const [novo, setNovo] = useState(false);
+  const [nomeNovo, setNomeNovo] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [erroNovo, setErroNovo] = useState("");
   const localSemUf = cidade.replace(/\s-\s[A-Z]{2}$/, "").trim();
   const nomeCidade = localSemUf.split(/\s-\s/).pop()?.trim() || localSemUf;
   const filtrados = portos.filter((item) =>
@@ -322,13 +330,38 @@ function SeletorPorto({
       )}
       {novo && (
         <div className="mt-2 rounded-xl border border-amber-300/20 bg-amber-300/[0.05] p-2">
-          <input autoFocus value={valor} onChange={(e) => onChange(e.target.value)}
+          <input autoFocus value={nomeNovo} onChange={(e) => setNomeNovo(e.target.value)}
             className={input} placeholder="Ex.: Porto da Manaus Moderna" />
           <p className="mt-1.5 text-xs leading-5 text-slate-400">
-            Escreva o nome completo e correto. A equipe confirmará antes da aprovação.
+            O porto será salvo agora e entrará na lista como pendente. A equipe poderá aprovar ou excluir depois.
           </p>
-          <button type="button" onClick={() => {setNovo(false); onChange("");}}
-            className="mt-2 text-xs font-black text-slate-300">Cancelar novo porto</button>
+          {erroNovo && <p className="mt-2 text-xs font-bold text-red-300">{erroNovo}</p>}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" disabled={salvando}
+              onClick={() => {setNovo(false); setNomeNovo(""); setErroNovo("");}}
+              className="min-h-10 rounded-xl bg-white/10 text-xs font-black text-slate-200">
+              Cancelar
+            </button>
+            <button type="button" disabled={salvando || nomeNovo.trim().length < 3}
+              onClick={async () => {
+                setSalvando(true);
+                setErroNovo("");
+                try {
+                  const nome = formatarNomeLocal(nomeNovo);
+                  await onCadastrar(nome, cidade);
+                  onChange(nome);
+                  setNomeNovo("");
+                  setNovo(false);
+                } catch (erro) {
+                  setErroNovo(erro instanceof Error ? erro.message : "Não foi possível salvar o porto.");
+                } finally {
+                  setSalvando(false);
+                }
+              }}
+              className="min-h-10 rounded-xl bg-amber-400 text-xs font-black text-slate-950 disabled:opacity-40">
+              {salvando ? "Salvando..." : "Salvar para análise"}
+            </button>
+          </div>
         </div>
       )}
       {cidade && !novo && (
@@ -488,6 +521,25 @@ export default function RotasCadastroPublico({
 }: {value: RotaCadastro[]; onChange: (rotas: RotaCadastro[]) => void}) {
   const [portos, setPortos] = useState<Opcao[]>([]);
   const [abaAtiva, setAbaAtiva] = useState<"ida" | "volta">("ida");
+  const cadastrarPorto = async (nome: string, cidade: string) => {
+    const resposta = await fetch(URL_CADASTRO_PUBLICO, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({acao: "sugerir_porto", nome, cidade}),
+    });
+    const resultado = await resposta.json().catch(() => ({}));
+    if (!resposta.ok || resultado?.ok === false) {
+      throw new Error(resultado?.erro || "Não foi possível salvar o porto.");
+    }
+    const novo: Opcao = {valor: nome, rotulo: `${nome} — ${cidade}`, busca: cidade};
+    setPortos((atuais) => {
+      const chave = `${normalizar(nome)}|${normalizar(cidade)}`;
+      if (atuais.some((item) => `${normalizar(item.valor)}|${normalizar(item.busca)}` === chave)) {
+        return atuais;
+      }
+      return [...atuais, novo].sort((a, b) => a.rotulo.localeCompare(b.rotulo));
+    });
+  };
   useEffect(() => {
     const dados = new Map<string, Opcao>();
     const carregar = (nomeColecao: "portos" | "terminais") =>
@@ -604,8 +656,10 @@ export default function RotasCadastroPublico({
               {origemCidade: valor, portoOrigem: ""},
             )} />
           <SeletorPorto titulo="Porto de partida" valor={ida.portoOrigem} cidade={ida.origemCidade} portos={portos}
+            onCadastrar={cadastrarPorto}
             onChange={(valor) => atualizarPercurso({portoOrigem: valor}, {portoDestino: valor})} />
           <SeletorPorto titulo="Porto do destino final" valor={ida.portoDestino} cidade={ida.destinoCidade} portos={portos}
+            onCadastrar={cadastrarPorto}
             onChange={(valor) => atualizarPercurso({portoDestino: valor}, {portoOrigem: valor})} />
         </div>
 
@@ -652,6 +706,18 @@ export default function RotasCadastroPublico({
                   dias={rota.diasSemana}
                   onChange={(diasSemana) => atualizarRota({diasSemana})}
                 />
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <HorarioCompacto
+                    titulo={sentido === "ida" ? "Horário de saída da origem" : "Horário de saída do destino"}
+                    valor={rota.horarioSaida}
+                    onChange={(horarioSaida) => atualizarRota({horarioSaida})}
+                  />
+                  <HorarioCompacto
+                    titulo={sentido === "ida" ? "Chegada ao destino" : "Chegada à origem"}
+                    valor={rota.destinoHorarioChegada || ""}
+                    onChange={(destinoHorarioChegada) => atualizarRota({destinoHorarioChegada})}
+                  />
+                </div>
               </div>
 
               <div className="mt-5 border-t border-white/10 pt-4">
@@ -673,6 +739,7 @@ export default function RotasCadastroPublico({
                           onCidade={(valor) => editarLocalEscala(sentido, indice, {cidade: valor, porto: ""})} />
                         <SeletorPorto titulo="Porto ou ponto de parada" valor={escala.porto}
                           cidade={escala.cidade} portos={portos}
+                          onCadastrar={cadastrarPorto}
                           onChange={(valor) => editarLocalEscala(sentido, indice, {porto: valor})} />
                       </div>
                       <div className="mt-3">
@@ -705,7 +772,8 @@ export default function RotasCadastroPublico({
       <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.055] p-4">
         <p className="text-sm font-black text-emerald-200">Cadastro rápido do Plano Básico</p>
         <p className="mt-1 text-xs leading-5 text-slate-300">
-          Horários, contatos comerciais, galeria e acompanhamento em tempo real serão preenchidos depois, em um link exclusivo, caso você escolha um plano pago.
+          Os horários de saída da origem e chegada ao destino aparecem no Plano Básico.
+          Os horários previstos das escalas, contatos comerciais, galeria e tempo real ficam disponíveis conforme o plano contratado.
         </p>
       </div>
     </div>

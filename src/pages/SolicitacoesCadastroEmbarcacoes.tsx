@@ -18,6 +18,7 @@ import {db} from "../config/firebase";
 import RotasCadastroPublico, {
   type RotaCadastro,
 } from "../components/RotasCadastroPublico";
+import EscolhaTipoImagem from "../components/EscolhaTipoImagem";
 
 type Solicitacao = {
   id: string;
@@ -45,6 +46,13 @@ type Solicitacao = {
   embarcacaoId?: string;
   telefoneValidado?: boolean;
   rotas?: RotaCadastro[];
+};
+
+type PortoSugerido = {
+  id: string;
+  nome?: string;
+  cidade?: string;
+  statusAprovacao?: string;
 };
 
 const pendentes = ["aguardando_whatsapp", "em_analise", "correcao_solicitada"];
@@ -139,10 +147,18 @@ export default function SolicitacoesCadastroEmbarcacoes() {
   const [rascunho, setRascunho] = useState<Solicitacao | null>(null);
   const [filtro, setFiltro] = useState("pendentes");
   const [ocupado, setOcupado] = useState(false);
+  const [portosSugeridos, setPortosSugeridos] = useState<PortoSugerido[]>([]);
 
   useEffect(() => onSnapshot(
     query(collection(db, "solicitacoes_cadastro_embarcacoes"), orderBy("criadoEm", "desc")),
     (snapshot) => setItens(snapshot.docs.map((item) => ({id: item.id, ...item.data()}))),
+  ), []);
+
+  useEffect(() => onSnapshot(
+    collection(db, "portos_sugeridos"),
+    (snapshot) => setPortosSugeridos(snapshot.docs
+      .map((item) => ({id: item.id, ...item.data()} as PortoSugerido))
+      .filter((item) => item.statusAprovacao !== "aprovado")),
   ), []);
 
   const visiveis = useMemo(
@@ -188,6 +204,61 @@ export default function SolicitacoesCadastroEmbarcacoes() {
       });
       setSelecionada((atual) => atual ? {...atual, status, ...extras} : atual);
       setRascunho((atual) => atual ? {...atual, status, ...extras} : atual);
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function excluirRegistroValidacao() {
+    if (!selecionada) return;
+    const aviso = selecionada.status === "aprovado"
+      ? "Este cadastro está aprovado. A exclusão removerá somente o registro da fila de validação; a embarcação publicada continuará preservada."
+      : "Este cadastro será removido definitivamente da fila de validação.";
+    if (!window.confirm(`${aviso}\n\nDeseja continuar?`)) return;
+    const confirmacao = window.prompt('Para confirmar, digite "EXCLUIR":');
+    if (confirmacao?.trim().toUpperCase() !== "EXCLUIR") {
+      window.alert("Exclusão cancelada.");
+      return;
+    }
+    setOcupado(true);
+    try {
+      await deleteDoc(doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id));
+      setSelecionada(null);
+      setRascunho(null);
+      window.alert("Registro removido da validação.");
+    } catch (erro) {
+      console.error("Erro ao excluir registro da validação:", erro);
+      window.alert("Não foi possível excluir este registro.");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function decidirPorto(porto: PortoSugerido, aprovar: boolean) {
+    const acao = aprovar ? "aprovar" : "recusar e excluir";
+    if (!window.confirm(`Deseja ${acao} “${porto.nome}” em ${porto.cidade}?`)) return;
+    setOcupado(true);
+    try {
+      if (aprovar) {
+        await Promise.all([
+          updateDoc(doc(db, "portos", porto.id), {
+            statusAprovacao: "aprovado",
+            aprovadoEm: serverTimestamp(),
+          }),
+          updateDoc(doc(db, "portos_sugeridos", porto.id), {
+            statusAprovacao: "aprovado",
+            aprovadoEm: serverTimestamp(),
+          }),
+        ]);
+      } else {
+        await Promise.all([
+          deleteDoc(doc(db, "portos", porto.id)),
+          deleteDoc(doc(db, "portos_sugeridos", porto.id)),
+        ]);
+      }
+    } catch (erro) {
+      console.error("Erro ao analisar porto sugerido:", erro);
+      window.alert("Não foi possível concluir a análise do porto.");
     } finally {
       setOcupado(false);
     }
@@ -650,6 +721,36 @@ export default function SolicitacoesCadastroEmbarcacoes() {
           ))}
         </div>
 
+        {portosSugeridos.length > 0 && (
+          <section className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 text-slate-900 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">Novos portos</p>
+                <h2 className="mt-1 text-lg font-black">{portosSugeridos.length} aguardando análise</h2>
+              </div>
+              <span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-black text-amber-900">
+                Enviados no cadastro público
+              </span>
+            </div>
+            <div className="mt-3 grid gap-2 lg:grid-cols-2">
+              {portosSugeridos.map((porto) => (
+                <div key={porto.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-white p-3">
+                  <div>
+                    <p className="font-black">{porto.nome}</p>
+                    <p className="text-xs font-semibold text-slate-500">{porto.cidade}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button disabled={ocupado} onClick={() => decidirPorto(porto, false)}
+                      className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-700">Excluir</button>
+                    <button disabled={ocupado} onClick={() => decidirPorto(porto, true)}
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white">Aprovar</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <div className="mt-5 grid min-h-0 gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
           <section className="space-y-3 xl:max-h-[calc(100vh-180px)] xl:overflow-y-auto xl:pr-2">
             {visiveis.map((item) => (
@@ -747,15 +848,16 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                       </div>
                       <CampoEdicao label="Descrição pública" value={rascunho.descricao} multiline
                         onChange={(v) => editar("descricao", v)} />
-                      <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
-                        Tipo da imagem
-                        <select value={rascunho.tipoImagem || "foto_embarcacao"}
-                          onChange={(e) => editar("tipoImagem", e.target.value)}
-                          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800">
-                          <option value="foto_embarcacao">Foto da embarcação</option>
-                          <option value="logo_oficial">Logomarca oficial</option>
-                        </select>
-                      </label>
+                      <div>
+                        <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">
+                          Tipo da imagem
+                        </p>
+                        <EscolhaTipoImagem
+                          claro
+                          valor={rascunho.tipoImagem || "foto_embarcacao"}
+                          onChange={(valor) => editar("tipoImagem", valor)}
+                        />
+                      </div>
                     </div>
                   </section>
 
@@ -955,7 +1057,8 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                       ))}
                     </div>
                     <p className="mt-3 text-xs font-semibold text-sky-900">
-                      Os horários serão armazenados, mas o aplicativo os ocultará enquanto o plano for Básico.
+                      O Plano Básico mostra a saída da origem e a chegada ao destino.
+                      Horários intermediários das escalas continuam reservados aos planos pagos.
                     </p>
                   </div>
                 )}
@@ -994,6 +1097,10 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                     <button disabled={ocupado} onClick={() => alterarStatus("duplicado")} className="rounded-xl bg-violet-100 p-3 text-xs font-black text-violet-900">Duplicado</button>
                     <button disabled={ocupado} onClick={() => alterarStatus("rejeitado")} className="rounded-xl bg-red-100 p-3 text-xs font-black text-red-900">Rejeitar</button>
                   </div>
+                  <button disabled={ocupado} onClick={excluirRegistroValidacao}
+                    className="min-h-11 rounded-xl border border-red-200 bg-white px-4 text-xs font-black text-red-700 hover:bg-red-50 disabled:opacity-40">
+                    Excluir este registro de Todos/Aprovados
+                  </button>
                 </div>
               </div>
               </div>

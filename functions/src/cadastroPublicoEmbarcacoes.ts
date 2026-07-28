@@ -139,6 +139,45 @@ export const solicitarCadastroPublicoEmbarcacao = onRequest(
 
     try {
       const dados = (req.body ?? {}) as Record<string, unknown>;
+      if (texto(dados.acao, 40) === "sugerir_porto") {
+        const nomePorto = texto(dados.nome, 160);
+        const cidadePorto = texto(dados.cidade, 140);
+        if (nomePorto.length < 3 || cidadePorto.length < 3) {
+          res.status(400).json({erro: "Informe o nome completo do porto e a localidade."});
+          return;
+        }
+
+        const banco = admin.firestore();
+        const idPorto = idOperacional(`${cidadePorto}_${nomePorto}`);
+        const agora = admin.firestore.FieldValue.serverTimestamp();
+        const dadosPorto = {
+          nome: nomePorto,
+          cidade: cidadePorto,
+          ativo: true,
+          visivelCadastro: true,
+          statusAprovacao: "pendente",
+          sugeridoPorUsuario: true,
+          origem: "cadastro_publico",
+          atualizadoEm: agora,
+        };
+        await Promise.all([
+          banco.collection("portos").doc(idPorto).set(
+            {...dadosPorto, criadoEm: agora},
+            {merge: true},
+          ),
+          banco.collection("portos_sugeridos").doc(idPorto).set(
+            {
+              ...dadosPorto,
+              quantidadeSugestoes: admin.firestore.FieldValue.increment(1),
+              criadoEm: agora,
+            },
+            {merge: true},
+          ),
+        ]);
+        res.status(201).json({ok: true, id: idPorto, nome: nomePorto, cidade: cidadePorto});
+        return;
+      }
+
       const nomeEmbarcacao = texto(dados.nomeEmbarcacao, 120);
       const nomeSolicitante = texto(dados.nomeSolicitante, 120);
       const telefone = somenteDigitos(dados.telefone);

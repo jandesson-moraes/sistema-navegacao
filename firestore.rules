@@ -142,6 +142,16 @@ service cloud.firestore {
       );
     }
 
+    // Mantém links e códigos antigos funcionando após a troca controlada do ID.
+    match /aliases_embarcacoes/{idAnterior} {
+      allow read: if true;
+      allow create, update, delete: if isAdminSistema();
+    }
+
+    match /historico_ids_embarcacoes/{docId} {
+      allow read, create, update, delete: if isAdminSistema();
+    }
+
     // O formulário público grava somente pela Cloud Function (Admin SDK).
     // A fila de análise é visível e editável apenas pela equipe de frota.
     match /solicitacoes_cadastro_embarcacoes/{docId} {

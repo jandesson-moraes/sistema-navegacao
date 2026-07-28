@@ -34,3 +34,4 @@ functions/.runtimeconfig.json
 firebase-debug.log
 # Backups locais
 *.backup_*
+.env*

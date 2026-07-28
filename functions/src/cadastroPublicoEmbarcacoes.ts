@@ -36,7 +36,7 @@ function idOperacional(valor: unknown) {
     .slice(0, 70);
 }
 
-function rotasValidas(valor: unknown) {
+export function rotasValidas(valor: unknown) {
   if (!Array.isArray(valor)) return [];
   return valor.slice(0, 12).map((item: unknown) => {
     const rota = (item ?? {}) as Record<string, unknown>;

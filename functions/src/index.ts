@@ -11,6 +11,10 @@ import {
 
 export {processarVencimentoPlanos} from "./vencimentoPlanos";
 export {solicitarCadastroPublicoEmbarcacao} from "./cadastroPublicoEmbarcacoes";
+export {
+  consultarEdicaoPublicaEmbarcacao,
+  solicitarAlteracaoPublicaEmbarcacao,
+} from "./alteracoesPublicasEmbarcacoes";
 
 if (!admin.apps.length) {
   admin.initializeApp();

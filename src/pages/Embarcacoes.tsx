@@ -10,6 +10,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  writeBatch,
   where,
 } from "firebase/firestore";
 import { db } from "../config/firebase";
@@ -22,6 +23,9 @@ import {
   type StatusPlano,
 } from "../domain/planos";
 import {TIPOS_EMBARCACAO} from "../domain/tiposEmbarcacao";
+import RotasCadastroPublico, {
+  type RotaCadastro,
+} from "../components/RotasCadastroPublico";
 
 type Embarcacao = {
   id: string;
@@ -59,6 +63,7 @@ type Embarcacao = {
   contatosWhatsApp?: Array<{numero?: string; nome?: string; mensagem?: string; ativo?: boolean}>;
   statusInstalacaoGps?: string;
   observacoesInstalacaoGps?: string;
+  rotasCadastro?: RotaCadastro[];
   ultima_posicao?: {
     latitude?: number;
     longitude?: number;
@@ -76,6 +81,17 @@ type Rastreador = {
   wifiNome?: string;
   wifiSSIDAtual?: string;
   status?: string;
+};
+
+type SolicitacaoAlteracao = {
+  id: string;
+  barcoId?: string;
+  planoId?: PlanoEmbarcacao;
+  status?: string;
+  telefoneConfirmado?: string;
+  alteracoesSolicitadas?: Partial<Embarcacao> & {
+    rotasCadastro?: RotaCadastro[];
+  };
 };
 
 type FormularioEmbarcacao = {
@@ -97,13 +113,23 @@ type FormularioEmbarcacao = {
   descricao: string;
   fotosTexto: string;
   contato1: string;
+  contato1Nome: string;
+  contato1Mensagem: string;
+  contato1Ativo: boolean;
   contato2: string;
+  contato2Nome: string;
+  contato2Mensagem: string;
+  contato2Ativo: boolean;
   contato3: string;
+  contato3Nome: string;
+  contato3Mensagem: string;
+  contato3Ativo: boolean;
   instagramBarco: string;
   facebookBarco: string;
   siteBarco: string;
   statusInstalacaoGps: string;
   observacoesInstalacaoGps: string;
+  rotas: RotaCadastro[];
 };
 
 const TIPOS_BARCO = [...TIPOS_EMBARCACAO];
@@ -141,13 +167,23 @@ const FORM_PADRAO: FormularioEmbarcacao = {
   descricao: "",
   fotosTexto: "",
   contato1: "",
+  contato1Nome: "",
+  contato1Mensagem: "",
+  contato1Ativo: true,
   contato2: "",
+  contato2Nome: "",
+  contato2Mensagem: "",
+  contato2Ativo: true,
   contato3: "",
+  contato3Nome: "",
+  contato3Mensagem: "",
+  contato3Ativo: true,
   instagramBarco: "",
   facebookBarco: "",
   siteBarco: "",
   statusInstalacaoGps: "aguardando_contato",
   observacoesInstalacaoGps: "",
+  rotas: [],
 };
 
 function normalizarId(valor: string) {
@@ -204,7 +240,7 @@ function dataParaInput(valor: any) {
 
 function formularioDoBarco(barco: Embarcacao): FormularioEmbarcacao {
   const contatos = Array.isArray(barco.contatosWhatsApp)
-    ? barco.contatosWhatsApp.filter((item) => item?.ativo !== false)
+    ? barco.contatosWhatsApp
     : [];
   return {
     idBarco: barco.id || "",
@@ -227,13 +263,23 @@ function formularioDoBarco(barco: Embarcacao): FormularioEmbarcacao {
     descricao: barco.descricao || "",
     fotosTexto: Array.isArray(barco.fotos) ? barco.fotos.join("\n") : "",
     contato1: contatos[0]?.numero || "",
+    contato1Nome: contatos[0]?.nome || "",
+    contato1Mensagem: contatos[0]?.mensagem || "",
+    contato1Ativo: contatos[0]?.ativo !== false,
     contato2: contatos[1]?.numero || "",
+    contato2Nome: contatos[1]?.nome || "",
+    contato2Mensagem: contatos[1]?.mensagem || "",
+    contato2Ativo: contatos[1]?.ativo !== false,
     contato3: contatos[2]?.numero || "",
+    contato3Nome: contatos[2]?.nome || "",
+    contato3Mensagem: contatos[2]?.mensagem || "",
+    contato3Ativo: contatos[2]?.ativo !== false,
     instagramBarco: barco.instagramBarco || "",
     facebookBarco: barco.facebookBarco || "",
     siteBarco: barco.siteBarco || "",
     statusInstalacaoGps: barco.statusInstalacaoGps || "aguardando_contato",
     observacoesInstalacaoGps: barco.observacoesInstalacaoGps || "",
+    rotas: Array.isArray(barco.rotasCadastro) ? barco.rotasCadastro : [],
   };
 }
 
@@ -242,6 +288,8 @@ export default function Embarcacoes() {
 
   const [barcos, setBarcos] = useState<Embarcacao[]>([]);
   const [rastreadores, setRastreadores] = useState<Rastreador[]>([]);
+  const [solicitacoesAlteracao, setSolicitacoesAlteracao] =
+    useState<SolicitacaoAlteracao[]>([]);
   const [form, setForm] = useState<FormularioEmbarcacao>(FORM_PADRAO);
   const [mostrarSenhaCadastro, setMostrarSenhaCadastro] = useState(false);
   const [mostrarSenhaEdicao, setMostrarSenhaEdicao] = useState(false);
@@ -252,6 +300,7 @@ export default function Embarcacoes() {
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<FormularioEmbarcacao>(FORM_PADRAO);
   const [buscandoSenha, setBuscandoSenha] = useState(false);
+  const [solicitacaoEmEdicao, setSolicitacaoEmEdicao] = useState<string | null>(null);
   const barcoEmEdicao = useMemo(
     () => barcos.find((barco) => barco.id === editandoId) || null,
     [barcos, editandoId],
@@ -267,6 +316,18 @@ export default function Embarcacoes() {
       setCarregando(false);
     });
 
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, "solicitacoes_alteracao_embarcacoes"),
+      (snapshot) => setSolicitacoesAlteracao(
+        snapshot.docs
+          .map((item) => ({id: item.id, ...item.data()}) as SolicitacaoAlteracao)
+          .filter((item) => item.status === "aguardando_analise"),
+      ),
+    );
     return () => unsub();
   }, []);
 
@@ -381,6 +442,84 @@ export default function Embarcacoes() {
     setEditandoId(null);
     setEditForm(FORM_PADRAO);
     setMostrarSenhaEdicao(false);
+    setSolicitacaoEmEdicao(null);
+  }
+
+  async function gerarLinkAlteracao(barco: Embarcacao) {
+    const contatoAtual = barco.contatosWhatsApp?.find((item) => item.ativo !== false)
+      ?.numero || "";
+    const telefone = window.prompt(
+      "Informe o WhatsApp cadastrado que será usado para confirmar o acesso:",
+      contatoAtual,
+    );
+    if (!telefone) return;
+    const numero = telefone.replace(/\D/g, "");
+    if (numero.length < 10) {
+      await modal.aviso("WhatsApp inválido", "Informe DDD e número.");
+      return;
+    }
+    const token = `${crypto.randomUUID()}${crypto.randomUUID()}`
+      .replace(/-/g, "");
+    await setDoc(doc(db, "links_edicao_embarcacoes", token), {
+      barcoId: barco.id,
+      telefone: numero,
+      ativo: true,
+      expiraEm: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      criadoEm: serverTimestamp(),
+    });
+    const link = `${window.location.origin}/alterar-embarcacao?token=${token}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      await modal.sucesso(
+        "Link copiado",
+        "Envie o link ao responsável. Ele expira em 30 dias e exige o WhatsApp confirmado.",
+      );
+    } catch {
+      window.prompt("Copie e envie este link ao responsável:", link);
+    }
+  }
+
+  async function revisarSolicitacaoAlteracao(solicitacao: SolicitacaoAlteracao) {
+    const barco = barcos.find((item) => item.id === solicitacao.barcoId);
+    if (!barco) {
+      await modal.erro("Embarcação não encontrada", "O cadastro original não está disponível.");
+      return;
+    }
+    const alteracoes = solicitacao.alteracoesSolicitadas || {};
+    await iniciarEdicao(barco);
+    setEditForm((atual) => {
+      const contatos = Array.isArray(alteracoes.contatosWhatsApp)
+        ? alteracoes.contatosWhatsApp
+        : [];
+      return {
+        ...atual,
+        nomeBarco: alteracoes.nome || atual.nomeBarco,
+        tipoBarco: alteracoes.tipoBarco || atual.tipoBarco,
+        descricao: alteracoes.descricao ?? atual.descricao,
+        fotosTexto: Array.isArray(alteracoes.fotos)
+          ? alteracoes.fotos.join("\n")
+          : atual.fotosTexto,
+        rotas: alteracoes.rotasCadastro || atual.rotas,
+        contato1: contatos[0]?.numero || atual.contato1,
+        contato1Nome: contatos[0]?.nome || atual.contato1Nome,
+        contato1Mensagem: contatos[0]?.mensagem || atual.contato1Mensagem,
+        contato1Ativo: contatos[0]?.ativo ?? atual.contato1Ativo,
+        contato2: contatos[1]?.numero || atual.contato2,
+        contato2Nome: contatos[1]?.nome || atual.contato2Nome,
+        contato2Mensagem: contatos[1]?.mensagem || atual.contato2Mensagem,
+        contato2Ativo: contatos[1]?.ativo ?? atual.contato2Ativo,
+        contato3: contatos[2]?.numero || atual.contato3,
+        contato3Nome: contatos[2]?.nome || atual.contato3Nome,
+        contato3Mensagem: contatos[2]?.mensagem || atual.contato3Mensagem,
+        contato3Ativo: contatos[2]?.ativo ?? atual.contato3Ativo,
+        instagramBarco: alteracoes.instagramBarco ?? atual.instagramBarco,
+        facebookBarco: alteracoes.facebookBarco ?? atual.facebookBarco,
+        siteBarco: alteracoes.siteBarco ?? atual.siteBarco,
+        observacoesInstalacaoGps:
+          alteracoes.observacoesInstalacaoGps ?? atual.observacoesInstalacaoGps,
+      };
+    });
+    setSolicitacaoEmEdicao(solicitacao.id);
   }
 
   function validarFormulario(dados: FormularioEmbarcacao) {
@@ -410,20 +549,43 @@ export default function Embarcacoes() {
     const ownerId = dados.ownerId.trim() || ownerIdAutomatico(emailDono);
     const deviceId = dados.rastreadorDeviceId.trim();
     const nomeNaRede = dados.nomeNaRede.trim() || `CMB_${id}`;
-    const fotos = dados.fotosTexto.split(/\r?\n/)
+    const fotosInformadas = dados.fotosTexto.split(/\r?\n/)
       .map((item) => item.trim()).filter(Boolean).slice(0, 5);
+    const fotosAnteriores = Array.isArray(embarcacaoAnterior.fotos)
+      ? embarcacaoAnterior.fotos.filter(Boolean)
+      : [];
+    const fotos = fotosInformadas.length > 0 ? fotosInformadas : fotosAnteriores;
     const limiteContatos = dados.planoId === "tempo_real" ? 3 :
       dados.planoId === "vitrine" ? 1 : 0;
-    const contatosWhatsApp = [dados.contato1, dados.contato2, dados.contato3]
-      .map((numero, indice) => ({
+    const contatosWhatsApp = [
+      {
+        numero: dados.contato1,
+        nome: dados.contato1Nome,
+        mensagem: dados.contato1Mensagem,
+        ativo: dados.contato1Ativo,
+      },
+      {
+        numero: dados.contato2,
+        nome: dados.contato2Nome,
+        mensagem: dados.contato2Mensagem,
+        ativo: dados.contato2Ativo,
+      },
+      {
+        numero: dados.contato3,
+        nome: dados.contato3Nome,
+        mensagem: dados.contato3Mensagem,
+        ativo: dados.contato3Ativo,
+      },
+    ]
+      .map((contato, indice) => ({
         id: `contato_${indice + 1}`,
-        numero: numero.replace(/\D/g, ""),
-        nome: "",
-        ativo: true,
-        mensagem: `Olá! Vim pelo app Cadê Meu Barco e gostaria de informações sobre ${dados.nomeBarco.trim()}.`,
+        numero: contato.numero.replace(/\D/g, ""),
+        nome: contato.nome.trim(),
+        ativo: contato.ativo,
+        mensagem: contato.mensagem.trim() ||
+          `Olá! Vim pelo app Cadê Meu Barco e gostaria de informações sobre ${dados.nomeBarco.trim()}.`,
       }))
-      .filter((item) => item.numero.length >= 10)
-      .slice(0, limiteContatos);
+      .filter((item) => item.numero.length >= 10);
 
     return {
       ...embarcacaoAnterior,
@@ -462,15 +624,31 @@ export default function Embarcacoes() {
       foto: fotos[0] || embarcacaoAnterior.foto || "",
       fotoUrl: fotos[0] || embarcacaoAnterior.fotoUrl || "",
       contatosWhatsApp,
-      informacoesPassageiroAtivo: limiteContatos > 0 && contatosWhatsApp.length > 0,
-      whatsappInformacoes: contatosWhatsApp[0]?.numero || "",
-      instagramBarco: dados.planoId === "basico" ? "" : dados.instagramBarco.trim(),
-      facebookBarco: dados.planoId === "basico" ? "" : dados.facebookBarco.trim(),
-      siteBarco: dados.planoId === "basico" ? "" : dados.siteBarco.trim(),
-      statusInstalacaoGps: dados.planoId === "tempo_real"
-        ? dados.statusInstalacaoGps : "nao_aplicavel",
-      observacoesInstalacaoGps: dados.planoId === "tempo_real"
-        ? dados.observacoesInstalacaoGps.trim() : "",
+      informacoesPassageiroAtivo:
+        limiteContatos > 0 &&
+        contatosWhatsApp.slice(0, limiteContatos).some((item) => item.ativo),
+      whatsappInformacoes:
+        contatosWhatsApp.slice(0, limiteContatos).find((item) => item.ativo)?.numero || "",
+      instagramBarco: dados.instagramBarco.trim(),
+      facebookBarco: dados.facebookBarco.trim(),
+      siteBarco: dados.siteBarco.trim(),
+      statusInstalacaoGps: dados.statusInstalacaoGps,
+      observacoesInstalacaoGps: dados.observacoesInstalacaoGps.trim(),
+      dadosCompletosPreservados: true,
+      rotasCadastro: dados.rotas,
+      escalasBasicas: Array.from(new Set(
+        dados.rotas.flatMap((rota) => rota.escalas.map((escala) => escala.cidade))
+          .filter(Boolean),
+      )),
+      escalasBasicasDetalhadas: dados.rotas.flatMap((rota) =>
+        rota.escalas.map((escala) => ({
+          sentido: rota.sentido,
+          uf: escala.uf || "",
+          cidade: escala.cidade,
+          porto: escala.porto,
+          diasPassagem: escala.diasPassagem || [],
+        })),
+      ),
       ultima_posicao: embarcacaoAnterior.ultima_posicao || {
         latitude: 0,
         longitude: 0,
@@ -750,40 +928,228 @@ export default function Embarcacoes() {
     try {
       const novoId = normalizarId(editForm.idBarco);
       const embarcacaoAnterior = barcos.find((barco) => barco.id === idOriginal) || {};
+      const mudouId = idOriginal !== novoId;
 
-      await setDoc(
-        doc(db, "embarcacoes", novoId),
-        montarEmbarcacaoPayload(editForm, embarcacaoAnterior),
-        { merge: true },
-      );
+      if (mudouId) {
+        const destino = await getDoc(doc(db, "embarcacoes", novoId));
+        if (destino.exists()) {
+          throw new Error(`O ID ${novoId} já pertence a outra embarcação.`);
+        }
+      }
 
-      await salvarVinculos(editForm);
-
-      if (idOriginal !== novoId) {
-        const referencias = [
-          {colecao: "programacoes_viagem", campo: "barcoId"},
-          {colecao: "programacoes_viagem", campo: "embarcacaoId"},
-          {colecao: "grades_viagens", campo: "id_barco"},
-          {colecao: "grades_viagens", campo: "barcoId"},
-          {colecao: "rotas_historicas", campo: "barcoId"},
-          {colecao: "banners_promocionais", campo: "barcoId"},
-          {colecao: "rastreadores", campo: "barcoId"},
-          {colecao: "rastreadores", campo: "barcoIdAdmin"},
-        ];
-        for (const referencia of referencias) {
-          const encontrados = await getDocs(query(
-            collection(db, referencia.colecao),
-            where(referencia.campo, "==", idOriginal),
-          ));
-          for (const item of encontrados.docs) {
-            await updateDoc(item.ref, {
-              [referencia.campo]: novoId,
-              atualizadoEm: serverTimestamp(),
+      const referencias = mudouId ? [
+        {colecao: "grades_viagens", campo: "id_barco"},
+        {colecao: "grades_viagens", campo: "barcoId"},
+        {colecao: "rotas_historicas", campo: "barcoId"},
+        {colecao: "banners_promocionais", campo: "barcoId"},
+        {colecao: "acessos_comandantes", campo: "barcoId"},
+        {colecao: "rastreadores", campo: "barcoId"},
+        {colecao: "rastreadores", campo: "barcoIdAdmin"},
+      ] : [];
+      const documentosRelacionados = new Map<string, {
+        ref: any;
+        campos: Set<string>;
+      }>();
+      for (const referencia of referencias) {
+        const encontrados = await getDocs(query(
+          collection(db, referencia.colecao),
+          where(referencia.campo, "==", idOriginal),
+        ));
+        encontrados.forEach((item) => {
+          const existente = documentosRelacionados.get(item.ref.path);
+          if (existente) {
+            existente.campos.add(referencia.campo);
+          } else {
+            documentosRelacionados.set(item.ref.path, {
+              ref: item.ref,
+              campos: new Set([referencia.campo]),
             });
           }
-        }
-        await deleteDoc(doc(db, "embarcacoes", idOriginal));
-        await deleteDoc(doc(db, "acessos_comandantes", idOriginal));
+        });
+      }
+      if (documentosRelacionados.size > 440) {
+        throw new Error(
+          "Esta embarcação possui muitos vínculos para migrar pela tela. Contate o suporte técnico.",
+        );
+      }
+
+      const emailDono = normalizarEmail(editForm.donoEmail);
+      const ownerId = editForm.ownerId.trim() || ownerIdAutomatico(emailDono);
+      const deviceId = editForm.rastreadorDeviceId.trim();
+      const batch = writeBatch(db);
+      batch.set(
+        doc(db, "embarcacoes", novoId),
+        {
+          ...montarEmbarcacaoPayload(editForm, embarcacaoAnterior),
+          ...(mudouId ? {
+            idAnterior: idOriginal,
+            idMigradoEm: serverTimestamp(),
+          } : {}),
+        },
+        {merge: true},
+      );
+      batch.set(doc(db, "acessos_comandantes", novoId), {
+        id: novoId,
+        barcoId: novoId,
+        nomeBarco: editForm.nomeBarco.trim(),
+        tipoBarco: editForm.tipoBarco,
+        categoriaPlano: editForm.categoriaPlano,
+        planoId: editForm.planoId,
+        nomeComandante: `Comandante ${editForm.nomeBarco.trim()}`,
+        senha: editForm.senhaComandante.trim(),
+        ativo: true,
+        atualizadoEm: serverTimestamp(),
+      }, {merge: true});
+      batch.set(doc(db, "usuarios", ownerId), {
+        uid: ownerId,
+        ownerId,
+        nome: editForm.donoNome.trim() || emailDono || ownerId,
+        email: emailDono,
+        tipo: editForm.tipoUsuario || "dono",
+        tipoUsuario: editForm.tipoUsuario || "dono",
+        ativo: true,
+        atualizadoEm: serverTimestamp(),
+      }, {merge: true});
+      if (deviceId) {
+        batch.set(doc(db, "rastreadores", deviceId), {
+          id: deviceId,
+          deviceId,
+          barcoId: novoId,
+          barcoIdAdmin: novoId,
+          embarcacaoNome: editForm.nomeBarco.trim(),
+          ownerId,
+          ownerEmail: emailDono,
+          nomeNaRede: editForm.nomeNaRede.trim() || `CMB_${novoId}`,
+          ativo: editForm.ativarGps,
+          rastreadorAtivoRemoto: editForm.ativarGps,
+          precisaProvisionar: false,
+          atualizadoEm: serverTimestamp(),
+        }, {merge: true});
+      }
+      documentosRelacionados.forEach((item) => {
+        const alteracoesId = Array.from(item.campos).reduce<Record<string, string>>(
+          (campos, campo) => ({...campos, [campo]: novoId}),
+          {},
+        );
+        batch.update(item.ref, {
+          ...alteracoesId,
+          embarcacaoNome: editForm.nomeBarco.trim(),
+          atualizadoEm: serverTimestamp(),
+        });
+      });
+      if (editForm.rotas.length > 0) {
+        const idsProgramacoesNovas = new Set(editForm.rotas.map((rota, indiceRota) =>
+          `${novoId}_cadastro_${rota.sentido}_${indiceRota + 1}`,
+        ));
+        const programacoesAnteriores = await getDocs(query(
+          collection(db, "programacoes_viagem"),
+          where("barcoId", "==", idOriginal),
+        ));
+        programacoesAnteriores.forEach((item) => {
+          if (!idsProgramacoesNovas.has(item.id)) batch.delete(item.ref);
+        });
+        editForm.rotas.forEach((rota, indiceRota) => {
+          const escalas = rota.escalas.map((escala, indice) => ({
+            id: `escala_${indice + 1}`,
+            tipo: "escala",
+            ordem: indice + 1,
+            uf: escala.uf || "",
+            cidade: escala.cidade,
+            portoNome: escala.porto,
+            diasPassagem: escala.diasPassagem || [],
+            diaRelativo: escala.diaRelativo || 0,
+            horarioChegada: escala.horarioChegada || "",
+            horarioSaida: escala.horarioSaida || "",
+          }));
+          const itinerario = [
+            {
+              id: "origem",
+              tipo: "origem",
+              ordem: 0,
+              uf: rota.origemUf,
+              cidade: rota.origemCidade,
+              portoNome: rota.portoOrigem,
+              diaRelativo: 0,
+              horarioSaida: rota.horarioSaida || "",
+            },
+            ...escalas,
+            {
+              id: "destino",
+              tipo: "destino",
+              ordem: escalas.length + 1,
+              uf: rota.destinoUf,
+              cidade: rota.destinoCidade,
+              portoNome: rota.portoDestino,
+              diaRelativo: rota.destinoDiaRelativo || 0,
+              horarioChegada: rota.destinoHorarioChegada || "",
+              horarioSaida: "",
+            },
+          ].filter((ponto) => ponto.cidade || ponto.portoNome);
+          if (itinerario.length === 0) return;
+          const idProgramacao =
+            `${novoId}_cadastro_${rota.sentido}_${indiceRota + 1}`;
+          batch.set(doc(db, "programacoes_viagem", idProgramacao), {
+            id: idProgramacao,
+            barcoId: novoId,
+            embarcacaoId: novoId,
+            barcoNome: editForm.nomeBarco.trim(),
+            sentido: rota.sentido,
+            origem: rota.origemCidade,
+            destino: rota.destinoCidade,
+            origemCidade: rota.origemCidade,
+            destinoCidade: rota.destinoCidade,
+            origemUf: rota.origemUf,
+            destinoUf: rota.destinoUf,
+            origemPortoNome: rota.portoOrigem,
+            destinoPortoNome: rota.portoDestino,
+            portoOrigem: rota.portoOrigem,
+            portoDestino: rota.portoDestino,
+            diasSemana: rota.diasSemana || [],
+            horarioSaida: rota.horarioSaida || "",
+            destinoDiaRelativo: rota.destinoDiaRelativo || 0,
+            destinoHorarioChegada: rota.destinoHorarioChegada || "",
+            itinerario,
+            escalas: itinerario,
+            ativo: true,
+            visibilidadeControladaPeloPlano: true,
+            atualizadoEm: serverTimestamp(),
+          });
+        });
+      }
+      if (mudouId) {
+        batch.set(doc(db, "aliases_embarcacoes", idOriginal), {
+          idAnterior: idOriginal,
+          idAtual: novoId,
+          nomeEmbarcacao: editForm.nomeBarco.trim(),
+          ativo: true,
+          criadoEm: serverTimestamp(),
+        });
+        batch.set(doc(collection(db, "historico_ids_embarcacoes")), {
+          idAnterior: idOriginal,
+          idAtual: novoId,
+          nomeEmbarcacao: editForm.nomeBarco.trim(),
+          criadoEm: serverTimestamp(),
+        });
+        batch.delete(doc(db, "embarcacoes", idOriginal));
+        batch.delete(doc(db, "acessos_comandantes", idOriginal));
+      }
+      await batch.commit();
+
+      const confirmacao = await getDoc(doc(db, "embarcacoes", novoId));
+      if (!confirmacao.exists() || confirmacao.data().id !== novoId) {
+        throw new Error("O banco não confirmou a atualização da embarcação.");
+      }
+      if (solicitacaoEmEdicao) {
+        await setDoc(
+          doc(db, "solicitacoes_alteracao_embarcacoes", solicitacaoEmEdicao),
+          {
+            status: "aprovado",
+            embarcacaoIdFinal: novoId,
+            aprovadoEm: serverTimestamp(),
+            atualizadoEm: serverTimestamp(),
+          },
+          {merge: true},
+        );
       }
 
       cancelarEdicao();
@@ -831,6 +1197,40 @@ export default function Embarcacoes() {
         <MiniResumo label="Com GPS" valor={resumo.comGps} />
         <MiniResumo label="Completos" valor={resumo.completos} />
       </div>
+
+      {solicitacoesAlteracao.length > 0 && (
+        <section className="mb-5 rounded-3xl border border-amber-300/25 bg-amber-400/10 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-200">
+                Alterações enviadas pelos responsáveis
+              </p>
+              <h2 className="mt-1 text-lg font-black">
+                {solicitacoesAlteracao.length} aguardando análise
+              </h2>
+            </div>
+            <Badge texto="Nada foi publicado automaticamente" cor="amber" />
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {solicitacoesAlteracao.map((solicitacao) => {
+              const barco = barcos.find((item) => item.id === solicitacao.barcoId);
+              return (
+                <div key={solicitacao.id}
+                  className="rounded-2xl border border-amber-200/20 bg-[#142747] p-4">
+                  <p className="font-black">{barco?.nome || solicitacao.barcoId}</p>
+                  <p className="mt-1 text-xs text-sky-100/55">
+                    {ROTULOS_PLANO[solicitacao.planoId || "basico"]} • WhatsApp confirmado
+                  </p>
+                  <button onClick={() => revisarSolicitacaoAlteracao(solicitacao)}
+                    className="mt-3 rounded-xl border border-amber-300/35 bg-amber-400/10 px-3 py-2 text-[10px] font-black uppercase text-amber-100">
+                    Comparar e revisar na edição
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-[470px_1fr]">
         <section className="rounded-3xl border border-[#7ba6d4]/25 bg-[#0f2240] p-5 shadow-sm">
@@ -981,6 +1381,12 @@ export default function Embarcacoes() {
                           </div>
 
                           <div className="flex shrink-0 flex-wrap gap-2">
+                            <button
+                              onClick={() => gerarLinkAlteracao(barco)}
+                              className="rounded-xl border border-violet-300/30 bg-violet-300/10 px-3 py-2 text-[10px] font-black uppercase text-violet-100 hover:bg-violet-300/20"
+                            >
+                              Link para atualizar
+                            </button>
                             <button
                               onClick={() => alterarVisibilidadeNoApp(barco)}
                               className={[
@@ -1173,6 +1579,16 @@ function FormularioCadastro({
             onChange={(valor) => alterar("idBarco", valor)}
             placeholder="Ex: OBDENSE_V"
           />
+          <div className="-mt-1 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] text-sky-100/45">
+              Padrão GPS: CAIXA_ALTA_COM_SUBLINHADO
+            </p>
+            <button type="button"
+              onClick={() => alterar("idBarco", normalizarId(form.nomeBarco))}
+              className="rounded-lg border border-sky-300/25 bg-sky-300/10 px-3 py-1.5 text-[10px] font-black uppercase text-sky-100">
+              Atualizar ID pelo nome
+            </button>
+          </div>
 
           <CampoTexto
             label="Nome do barco"
@@ -1259,14 +1675,41 @@ function FormularioCadastro({
             placeholder="https://..." />
           {form.planoId !== "basico" && (
             <>
-              <CampoTexto label="WhatsApp principal" value={form.contato1}
-                onChange={(valor) => alterar("contato1", valor)} />
+              <EditorContato
+                numero={form.contato1}
+                nome={form.contato1Nome}
+                mensagem={form.contato1Mensagem}
+                ativo={form.contato1Ativo}
+                titulo="Contato principal"
+                onNumero={(valor) => alterar("contato1", valor)}
+                onNome={(valor) => alterar("contato1Nome", valor)}
+                onMensagem={(valor) => alterar("contato1Mensagem", valor)}
+                onAtivo={(valor) => alterar("contato1Ativo", valor)}
+              />
               {form.planoId === "tempo_real" && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  <CampoTexto label="WhatsApp 2" value={form.contato2}
-                    onChange={(valor) => alterar("contato2", valor)} />
-                  <CampoTexto label="WhatsApp 3" value={form.contato3}
-                    onChange={(valor) => alterar("contato3", valor)} />
+                <div className="grid gap-3">
+                  <EditorContato
+                    numero={form.contato2}
+                    nome={form.contato2Nome}
+                    mensagem={form.contato2Mensagem}
+                    ativo={form.contato2Ativo}
+                    titulo="Contato 2"
+                    onNumero={(valor) => alterar("contato2", valor)}
+                    onNome={(valor) => alterar("contato2Nome", valor)}
+                    onMensagem={(valor) => alterar("contato2Mensagem", valor)}
+                    onAtivo={(valor) => alterar("contato2Ativo", valor)}
+                  />
+                  <EditorContato
+                    numero={form.contato3}
+                    nome={form.contato3Nome}
+                    mensagem={form.contato3Mensagem}
+                    ativo={form.contato3Ativo}
+                    titulo="Contato 3"
+                    onNumero={(valor) => alterar("contato3", valor)}
+                    onNome={(valor) => alterar("contato3Nome", valor)}
+                    onMensagem={(valor) => alterar("contato3Mensagem", valor)}
+                    onAtivo={(valor) => alterar("contato3Ativo", valor)}
+                  />
                 </div>
               )}
               <div className="grid gap-3">
@@ -1280,6 +1723,21 @@ function FormularioCadastro({
             </>
           )}
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-cyan-300/15 bg-[#143760] p-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-200">
+          Rotas, escalas e horários
+        </p>
+        <p className="mt-1 mb-4 text-xs leading-5 text-sky-100/55">
+          O Básico publica os horários da origem e do destino. Os horários
+          intermediários das escalas ficam preservados e aparecem somente nos
+          planos pagos.
+        </p>
+        <RotasCadastroPublico
+          value={form.rotas}
+          onChange={(rotas) => alterar("rotas", rotas)}
+        />
       </div>
 
       <div className="rounded-2xl border border-emerald-300/15 bg-[#143760] p-4">
@@ -1392,6 +1850,68 @@ function FormularioCadastro({
         </div>
       </div>
       )}
+    </div>
+  );
+}
+
+function EditorContato({
+  numero,
+  nome,
+  mensagem,
+  ativo,
+  titulo,
+  onNumero,
+  onNome,
+  onMensagem,
+  onAtivo,
+}: {
+  numero: string;
+  nome: string;
+  mensagem: string;
+  ativo: boolean;
+  titulo: string;
+  onNumero: (valor: string) => void;
+  onNome: (valor: string) => void;
+  onMensagem: (valor: string) => void;
+  onAtivo: (valor: boolean) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/5 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-200">
+          {titulo}
+        </p>
+        <label className="flex items-center gap-2 text-xs font-bold text-sky-100/70">
+          <input
+            type="checkbox"
+            checked={ativo}
+            onChange={(evento) => onAtivo(evento.target.checked)}
+          />
+          {ativo ? "Ativo" : "Desativado"}
+        </label>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <CampoTexto
+          label="Nome da pessoa"
+          value={nome}
+          onChange={onNome}
+          placeholder="Nome completo"
+        />
+        <CampoTexto
+          label="Número / WhatsApp"
+          value={numero}
+          onChange={onNumero}
+          placeholder="+55 (92) 99999-9999"
+        />
+      </div>
+      <div className="mt-3">
+        <CampoArea
+          label="Mensagem pronta — poderá ser editada antes do envio"
+          value={mensagem}
+          onChange={onMensagem}
+          placeholder="Olá! Vim pelo app Cadê Meu Barco..."
+        />
+      </div>
     </div>
   );
 }

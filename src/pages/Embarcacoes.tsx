@@ -632,26 +632,78 @@ export default function Embarcacoes() {
       tipo: "warning",
       titulo: "Remover embarcação?",
       mensagem:
-        "Deseja mesmo remover este barco da frota? O acesso do comandante também será invalidado. O rastreador não será apagado por segurança.",
-      confirmarTexto: "Remover",
+        "Esta ação removerá a embarcação e os dados operacionais vinculados: programações, grades, rotas, banners e acessos. O histórico financeiro não será apagado.",
+      confirmarTexto: "Continuar",
       cancelarTexto: "Cancelar",
     });
 
     if (!confirmou) return;
+    const digitado = window.prompt(
+      `Para confirmar a exclusão completa, digite exatamente o ID:\n${id}`,
+    );
+    if (digitado !== id) {
+      await modal.aviso(
+        "Exclusão cancelada",
+        "O ID digitado não corresponde à embarcação.",
+      );
+      return;
+    }
 
+    setSalvando(true);
     try {
+      const referencias = [
+        {colecao: "programacoes_viagem", campo: "barcoId"},
+        {colecao: "programacoes_viagem", campo: "embarcacaoId"},
+        {colecao: "grades_viagens", campo: "id_barco"},
+        {colecao: "grades_viagens", campo: "barcoId"},
+        {colecao: "rotas_historicas", campo: "barcoId"},
+        {colecao: "banners_promocionais", campo: "barcoId"},
+        {colecao: "acessos_comandantes", campo: "barcoId"},
+      ];
+      const removidas = new Set<string>();
+      for (const referencia of referencias) {
+        const encontrados = await getDocs(query(
+          collection(db, referencia.colecao),
+          where(referencia.campo, "==", id),
+        ));
+        for (const item of encontrados.docs) {
+          const chave = `${referencia.colecao}/${item.id}`;
+          if (!removidas.has(chave)) {
+            await deleteDoc(item.ref);
+            removidas.add(chave);
+          }
+        }
+      }
+
+      const rastreadoresVinculados = await getDocs(query(
+        collection(db, "rastreadores"),
+        where("barcoId", "==", id),
+      ));
+      for (const item of rastreadoresVinculados.docs) {
+        await setDoc(item.ref, {
+          barcoId: "",
+          barcoIdAdmin: "",
+          embarcacaoNome: "",
+          rastreadorAtivoRemoto: false,
+          precisaProvisionar: true,
+          atualizadoEm: serverTimestamp(),
+        }, {merge: true});
+      }
+
       await deleteDoc(doc(db, "embarcacoes", id));
       await deleteDoc(doc(db, "acessos_comandantes", id));
 
       await modal.sucesso(
-        "Embarcação removida",
-        "O barco e o acesso do comandante foram removidos.",
+        "Embarcação e dados removidos",
+        "Os dados operacionais foram excluídos. Rastreadores físicos foram desvinculados e preservados para reutilização.",
       );
     } catch (error: any) {
       await modal.erro(
         "Erro ao remover",
         error?.message || "Não foi possível remover a embarcação.",
       );
+    } finally {
+      setSalvando(false);
     }
   }
 
@@ -948,7 +1000,7 @@ export default function Embarcacoes() {
                               onClick={() => excluirBarco(barco.id)}
                               className="rounded-xl border border-red-300/35 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase text-red-200 hover:bg-red-500/20"
                             >
-                              Remover
+                              Excluir tudo
                             </button>
                           </div>
                         </div>

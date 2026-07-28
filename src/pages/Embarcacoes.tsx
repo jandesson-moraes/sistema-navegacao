@@ -252,6 +252,10 @@ export default function Embarcacoes() {
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<FormularioEmbarcacao>(FORM_PADRAO);
   const [buscandoSenha, setBuscandoSenha] = useState(false);
+  const barcoEmEdicao = useMemo(
+    () => barcos.find((barco) => barco.id === editandoId) || null,
+    [barcos, editandoId],
+  );
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "embarcacoes"), (snapshot) => {
@@ -875,7 +879,9 @@ export default function Embarcacoes() {
           ) : (
             <div className="grid gap-3">
               {barcosFiltrados.map((barco) => {
-                const emEdicao = editandoId === barco.id;
+                // A edição agora abre em uma janela fixa e não expande o
+                // cartão dentro da lista, evitando o deslocamento para o fundo azul.
+                const emEdicao = false;
                 const tipoAtual = tipoEmbarcacao(barco);
                 const categoriaAtual = categoriaEmbarcacao(barco);
 
@@ -1051,6 +1057,89 @@ export default function Embarcacoes() {
           )}
         </section>
       </div>
+
+      {editandoId && barcoEmEdicao && (
+        <div
+          className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-[#020617]/85 px-3 py-4 backdrop-blur-sm sm:px-6 sm:py-8"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Editar ${barcoEmEdicao.nome || barcoEmEdicao.id}`}
+        >
+          <div className="w-full max-w-3xl overflow-hidden rounded-3xl border border-sky-300/30 bg-[#0f2240] shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-sky-300/15 bg-[#0f2240]/95 px-4 py-4 backdrop-blur sm:px-6">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-200">
+                  Editar embarcação
+                </p>
+                <h2 className="truncate text-lg font-black text-white">
+                  {barcoEmEdicao.nome || barcoEmEdicao.id}
+                </h2>
+                <p className="truncate text-xs text-sky-100/55">
+                  ID atual: {barcoEmEdicao.id}
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={cancelarEdicao}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/5 text-xl font-black text-white hover:bg-white/10"
+                aria-label="Fechar edição"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6">
+              {buscandoSenha && (
+                <div className="mb-4 rounded-2xl border border-sky-300/20 bg-sky-300/10 p-4 text-sm font-semibold text-sky-100">
+                  Carregando os dados da embarcação...
+                </div>
+              )}
+
+              <FormularioCadastro
+                form={editForm}
+                alterar={alterarEditForm}
+                mostrarSenha={mostrarSenhaEdicao}
+                alternarSenha={() => setMostrarSenhaEdicao((atual) => !atual)}
+                disabledSenha={buscandoSenha}
+                rastreadores={rastreadores}
+              />
+
+              {normalizarId(editForm.idBarco) !== barcoEmEdicao.id && (
+                <div className="mt-4 rounded-2xl border border-amber-300/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
+                  <strong className="block">Atualização de ID operacional</strong>
+                  {barcoEmEdicao.id} → {normalizarId(editForm.idBarco)}. Ao
+                  salvar, o sistema atualizará programação, rotas, banners, GPS
+                  e acessos antes de remover o ID anterior.
+                </div>
+              )}
+
+              <div className="sticky bottom-0 -mx-4 mt-5 flex flex-col gap-2 border-t border-sky-300/15 bg-[#0f2240]/95 px-4 pb-1 pt-4 backdrop-blur sm:-mx-6 sm:flex-row sm:justify-end sm:px-6">
+                <button
+                  type="button"
+                  onClick={cancelarEdicao}
+                  className="rounded-xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-xs font-black uppercase text-sky-100 hover:bg-[#2b5b91]"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => salvarEdicao(barcoEmEdicao.id)}
+                  disabled={salvando || buscandoSenha}
+                  className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/20 disabled:opacity-60"
+                >
+                  {salvando
+                    ? "Gravando..."
+                    : normalizarId(editForm.idBarco) !== barcoEmEdicao.id
+                      ? "Atualizar ID e dados"
+                      : "Atualizar dados"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

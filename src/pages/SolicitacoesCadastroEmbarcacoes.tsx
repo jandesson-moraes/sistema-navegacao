@@ -650,11 +650,15 @@ export default function SolicitacoesCadastroEmbarcacoes() {
           ))}
         </div>
 
-        <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_460px]">
-          <section className="space-y-3">
+        <div className="mt-5 grid min-h-0 gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
+          <section className="space-y-3 xl:max-h-[calc(100vh-180px)] xl:overflow-y-auto xl:pr-2">
             {visiveis.map((item) => (
               <button key={item.id} onClick={() => selecionar(item)}
-                className="w-full rounded-3xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-sky-300">
+                className={`w-full rounded-2xl border p-4 text-left shadow-sm transition ${
+                  selecionada?.id === item.id
+                    ? "border-sky-400 bg-sky-50 ring-2 ring-sky-200"
+                    : "border-slate-200 bg-white hover:border-sky-300"
+                }`}>
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-xs font-black uppercase tracking-widest text-sky-700">{item.codigoProvisorio}</p>
@@ -668,10 +672,27 @@ export default function SolicitacoesCadastroEmbarcacoes() {
             {!visiveis.length && <div className="rounded-3xl bg-white p-8 text-center font-bold text-slate-500">Nenhum cadastro neste filtro.</div>}
           </section>
 
-          <aside className="lg:sticky lg:top-0 lg:self-start">
+          <aside className="min-w-0 xl:max-h-[calc(100vh-180px)] xl:overflow-y-auto xl:pr-2">
             {selecionada && rascunho ? (
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-lg">
-                {rascunho.fotoOriginalUrl && <img src={rascunho.fotoOriginalUrl} alt="" className="h-52 w-full rounded-2xl object-cover" />}
+              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-lg">
+                <div className="border-b border-slate-100 bg-gradient-to-r from-[#0f2240] to-[#163c67] px-5 py-4 text-white">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-300">
+                        {selecionada.codigoProvisorio}
+                      </p>
+                      <h2 className="mt-1 text-xl font-black">
+                        {rascunho.nomeEmbarcacao || "Embarcação sem nome"}
+                      </h2>
+                    </div>
+                    <span className="rounded-full bg-white/10 px-3 py-1.5 text-xs font-black">
+                      {chip(selecionada.status)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="p-5">
+                {rascunho.fotoOriginalUrl && <img src={rascunho.fotoOriginalUrl} alt="" className="h-44 w-full rounded-2xl object-cover sm:h-56" />}
                 {rascunho.fotoOriginalUrl && (
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     <a href={rascunho.fotoOriginalUrl} target="_blank" rel="noreferrer"
@@ -697,80 +718,98 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                     Confirmar que a imagem é válida
                   </button>
                 )}
-                <p className="mt-5 text-xs font-black uppercase tracking-widest text-sky-700">{selecionada.codigoProvisorio}</p>
-                <h2 className="mt-1 text-2xl font-black text-[#0f2240]">Revisar antes de publicar</h2>
-                <div className="mt-3 rounded-2xl bg-[#0f2240] p-3 text-white">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-sky-300">ID que será criado</p>
-                  <p className="mt-1 break-all font-mono text-sm font-black">
-                    {normalizarIdEmbarcacao(rascunho.idEmbarcacaoSugerido || rascunho.nomeEmbarcacao)}
-                  </p>
-                  <p className="mt-1 text-[11px] text-slate-300">
-                    Este será o ID do documento em embarcações e o vínculo usado pelo GPS.
-                  </p>
+                <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                  <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-700">
+                          1. Embarcação
+                        </p>
+                        <h3 className="mt-1 font-black text-[#0f2240]">
+                          Identidade e apresentação
+                        </h3>
+                      </div>
+                      <span className="rounded-xl bg-[#0f2240] px-3 py-2 font-mono text-xs font-black text-white">
+                        {normalizarIdEmbarcacao(
+                          rascunho.idEmbarcacaoSugerido || rascunho.nomeEmbarcacao,
+                        )}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      <CampoEdicao label="Nome da embarcação" value={rascunho.nomeEmbarcacao}
+                        onChange={(v) => editar("nomeEmbarcacao", v)} />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <CampoEdicao label="Tipo" value={rascunho.tipoEmbarcacao}
+                          onChange={(v) => editar("tipoEmbarcacao", v)} />
+                        <CampoEdicao label="CNPJ — opcional" value={formatarCnpj(rascunho.cnpj)}
+                          onChange={(v) => editar("cnpj", v.replace(/\D/g, "").slice(0, 14))} />
+                      </div>
+                      <CampoEdicao label="Descrição pública" value={rascunho.descricao} multiline
+                        onChange={(v) => editar("descricao", v)} />
+                      <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
+                        Tipo da imagem
+                        <select value={rascunho.tipoImagem || "foto_embarcacao"}
+                          onChange={(e) => editar("tipoImagem", e.target.value)}
+                          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800">
+                          <option value="foto_embarcacao">Foto da embarcação</option>
+                          <option value="logo_oficial">Logomarca oficial</option>
+                        </select>
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">
+                      2. Responsável
+                    </p>
+                    <h3 className="mt-1 font-black text-[#0f2240]">
+                      Contato e relacionamento
+                    </h3>
+
+                    <div className="mt-4 grid gap-3">
+                      <CampoEdicao label="Nome completo do solicitante" value={rascunho.nomeSolicitante}
+                        onChange={(v) => editar("nomeSolicitante", v)} />
+                      <CampoEdicao label="WhatsApp" value={formatarWhatsApp(rascunho.telefone)}
+                        onChange={(v) => editar("telefone", v.replace(/\D/g, "").replace(/^55/, "").slice(0, 11))} />
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="block min-w-0 text-xs font-black uppercase tracking-wide text-slate-500">
+                          Relação com a embarcação
+                          <select value={rascunho.vinculo || ""} onChange={(e) => editar("vinculo", e.target.value)}
+                            className="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold normal-case text-slate-800">
+                            <option value="">Não informado</option>
+                            <option value="dono">Proprietário</option>
+                            <option value="tripulante">Tripulante</option>
+                            <option value="representante">Representante</option>
+                            <option value="passageiro">Passageiro/colaborador</option>
+                          </select>
+                        </label>
+                        <label className="block min-w-0 text-xs font-black uppercase tracking-wide text-slate-500">
+                          Plano de interesse
+                          <select value={rascunho.planoInteresse || "basico"}
+                            onChange={(e) => editar("planoInteresse", e.target.value)}
+                            className="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold normal-case text-slate-800">
+                            <option value="basico">Básico gratuito</option>
+                            <option value="vitrine">Vitrine</option>
+                            <option value="tempo_real">Tempo Real</option>
+                          </select>
+                        </label>
+                      </div>
+                      <CampoEdicao label="Observações da solicitação" value={rascunho.observacoes} multiline
+                        onChange={(v) => editar("observacoes", v)} />
+                    </div>
+                  </section>
                 </div>
-                <p className={`mt-3 rounded-2xl p-3 text-sm font-bold ${selecionada.autorizaMelhoria ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
+
+                <p className={`mt-4 rounded-2xl p-3 text-sm font-bold ${selecionada.autorizaMelhoria ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
                   {selecionada.autorizaMelhoria ? "✓ Autorizado melhorar foto, texto e organização dos dados." : "Melhorias não autorizadas. Peça correção para mudanças editoriais."}
                 </p>
 
-                <div className="mt-4 grid gap-3">
-                  <CampoEdicao label="Nome da embarcação" value={rascunho.nomeEmbarcacao} onChange={(v) => editar("nomeEmbarcacao", v)} />
-                  <div className="grid grid-cols-2 gap-3">
-                    <CampoEdicao label="Tipo" value={rascunho.tipoEmbarcacao} onChange={(v) => editar("tipoEmbarcacao", v)} />
-                    <CampoEdicao label="CNPJ" value={formatarCnpj(rascunho.cnpj)} onChange={(v) => editar("cnpj", v.replace(/\D/g, "").slice(0, 14))} />
-                  </div>
-                  <p className="-mt-1 text-xs font-semibold text-slate-500">
-                    CNPJ opcional. Quando informado, pode agilizar a conferência.
+                <div className="mt-5 rounded-3xl border border-sky-300/20 bg-[#071a2f] p-4 text-white sm:p-5">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-300">
+                    3. Operação
                   </p>
-                  <CampoEdicao label="Porto de saída" value={rascunho.portoSaida} onChange={(v) => editar("portoSaida", v)} />
-                  <div className="grid grid-cols-2 gap-3">
-                    <CampoEdicao label="Origem" value={rascunho.origemCidade || rascunho.cidade} onChange={(v) => editar("origemCidade", v)} />
-                    <CampoEdicao label="Destino" value={rascunho.destinoCidade} onChange={(v) => editar("destinoCidade", v)} />
-                  </div>
-                  <CampoEdicao label="Descrição" value={rascunho.descricao} multiline onChange={(v) => editar("descricao", v)} />
-                  <CampoEdicao label="Escalas sem horários" value={rascunho.escalasTexto} multiline onChange={(v) => editar("escalasTexto", v)} />
-                  <CampoEdicao label="Nome completo do solicitante" value={rascunho.nomeSolicitante}
-                    onChange={(v) => editar("nomeSolicitante", v)} />
-                  <CampoEdicao label="WhatsApp" value={formatarWhatsApp(rascunho.telefone)}
-                    onChange={(v) => editar("telefone", v.replace(/\D/g, "").replace(/^55/, "").slice(0, 11))} />
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
-                      Relação com a embarcação
-                      <select value={rascunho.vinculo || ""} onChange={(e) => editar("vinculo", e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-800">
-                        <option value="">Não informado</option>
-                        <option value="dono">Proprietário</option>
-                        <option value="tripulante">Tripulante</option>
-                        <option value="representante">Representante</option>
-                        <option value="passageiro">Passageiro/colaborador</option>
-                      </select>
-                    </label>
-                    <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
-                      Plano de interesse
-                      <select value={rascunho.planoInteresse || "basico"}
-                        onChange={(e) => editar("planoInteresse", e.target.value)}
-                        className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-800">
-                        <option value="basico">Básico gratuito</option>
-                        <option value="vitrine">Vitrine</option>
-                        <option value="tempo_real">Tempo Real</option>
-                      </select>
-                    </label>
-                  </div>
-                  <CampoEdicao label="Observações" value={rascunho.observacoes} multiline
-                    onChange={(v) => editar("observacoes", v)} />
-                  <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
-                    Tipo da imagem
-                    <select value={rascunho.tipoImagem || "foto_embarcacao"}
-                      onChange={(e) => editar("tipoImagem", e.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-800">
-                      <option value="foto_embarcacao">Foto da embarcação</option>
-                      <option value="logo_oficial">Logomarca oficial</option>
-                    </select>
-                  </label>
-                  <CampoEdicao label="URL da foto aprovada" value={rascunho.fotoOriginalUrl} onChange={(v) => editar("fotoOriginalUrl", v)} />
-                </div>
-
-                <div className="mt-5 rounded-2xl border border-sky-300/20 bg-[#071a2f] p-3 text-white">
-                  <h3 className="font-black">Rotas completas para aprovação</h3>
+                  <h3 className="mt-1 text-lg font-black">Rotas e escalas para aprovação</h3>
                   <p className="mt-1 text-xs leading-5 text-slate-400">
                     Use os mesmos seletores do cadastro. A lista inclui UF, município,
                     comunidade, portos cadastrados e os novos portos informados pelo usuário.
@@ -778,8 +817,18 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                   <div className="mt-3">
                     <RotasCadastroPublico
                       value={rascunho.rotas || []}
-                      onChange={(rotas) => setRascunho((atual) =>
-                        atual ? {...atual, rotas} : atual)}
+                      onChange={(rotas) => setRascunho((atual) => {
+                        if (!atual) return atual;
+                        const ida = rotas.find((rota) => rota.sentido === "ida");
+                        return {
+                          ...atual,
+                          rotas,
+                          cidade: ida?.origemCidade || atual.cidade || "",
+                          origemCidade: ida?.origemCidade || "",
+                          destinoCidade: ida?.destinoCidade || "",
+                          portoSaida: ida?.portoOrigem || "",
+                        };
+                      })}
                     />
                   </div>
                 </div>
@@ -911,22 +960,26 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                   </div>
                 )}
 
-                <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <dl className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-4">
                   <div><dt className="font-bold text-slate-400">Solicitante</dt><dd className="font-bold">{rascunho.nomeSolicitante}</dd></div>
                   <div><dt className="font-bold text-slate-400">Vínculo</dt><dd className="font-bold">{nomeVinculo(rascunho.vinculo)}</dd></div>
                   <div><dt className="font-bold text-slate-400">Plano desejado</dt><dd className="font-bold">{nomePlano(rascunho.planoInteresse)}</dd></div>
                   <div><dt className="font-bold text-slate-400">Status</dt><dd className="font-bold">{chip(selecionada.status)}</dd></div>
                 </dl>
 
-                <div className="mt-5 grid gap-2">
+                <div className="sticky bottom-0 z-20 -mx-5 mt-5 grid gap-2 border-t border-slate-200 bg-white/95 px-5 pb-1 pt-4 shadow-[0_-14px_30px_rgba(15,34,64,0.08)] backdrop-blur">
                   <button disabled={ocupado} onClick={salvarRevisao}
                     className="min-h-12 rounded-2xl border border-sky-600 bg-white font-black text-sky-700">Salvar revisão</button>
                   {!selecionada.telefoneValidado && (
                     <button disabled={ocupado} onClick={() => alterarStatus("em_analise", {telefoneValidado: true, telefoneValidadoEm: serverTimestamp()})}
                       className="min-h-12 rounded-2xl bg-emerald-500 font-black text-white">Confirmar WhatsApp</button>
                   )}
-                  <button disabled={ocupado || selecionada.status === "aprovado"} onClick={aprovar}
-                    className="min-h-12 rounded-2xl bg-sky-600 font-black text-white disabled:opacity-40">Salvar e aprovar no plano Básico</button>
+                  {selecionada.status !== "aprovado" && (
+                    <button disabled={ocupado} onClick={aprovar}
+                      className="min-h-12 rounded-2xl bg-sky-600 font-black text-white disabled:opacity-40">
+                      Salvar e aprovar no plano Básico
+                    </button>
+                  )}
                   {selecionada.status === "aprovado" &&
                     idEhAleatorio(selecionada.embarcacaoId) && (
                     <button disabled={ocupado} onClick={corrigirIdEmbarcacaoAprovada}
@@ -942,6 +995,7 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                     <button disabled={ocupado} onClick={() => alterarStatus("rejeitado")} className="rounded-xl bg-red-100 p-3 text-xs font-black text-red-900">Rejeitar</button>
                   </div>
                 </div>
+              </div>
               </div>
             ) : <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center font-bold text-slate-500">Selecione um cadastro para analisar.</div>}
           </aside>

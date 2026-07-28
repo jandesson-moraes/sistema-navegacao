@@ -54,6 +54,62 @@ const ROTA_VAZIA: RotaCadastro = {
   duracaoHoras: 0, duracaoNaoInformada: true, itinerarioPersonalizado: false, escalas: [],
 };
 
+function textoSeguro(valor: unknown) {
+  return typeof valor === "string" || typeof valor === "number"
+    ? String(valor)
+    : "";
+}
+
+function numerosSeguros(valor: unknown) {
+  if (!Array.isArray(valor)) return [];
+  return valor
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item >= 0 && item <= 31);
+}
+
+function normalizarEscalas(valor: unknown): EscalaCadastro[] {
+  if (!Array.isArray(valor)) return [];
+  return valor.map((item) => {
+    const escala =
+      item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+    return {
+      uf: textoSeguro(escala.uf).toUpperCase().slice(0, 2),
+      cidade: textoSeguro(escala.cidade),
+      porto: textoSeguro(escala.porto || escala.portoNome),
+      diasPassagem: numerosSeguros(escala.diasPassagem).filter((dia) => dia <= 6),
+      diaRelativo: Number(escala.diaRelativo) || 0,
+      horarioChegada: textoSeguro(escala.horarioChegada),
+      horarioSaida: textoSeguro(escala.horarioSaida),
+    };
+  });
+}
+
+function normalizarRotaSalva(
+  valor: unknown,
+  sentido: "ida" | "volta",
+): RotaCadastro {
+  const rota =
+    valor && typeof valor === "object" ? (valor as Record<string, unknown>) : {};
+  return {
+    ...ROTA_VAZIA,
+    sentido,
+    origemUf: textoSeguro(rota.origemUf).toUpperCase().slice(0, 2),
+    origemCidade: textoSeguro(rota.origemCidade || rota.origem),
+    portoOrigem: textoSeguro(rota.portoOrigem || rota.origemPortoNome),
+    destinoUf: textoSeguro(rota.destinoUf).toUpperCase().slice(0, 2),
+    destinoCidade: textoSeguro(rota.destinoCidade || rota.destino),
+    portoDestino: textoSeguro(rota.portoDestino || rota.destinoPortoNome),
+    diasSemana: numerosSeguros(rota.diasSemana).filter((dia) => dia <= 6),
+    horarioSaida: textoSeguro(rota.horarioSaida),
+    destinoDiaRelativo: Number(rota.destinoDiaRelativo) || 0,
+    destinoHorarioChegada: textoSeguro(rota.destinoHorarioChegada),
+    duracaoHoras: Number(rota.duracaoHoras) || 0,
+    duracaoNaoInformada: rota.duracaoNaoInformada !== false,
+    itinerarioPersonalizado: rota.itinerarioPersonalizado === true,
+    escalas: normalizarEscalas(rota.escalas),
+  };
+}
+
 function normalizar(valor: unknown) {
   return String(valor || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
@@ -457,20 +513,31 @@ export default function RotasCadastroPublico({
   }, []);
 
   const rotas = useMemo(() => {
-    const idaSalva = value.find((rota) => rota.sentido === "ida");
-    const ida: RotaCadastro = {...ROTA_VAZIA, ...idaSalva, sentido: "ida"};
-    const voltaSalva = value.find((rota) => rota.sentido === "volta");
+    const lista = Array.isArray(value) ? value : [];
+    const idaSalva = lista.find((rota) => rota?.sentido === "ida");
+    const ida = normalizarRotaSalva(idaSalva, "ida");
+    const voltaSalva = lista.find((rota) => rota?.sentido === "volta");
     const volta: RotaCadastro = {
-      ...ROTA_VAZIA,
+      ...normalizarRotaSalva(voltaSalva, "volta"),
       sentido: "volta",
-      origemUf: ida.destinoUf,
-      origemCidade: ida.destinoCidade,
-      portoOrigem: ida.portoDestino,
-      destinoUf: ida.origemUf,
-      destinoCidade: ida.origemCidade,
-      portoDestino: ida.portoOrigem,
-      escalas: [],
-      ...voltaSalva,
+      origemUf: textoSeguro(
+        (voltaSalva as RotaCadastro | undefined)?.origemUf || ida.destinoUf,
+      ),
+      origemCidade: textoSeguro(
+        (voltaSalva as RotaCadastro | undefined)?.origemCidade || ida.destinoCidade,
+      ),
+      portoOrigem: textoSeguro(
+        (voltaSalva as RotaCadastro | undefined)?.portoOrigem || ida.portoDestino,
+      ),
+      destinoUf: textoSeguro(
+        (voltaSalva as RotaCadastro | undefined)?.destinoUf || ida.origemUf,
+      ),
+      destinoCidade: textoSeguro(
+        (voltaSalva as RotaCadastro | undefined)?.destinoCidade || ida.origemCidade,
+      ),
+      portoDestino: textoSeguro(
+        (voltaSalva as RotaCadastro | undefined)?.portoDestino || ida.portoOrigem,
+      ),
     };
     return [ida, volta] as [RotaCadastro, RotaCadastro];
   }, [value]);

@@ -675,6 +675,7 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                     <a href={rascunho.fotoOriginalUrl} target="_blank" rel="noreferrer"
                       className="rounded-xl bg-slate-100 p-2 text-center text-xs font-black text-slate-700">Ver original</a>
                     <a href={rascunho.fotoOriginalUrl} download
+                      target="_blank" rel="noreferrer"
                       className="rounded-xl bg-sky-100 p-2 text-center text-xs font-black text-sky-800">Baixar imagem</a>
                   </div>
                 )}
@@ -766,7 +767,22 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                   <CampoEdicao label="URL da foto aprovada" value={rascunho.fotoOriginalUrl} onChange={(v) => editar("fotoOriginalUrl", v)} />
                 </div>
 
-                {!!rascunho.rotas?.length && (
+                <div className="mt-5 rounded-2xl border border-sky-300/20 bg-[#071a2f] p-3 text-white">
+                  <h3 className="font-black">Rotas completas para aprovação</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">
+                    Use os mesmos seletores do cadastro. A lista inclui UF, município,
+                    comunidade, portos cadastrados e os novos portos informados pelo usuário.
+                  </p>
+                  <div className="mt-3">
+                    <RotasCadastroPublico
+                      value={rascunho.rotas || []}
+                      onChange={(rotas) => setRascunho((atual) =>
+                        atual ? {...atual, rotas} : atual)}
+                    />
+                  </div>
+                </div>
+
+                {false && !!rascunho.rotas?.length && (
                   <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-4">
                     <h3 className="font-black text-[#0f2240]">Rotas completas para aprovação</h3>
                     <div className="mt-3 space-y-3">

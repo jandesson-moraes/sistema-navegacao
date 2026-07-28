@@ -13,6 +13,8 @@ export type RecursosPlano = {
   mostrarPortoSaida: boolean;
   mostrarDestino: boolean;
   mostrarHorarios: boolean;
+  mostrarHorariosTerminais: boolean;
+  mostrarHorariosEscalas: boolean;
   mostrarContato: boolean;
   limiteContatos: number;
   posicaoTempoReal: boolean;
@@ -28,7 +30,9 @@ export const RECURSOS_POR_PLANO: Record<PlanoEmbarcacao, RecursosPlano> = {
     perfilCompleto: false,
     mostrarPortoSaida: false,
     mostrarDestino: false,
-    mostrarHorarios: false,
+    mostrarHorarios: true,
+    mostrarHorariosTerminais: true,
+    mostrarHorariosEscalas: false,
     mostrarContato: false,
     limiteContatos: 0,
     posicaoTempoReal: false,
@@ -43,6 +47,8 @@ export const RECURSOS_POR_PLANO: Record<PlanoEmbarcacao, RecursosPlano> = {
     mostrarPortoSaida: true,
     mostrarDestino: true,
     mostrarHorarios: true,
+    mostrarHorariosTerminais: true,
+    mostrarHorariosEscalas: true,
     mostrarContato: true,
     limiteContatos: 1,
     posicaoTempoReal: false,
@@ -57,6 +63,8 @@ export const RECURSOS_POR_PLANO: Record<PlanoEmbarcacao, RecursosPlano> = {
     mostrarPortoSaida: true,
     mostrarDestino: true,
     mostrarHorarios: true,
+    mostrarHorariosTerminais: true,
+    mostrarHorariosEscalas: true,
     mostrarContato: true,
     limiteContatos: 3,
     posicaoTempoReal: true,

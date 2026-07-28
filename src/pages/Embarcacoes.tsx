@@ -4,9 +4,13 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
+  query,
   serverTimestamp,
   setDoc,
+  updateDoc,
+  where,
 } from "firebase/firestore";
 import { db } from "../config/firebase";
 import { useAppModal } from "../components/AppModal";
@@ -45,6 +49,16 @@ type Embarcacao = {
   rastreadorDeviceId?: string;
   rastreadorAtivo?: boolean;
   nomeNaRede?: string;
+  descricao?: string;
+  fotos?: string[];
+  foto?: string;
+  fotoUrl?: string;
+  instagramBarco?: string;
+  facebookBarco?: string;
+  siteBarco?: string;
+  contatosWhatsApp?: Array<{numero?: string; nome?: string; mensagem?: string; ativo?: boolean}>;
+  statusInstalacaoGps?: string;
+  observacoesInstalacaoGps?: string;
   ultima_posicao?: {
     latitude?: number;
     longitude?: number;
@@ -80,6 +94,16 @@ type FormularioEmbarcacao = {
   rastreadorDeviceId: string;
   nomeNaRede: string;
   ativarGps: boolean;
+  descricao: string;
+  fotosTexto: string;
+  contato1: string;
+  contato2: string;
+  contato3: string;
+  instagramBarco: string;
+  facebookBarco: string;
+  siteBarco: string;
+  statusInstalacaoGps: string;
+  observacoesInstalacaoGps: string;
 };
 
 const TIPOS_BARCO = [...TIPOS_EMBARCACAO];
@@ -114,6 +138,16 @@ const FORM_PADRAO: FormularioEmbarcacao = {
   rastreadorDeviceId: "",
   nomeNaRede: "",
   ativarGps: true,
+  descricao: "",
+  fotosTexto: "",
+  contato1: "",
+  contato2: "",
+  contato3: "",
+  instagramBarco: "",
+  facebookBarco: "",
+  siteBarco: "",
+  statusInstalacaoGps: "aguardando_contato",
+  observacoesInstalacaoGps: "",
 };
 
 function normalizarId(valor: string) {
@@ -169,6 +203,9 @@ function dataParaInput(valor: any) {
 }
 
 function formularioDoBarco(barco: Embarcacao): FormularioEmbarcacao {
+  const contatos = Array.isArray(barco.contatosWhatsApp)
+    ? barco.contatosWhatsApp.filter((item) => item?.ativo !== false)
+    : [];
   return {
     idBarco: barco.id || "",
     nomeBarco: barco.nome || "",
@@ -187,6 +224,16 @@ function formularioDoBarco(barco: Embarcacao): FormularioEmbarcacao {
     rastreadorDeviceId: barco.rastreadorDeviceId || "",
     nomeNaRede: barco.nomeNaRede || `CMB_${barco.id}`,
     ativarGps: barco.rastreadorAtivo !== false,
+    descricao: barco.descricao || "",
+    fotosTexto: Array.isArray(barco.fotos) ? barco.fotos.join("\n") : "",
+    contato1: contatos[0]?.numero || "",
+    contato2: contatos[1]?.numero || "",
+    contato3: contatos[2]?.numero || "",
+    instagramBarco: barco.instagramBarco || "",
+    facebookBarco: barco.facebookBarco || "",
+    siteBarco: barco.siteBarco || "",
+    statusInstalacaoGps: barco.statusInstalacaoGps || "aguardando_contato",
+    observacoesInstalacaoGps: barco.observacoesInstalacaoGps || "",
   };
 }
 
@@ -359,6 +406,20 @@ export default function Embarcacoes() {
     const ownerId = dados.ownerId.trim() || ownerIdAutomatico(emailDono);
     const deviceId = dados.rastreadorDeviceId.trim();
     const nomeNaRede = dados.nomeNaRede.trim() || `CMB_${id}`;
+    const fotos = dados.fotosTexto.split(/\r?\n/)
+      .map((item) => item.trim()).filter(Boolean).slice(0, 5);
+    const limiteContatos = dados.planoId === "tempo_real" ? 3 :
+      dados.planoId === "vitrine" ? 1 : 0;
+    const contatosWhatsApp = [dados.contato1, dados.contato2, dados.contato3]
+      .map((numero, indice) => ({
+        id: `contato_${indice + 1}`,
+        numero: numero.replace(/\D/g, ""),
+        nome: "",
+        ativo: true,
+        mensagem: `Olá! Vim pelo app Cadê Meu Barco e gostaria de informações sobre ${dados.nomeBarco.trim()}.`,
+      }))
+      .filter((item) => item.numero.length >= 10)
+      .slice(0, limiteContatos);
 
     return {
       ...embarcacaoAnterior,
@@ -392,6 +453,20 @@ export default function Embarcacoes() {
       rastreadorDeviceId: deviceId,
       rastreadorAtivo: dados.ativarGps,
       nomeNaRede,
+      descricao: dados.descricao.trim(),
+      fotos,
+      foto: fotos[0] || embarcacaoAnterior.foto || "",
+      fotoUrl: fotos[0] || embarcacaoAnterior.fotoUrl || "",
+      contatosWhatsApp,
+      informacoesPassageiroAtivo: limiteContatos > 0 && contatosWhatsApp.length > 0,
+      whatsappInformacoes: contatosWhatsApp[0]?.numero || "",
+      instagramBarco: dados.planoId === "basico" ? "" : dados.instagramBarco.trim(),
+      facebookBarco: dados.planoId === "basico" ? "" : dados.facebookBarco.trim(),
+      siteBarco: dados.planoId === "basico" ? "" : dados.siteBarco.trim(),
+      statusInstalacaoGps: dados.planoId === "tempo_real"
+        ? dados.statusInstalacaoGps : "nao_aplicavel",
+      observacoesInstalacaoGps: dados.planoId === "tempo_real"
+        ? dados.observacoesInstalacaoGps.trim() : "",
       ultima_posicao: embarcacaoAnterior.ultima_posicao || {
         latitude: 0,
         longitude: 0,
@@ -629,6 +704,28 @@ export default function Embarcacoes() {
       await salvarVinculos(editForm);
 
       if (idOriginal !== novoId) {
+        const referencias = [
+          {colecao: "programacoes_viagem", campo: "barcoId"},
+          {colecao: "programacoes_viagem", campo: "embarcacaoId"},
+          {colecao: "grades_viagens", campo: "id_barco"},
+          {colecao: "grades_viagens", campo: "barcoId"},
+          {colecao: "rotas_historicas", campo: "barcoId"},
+          {colecao: "banners_promocionais", campo: "barcoId"},
+          {colecao: "rastreadores", campo: "barcoId"},
+          {colecao: "rastreadores", campo: "barcoIdAdmin"},
+        ];
+        for (const referencia of referencias) {
+          const encontrados = await getDocs(query(
+            collection(db, referencia.colecao),
+            where(referencia.campo, "==", idOriginal),
+          ));
+          for (const item of encontrados.docs) {
+            await updateDoc(item.ref, {
+              [referencia.campo]: novoId,
+              atualizadoEm: serverTimestamp(),
+            });
+          }
+        }
         await deleteDoc(doc(db, "embarcacoes", idOriginal));
         await deleteDoc(doc(db, "acessos_comandantes", idOriginal));
       }
@@ -759,6 +856,14 @@ export default function Embarcacoes() {
                           disabledSenha={buscandoSenha}
                           rastreadores={rastreadores}
                         />
+                        {normalizarId(editForm.idBarco) !== barco.id && (
+                          <div className="rounded-2xl border border-amber-300/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
+                            <strong className="block">Atualização de ID operacional</strong>
+                            {barco.id} → {normalizarId(editForm.idBarco)}. Ao salvar,
+                            o sistema atualizará programação, rotas, banners, GPS e acessos
+                            antes de remover o ID anterior.
+                          </div>
+                        )}
 
                         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
                           <button
@@ -766,7 +871,11 @@ export default function Embarcacoes() {
                             disabled={salvando || buscandoSenha}
                             className="rounded-xl border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-xs font-black uppercase text-amber-200 hover:bg-amber-500/20 disabled:opacity-60"
                           >
-                            {salvando ? "Gravando..." : "Gravar alterações"}
+                            {salvando
+                              ? "Gravando..."
+                              : normalizarId(editForm.idBarco) !== barco.id
+                                ? "Atualizar ID e dados"
+                                : "Atualizar dados"}
                           </button>
 
                           <button
@@ -986,6 +1095,52 @@ function FormularioCadastro({
         </div>
       </div>
 
+      <div className="rounded-2xl border border-violet-300/15 bg-[#143760] p-4">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-violet-200">
+          Conteúdo liberado pelo plano
+        </p>
+        <p className="mt-1 text-xs leading-5 text-sky-100/55">
+          {form.planoId === "basico"
+            ? "Básico: foto principal, descrição, rota, escalas e horários da origem e do destino."
+            : form.planoId === "vitrine"
+              ? "Vitrine: perfil completo, até 5 fotos, presença digital, 1 contato e horários das escalas."
+              : "Tempo Real: todos os dados da Vitrine, até 3 contatos, equipamento GPS, sinal e instalação."}
+        </p>
+        <div className="mt-3 grid gap-3">
+          <CampoArea label="Descrição pública" value={form.descricao}
+            onChange={(valor) => alterar("descricao", valor)}
+            placeholder="Descrição que aparecerá no aplicativo" />
+          <CampoArea label={form.planoId === "basico"
+            ? "Foto principal — uma URL"
+            : "Galeria — uma URL por linha, máximo 5"}
+            value={form.fotosTexto}
+            onChange={(valor) => alterar("fotosTexto", valor)}
+            placeholder="https://..." />
+          {form.planoId !== "basico" && (
+            <>
+              <CampoTexto label="WhatsApp principal" value={form.contato1}
+                onChange={(valor) => alterar("contato1", valor)} />
+              {form.planoId === "tempo_real" && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <CampoTexto label="WhatsApp 2" value={form.contato2}
+                    onChange={(valor) => alterar("contato2", valor)} />
+                  <CampoTexto label="WhatsApp 3" value={form.contato3}
+                    onChange={(valor) => alterar("contato3", valor)} />
+                </div>
+              )}
+              <div className="grid gap-3">
+                <CampoTexto label="Instagram" value={form.instagramBarco}
+                  onChange={(valor) => alterar("instagramBarco", valor)} />
+                <CampoTexto label="Facebook" value={form.facebookBarco}
+                  onChange={(valor) => alterar("facebookBarco", valor)} />
+                <CampoTexto label="Site" value={form.siteBarco}
+                  onChange={(valor) => alterar("siteBarco", valor)} />
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
       <div className="rounded-2xl border border-emerald-300/15 bg-[#143760] p-4">
         <p className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-200">
           Dono / armador
@@ -1025,6 +1180,7 @@ function FormularioCadastro({
         </div>
       </div>
 
+      {form.planoId === "tempo_real" && (
       <div className="rounded-2xl border border-amber-300/15 bg-[#143760] p-4">
         <p className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-amber-200">
           GPS / rastreador
@@ -1064,6 +1220,16 @@ function FormularioCadastro({
             onChange={(valor) => alterar("nomeNaRede", valor)}
             placeholder="Ex: CMB_OBDENSE_V"
           />
+          <CampoSelect
+            label="Situação da instalação"
+            value={form.statusInstalacaoGps}
+            onChange={(valor) => alterar("statusInstalacaoGps", valor)}
+            options={["aguardando_contato", "agendada", "equipamento_enviado", "instalado", "ativo"]}
+          />
+          <CampoArea label="Informações da instalação/equipamento"
+            value={form.observacoesInstalacaoGps}
+            onChange={(valor) => alterar("observacoesInstalacaoGps", valor)}
+            placeholder="Ex.: equipe entrará em contato; equipamento será enviado configurado..." />
 
           <label className="flex items-center justify-between gap-3 rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3">
             <div>
@@ -1084,7 +1250,26 @@ function FormularioCadastro({
           </label>
         </div>
       </div>
+      )}
     </div>
+  );
+}
+
+function CampoArea({
+  label, value, onChange, placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (valor: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label>
+      <p className="mb-2 text-[10px] font-black uppercase text-sky-100/55">{label}</p>
+      <textarea rows={4} value={value} onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-2xl border border-[#7ba6d4]/25 bg-[#17345e] px-4 py-3 text-sm font-semibold text-white outline-none placeholder:text-sky-100/40 focus:border-sky-300/60" />
+    </label>
   );
 }
 

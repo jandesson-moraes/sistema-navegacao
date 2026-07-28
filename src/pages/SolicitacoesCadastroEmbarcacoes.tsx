@@ -1,14 +1,18 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
+  writeBatch,
 } from "firebase/firestore";
 import {db} from "../config/firebase";
 import type {RotaCadastro} from "../components/RotasCadastroPublico";
@@ -36,6 +40,7 @@ type Solicitacao = {
   fotoOriginalUrl?: string;
   observacoes?: string;
   status?: string;
+  embarcacaoId?: string;
   telefoneValidado?: boolean;
   rotas?: RotaCadastro[];
 };
@@ -94,6 +99,11 @@ function normalizarIdEmbarcacao(nome?: string) {
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 70);
+}
+
+function idEhAleatorio(id?: string) {
+  const valor = String(id || "").trim();
+  return /^[A-Za-z0-9]{18,24}$/.test(valor) && !valor.includes("_");
 }
 
 function CampoEdicao({
@@ -423,6 +433,200 @@ export default function SolicitacoesCadastroEmbarcacoes() {
     }
   }
 
+  async function corrigirIdEmbarcacaoAprovada() {
+    if (!selecionada || !rascunho) return;
+    const idAnterior = String(selecionada.embarcacaoId || "").trim();
+    const idNovo = normalizarIdEmbarcacao(
+      rascunho.idEmbarcacaoSugerido || rascunho.nomeEmbarcacao,
+    );
+
+    if (!idAnterior || !idEhAleatorio(idAnterior)) {
+      window.alert("Este cadastro não possui um ID aleatório para corrigir.");
+      return;
+    }
+    if (!idNovo) {
+      window.alert("Não foi possível gerar o novo ID pelo nome da embarcação.");
+      return;
+    }
+    if (idAnterior === idNovo) return;
+    if ((await getDoc(doc(db, "embarcacoes", idNovo))).exists()) {
+      window.alert(`O ID ${idNovo} já está sendo usado. Revise antes de migrar.`);
+      return;
+    }
+    if (!window.confirm(
+      `Migrar a embarcação de ${idAnterior} para ${idNovo} e atualizar os vínculos?`,
+    )) return;
+
+    setOcupado(true);
+    try {
+      const referenciaAntiga = doc(db, "embarcacoes", idAnterior);
+      const snapshotAntigo = await getDoc(referenciaAntiga);
+      if (!snapshotAntigo.exists()) {
+        window.alert("A embarcação com ID antigo não foi encontrada.");
+        return;
+      }
+
+      const batch = writeBatch(db);
+      const rotasAprovadas = rascunho.rotas || [];
+      const escalasLegadas = separarEscalas(rascunho.escalasTexto);
+      batch.set(doc(db, "embarcacoes", idNovo), {
+        ...snapshotAntigo.data(),
+        id: idNovo,
+        barcoId: idNovo,
+        embarcacaoId: idNovo,
+        nome: rascunho.nomeEmbarcacao?.trim() || snapshotAntigo.data().nome || "",
+        tipo: rascunho.tipoEmbarcacao || snapshotAntigo.data().tipo || "",
+        tipoBarco: rascunho.tipoEmbarcacao || snapshotAntigo.data().tipoBarco || "",
+        cidade: rascunho.cidade || rascunho.origemCidade || "",
+        portoSaida: rascunho.portoSaida || "",
+        descricao: rascunho.descricao || "",
+        origem: rascunho.origemCidade || "",
+        origemCidade: rascunho.origemCidade || "",
+        destino: rascunho.destinoCidade || "",
+        destinoCidade: rascunho.destinoCidade || "",
+        escalasBasicas: Array.from(new Set(
+          rotasAprovadas.flatMap((rota) =>
+            rota.escalas.map((escala) => escala.cidade),
+          ).concat(escalasLegadas).filter(Boolean),
+        )),
+        escalasBasicasDetalhadas: rotasAprovadas.flatMap((rota) =>
+          rota.escalas.map((escala) => ({
+            sentido: rota.sentido,
+            uf: escala.uf || "",
+            cidade: escala.cidade,
+            porto: escala.porto,
+            diasPassagem: escala.diasPassagem || [],
+          })),
+        ),
+        rotasCadastro: rotasAprovadas,
+        nomeNaRede: `CMB_${idNovo}`,
+        idMigradoDe: idAnterior,
+        idMigradoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      });
+
+      const referencias = [
+        {colecao: "grades_viagens", campo: "id_barco"},
+        {colecao: "grades_viagens", campo: "barcoId"},
+        {colecao: "rotas_historicas", campo: "barcoId"},
+        {colecao: "banners_promocionais", campo: "barcoId"},
+        {colecao: "acessos_comandantes", campo: "barcoId"},
+      ];
+
+      for (const referencia of referencias) {
+        const encontrados = await getDocs(query(
+          collection(db, referencia.colecao),
+          where(referencia.campo, "==", idAnterior),
+        ));
+        encontrados.forEach((item) => {
+          batch.update(item.ref, {
+            [referencia.campo]: idNovo,
+            atualizadoEm: serverTimestamp(),
+          });
+        });
+      }
+
+      const programacoesAntigas = await getDocs(query(
+        collection(db, "programacoes_viagem"),
+        where("barcoId", "==", idAnterior),
+      ));
+      programacoesAntigas.forEach((item) => batch.delete(item.ref));
+
+      rotasAprovadas.forEach((rota, indiceRota) => {
+        const intermediarios = rota.escalas.map((escala, indice) => ({
+          id: `escala_${indice + 1}`,
+          tipo: "escala",
+          ordem: indice + 1,
+          uf: escala.uf || "",
+          cidade: escala.cidade,
+          portoNome: escala.porto,
+          diasPassagem: escala.diasPassagem || [],
+          diaRelativo: escala.diaRelativo || 0,
+          horarioChegada: escala.horarioChegada || "",
+          horarioSaida: escala.horarioSaida || "",
+        }));
+        const itinerario = [
+          {
+            id: "origem",
+            tipo: "origem",
+            ordem: 0,
+            uf: rota.origemUf,
+            cidade: rota.origemCidade,
+            portoNome: rota.portoOrigem,
+            diaRelativo: 0,
+            horarioSaida: rota.horarioSaida || "",
+          },
+          ...intermediarios,
+          {
+            id: "destino",
+            tipo: "destino",
+            ordem: intermediarios.length + 1,
+            uf: rota.destinoUf,
+            cidade: rota.destinoCidade,
+            portoNome: rota.portoDestino,
+            diaRelativo: rota.destinoDiaRelativo || 0,
+            horarioChegada: rota.destinoHorarioChegada || "",
+            horarioSaida: "",
+          },
+        ].filter((ponto) => ponto.cidade || ponto.portoNome);
+        if (!itinerario.length) return;
+        const idProgramacao = `${idNovo}_cadastro_${rota.sentido}_${indiceRota + 1}`;
+        batch.set(doc(db, "programacoes_viagem", idProgramacao), {
+          id: idProgramacao,
+          barcoId: idNovo,
+          barcoNome: rascunho.nomeEmbarcacao || "",
+          sentido: rota.sentido,
+          origem: rota.origemCidade,
+          destino: rota.destinoCidade,
+          origemCidade: rota.origemCidade,
+          destinoCidade: rota.destinoCidade,
+          origemPortoNome: rota.portoOrigem,
+          destinoPortoNome: rota.portoDestino,
+          origemUf: rota.origemUf,
+          destinoUf: rota.destinoUf,
+          diasSemana: rota.diasSemana || [],
+          horarioSaida: rota.horarioSaida || "",
+          itinerario,
+          escalas: itinerario,
+          ativo: true,
+          conteudoCompletoAprovado: true,
+          visibilidadeControladaPeloPlano: true,
+          criadoEm: serverTimestamp(),
+          atualizadoEm: serverTimestamp(),
+        });
+      });
+
+      batch.update(doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id), {
+        embarcacaoId: idNovo,
+        idEmbarcacaoSugerido: idNovo,
+        idEmbarcacaoAnterior: idAnterior,
+        idEmbarcacaoMigradoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      });
+      await batch.commit();
+
+      await deleteDoc(referenciaAntiga);
+      setSelecionada((atual) => atual ? {
+        ...atual,
+        embarcacaoId: idNovo,
+        idEmbarcacaoSugerido: idNovo,
+      } : atual);
+      setRascunho((atual) => atual ? {
+        ...atual,
+        embarcacaoId: idNovo,
+        idEmbarcacaoSugerido: idNovo,
+      } : atual);
+      window.alert(
+        `Cadastro sincronizado. ID: ${idNovo}. As programações de ida e volta foram reconstruídas.`,
+      );
+    } catch (erro) {
+      console.error("Erro ao corrigir ID da embarcação:", erro);
+      window.alert("Não foi possível corrigir o ID. O documento antigo foi preservado.");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
   const chip = (status?: string) => ({
     aguardando_whatsapp: "Aguardando WhatsApp",
     em_analise: "Em análise",
@@ -705,6 +909,15 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                   )}
                   <button disabled={ocupado || selecionada.status === "aprovado"} onClick={aprovar}
                     className="min-h-12 rounded-2xl bg-sky-600 font-black text-white disabled:opacity-40">Salvar e aprovar no plano Básico</button>
+                  {selecionada.status === "aprovado" &&
+                    idEhAleatorio(selecionada.embarcacaoId) && (
+                    <button disabled={ocupado} onClick={corrigirIdEmbarcacaoAprovada}
+                      className="min-h-12 rounded-2xl border border-amber-400 bg-amber-50 px-4 font-black text-amber-900 disabled:opacity-40">
+                      Sincronizar dados e corrigir ID para {normalizarIdEmbarcacao(
+                        rascunho.idEmbarcacaoSugerido || rascunho.nomeEmbarcacao,
+                      )}
+                    </button>
+                  )}
                   <div className="grid grid-cols-3 gap-2">
                     <button disabled={ocupado} onClick={() => alterarStatus("correcao_solicitada")} className="rounded-xl bg-amber-100 p-3 text-xs font-black text-amber-900">Pedir correção</button>
                     <button disabled={ocupado} onClick={() => alterarStatus("duplicado")} className="rounded-xl bg-violet-100 p-3 text-xs font-black text-violet-900">Duplicado</button>

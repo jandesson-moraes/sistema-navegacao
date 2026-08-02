@@ -4,35 +4,27 @@ import { createHash } from "node:crypto";
 import { defineSecret } from "firebase-functions/params";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onRequest } from "firebase-functions/v2/https";
-import {
-  calcularVendaNoServidor,
-  type RegraTaxaVenda,
-} from "./motorVendas";
+import { calcularVendaNoServidor, type RegraTaxaVenda } from "./motorVendas";
 
-export {processarVencimentoPlanos} from "./vencimentoPlanos";
-export {
-  criarLinkOAuthMercadoPago,
-  mercadoPagoOAuthCallback,
-} from "./oauthMercadoPago";
-export {solicitarCadastroPublicoEmbarcacao} from "./cadastroPublicoEmbarcacoes";
+export { processarVencimentoPlanos } from "./vencimentoPlanos";
+export { criarLinkOAuthMercadoPago, mercadoPagoOAuthCallback } from "./oauthMercadoPago";
+export { solicitarCadastroPublicoEmbarcacao } from "./cadastroPublicoEmbarcacoes";
 export {
   consultarEdicaoPublicaEmbarcacao,
   solicitarAlteracaoPublicaEmbarcacao,
 } from "./alteracoesPublicasEmbarcacoes";
+export { gerarPixSplitTeste } from "./splitMercadoPagoTeste";
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
 const db = admin.firestore();
-const mercadoPagoAccessToken = defineSecret(
-  "MERCADO_PAGO_ACCESS_TOKEN",
-);
+const mercadoPagoAccessToken = defineSecret("MERCADO_PAGO_ACCESS_TOKEN");
 
 const PROJETO_ID = "sistema-navegacao";
 const REGIAO = "us-central1";
-const URL_WEBHOOK_MERCADO_PAGO =
-  `https://${REGIAO}-${PROJETO_ID}.cloudfunctions.net/webhookMercadoPagoCmb`;
+const URL_WEBHOOK_MERCADO_PAGO = `https://${REGIAO}-${PROJETO_ID}.cloudfunctions.net/webhookMercadoPagoCmb`;
 
 type PassageiroRecebido = {
   nome?: string;
@@ -94,10 +86,7 @@ function normalizar(valor: unknown) {
     .replace(/\s+/g, " ");
 }
 
-function primeiroNumero(
-  objeto: Record<string, unknown>,
-  campos: string[],
-) {
+function primeiroNumero(objeto: Record<string, unknown>, campos: string[]) {
   for (const campo of campos) {
     const valor = numero(objeto[campo], Number.NaN);
 
@@ -119,14 +108,10 @@ function obterIdBarcoDaGrade(grade: Record<string, unknown>) {
     grade.embarcacao_id,
   ];
 
-  return texto(
-    candidatos.find((valor) => texto(valor)),
-  );
+  return texto(candidatos.find((valor) => texto(valor)));
 }
 
-function obterNomeBarcoDaGrade(
-  grade: Record<string, unknown>,
-) {
+function obterNomeBarcoDaGrade(grade: Record<string, unknown>) {
   const candidatos = [
     grade.nome_barco,
     grade.nomeBarco,
@@ -135,23 +120,14 @@ function obterNomeBarcoDaGrade(
     grade.nomeEmbarcacao,
   ];
 
-  return texto(
-    candidatos.find((valor) => texto(valor)),
-  );
+  return texto(candidatos.find((valor) => texto(valor)));
 }
 
-function obterConfiguracaoVendas(
-  barco: Record<string, unknown>,
-) {
-  const vendas =
-    (barco.vendasPassagens as Record<string, unknown>) || {};
-  const regra =
-    (vendas.regraTaxa as RegraTaxaVenda) || {};
-  const pagamento =
-    (vendas.pagamento as Record<string, unknown>) || {};
-  const financeiro =
-    (barco.financeiroMercadoPago as Record<string, unknown>) ||
-    {};
+function obterConfiguracaoVendas(barco: Record<string, unknown>) {
+  const vendas = (barco.vendasPassagens as Record<string, unknown>) || {};
+  const regra = (vendas.regraTaxa as RegraTaxaVenda) || {};
+  const pagamento = (vendas.pagamento as Record<string, unknown>) || {};
+  const financeiro = (barco.financeiroMercadoPago as Record<string, unknown>) || {};
 
   return {
     ativa:
@@ -160,37 +136,26 @@ function obterConfiguracaoVendas(
       financeiro.vendaPassagemHabilitada === true,
     regraTaxa: {
       ...regra,
-      percentual:
-        regra.percentual ??
-        numero(financeiro.taxaPlataformaPercentual),
-      valorFixo:
-        regra.valorFixo ??
-        numero(financeiro.taxaPlataformaValorFixo),
+      percentual: regra.percentual ?? numero(financeiro.taxaPlataformaPercentual),
+      valorFixo: regra.valorFixo ?? numero(financeiro.taxaPlataformaValorFixo),
     } as RegraTaxaVenda,
     pagamento: {
       pixAtivo: pagamento.pixAtivo !== false,
       mercadoPagoConectado:
-        pagamento.mercadoPagoConectado === true ||
-        financeiro.contaConectada === true,
+        pagamento.mercadoPagoConectado === true || financeiro.contaConectada === true,
       vendedorMercadoPagoId: texto(
-        pagamento.vendedorMercadoPagoId ||
-          financeiro.vendedorMercadoPagoId,
+        pagamento.vendedorMercadoPagoId || financeiro.vendedorMercadoPagoId,
       ),
     },
-    limiteHorasAntesSaida: Math.max(
-      0,
-      numero(vendas.limiteHorasAntesSaida, 2),
-    ),
+    limiteHorasAntesSaida: Math.max(0, numero(vendas.limiteHorasAntesSaida, 2)),
   };
 }
 
-async function autenticarRequisicao(
-  req: {
-    headers: {
-      authorization?: string | string[];
-    };
-  },
-) {
+async function autenticarRequisicao(req: {
+  headers: {
+    authorization?: string | string[];
+  };
+}) {
   const cabecalho = texto(req.headers.authorization);
 
   if (!cabecalho.startsWith("Bearer ")) {
@@ -213,10 +178,7 @@ async function localizarBarcoDaGrade(
   const idDaGrade = obterIdBarcoDaGrade(grade);
 
   if (idDaGrade) {
-    const snap = await db
-      .collection("embarcacoes")
-      .doc(idDaGrade)
-      .get();
+    const snap = await db.collection("embarcacoes").doc(idDaGrade).get();
 
     if (snap.exists) {
       return {
@@ -226,24 +188,16 @@ async function localizarBarcoDaGrade(
     }
   }
 
-  const nomeGrade = normalizar(
-    obterNomeBarcoDaGrade(grade),
-  );
+  const nomeGrade = normalizar(obterNomeBarcoDaGrade(grade));
 
   if (barcoIdInformado) {
-    const snap = await db
-      .collection("embarcacoes")
-      .doc(barcoIdInformado)
-      .get();
+    const snap = await db.collection("embarcacoes").doc(barcoIdInformado).get();
 
     if (snap.exists) {
       const dados = snap.data() as Record<string, unknown>;
-      const nomes = [
-        dados.nome,
-        dados.nome_barco,
-        dados.nomeBarco,
-        dados.apelido,
-      ].map(normalizar);
+      const nomes = [dados.nome, dados.nome_barco, dados.nomeBarco, dados.apelido].map(
+        normalizar,
+      );
 
       if (!nomeGrade || nomes.includes(nomeGrade)) {
         return {
@@ -254,21 +208,13 @@ async function localizarBarcoDaGrade(
     }
   }
 
-  const barcosSnap = await db
-    .collection("embarcacoes")
-    .get();
+  const barcosSnap = await db.collection("embarcacoes").get();
 
   for (const documento of barcosSnap.docs) {
-    const dados = documento.data() as Record<
-      string,
-      unknown
-    >;
-    const nomes = [
-      dados.nome,
-      dados.nome_barco,
-      dados.nomeBarco,
-      dados.apelido,
-    ].map(normalizar);
+    const dados = documento.data() as Record<string, unknown>;
+    const nomes = [dados.nome, dados.nome_barco, dados.nomeBarco, dados.apelido].map(
+      normalizar,
+    );
 
     if (nomeGrade && nomes.includes(nomeGrade)) {
       return {
@@ -281,10 +227,7 @@ async function localizarBarcoDaGrade(
   return null;
 }
 
-function localizarParadaDestino(
-  grade: Record<string, unknown>,
-  destino: string,
-) {
+function localizarParadaDestino(grade: Record<string, unknown>, destino: string) {
   const itinerario = Array.isArray(grade.itinerario)
     ? grade.itinerario
     : Array.isArray(grade.escalas)
@@ -293,56 +236,29 @@ function localizarParadaDestino(
 
   const destinoNormalizado = normalizar(destino).split(" - ")[0];
 
-  return (
-    itinerario.find((item) => {
-      const parada = item as Record<string, unknown>;
-      const nome = normalizar(
-        parada.porto || parada.cidade,
-      ).split(" - ")[0];
+  return itinerario.find((item) => {
+    const parada = item as Record<string, unknown>;
+    const nome = normalizar(parada.porto || parada.cidade).split(" - ")[0];
 
-      return nome === destinoNormalizado;
-    }) as Record<string, unknown> | undefined
-  );
+    return nome === destinoNormalizado;
+  }) as Record<string, unknown> | undefined;
 }
 
-function calcularPrecoOficial(
-  parada: Record<string, unknown>,
-  tipoVaga: string,
-) {
+function calcularPrecoOficial(parada: Record<string, unknown>, tipoVaga: string) {
   if (tipoVaga === "poltrona") {
-    return primeiroNumero(parada, [
-      "preco_poltrona",
-      "precoPoltrona",
-    ]);
+    return primeiroNumero(parada, ["preco_poltrona", "precoPoltrona"]);
   }
 
   if (tipoVaga === "suite") {
-    return primeiroNumero(parada, [
-      "preco_suite",
-      "precoSuite",
-    ]);
+    return primeiroNumero(parada, ["preco_suite", "precoSuite"]);
   }
 
-  return primeiroNumero(parada, [
-    "preco_da_origem",
-    "precoRede",
-    "preco_rede",
-    "preco",
-  ]);
+  return primeiroNumero(parada, ["preco_da_origem", "precoRede", "preco_rede", "preco"]);
 }
 
-function obterCapacidade(
-  grade: Record<string, unknown>,
-  tipoVaga: string,
-) {
+function obterCapacidade(grade: Record<string, unknown>, tipoVaga: string) {
   const camposPorTipo: Record<string, string[]> = {
-    rede: [
-      "capacidadeRede",
-      "capacidade_rede",
-      "vagasRede",
-      "vagas_rede",
-      "totalRedes",
-    ],
+    rede: ["capacidadeRede", "capacidade_rede", "vagasRede", "vagas_rede", "totalRedes"],
     poltrona: [
       "capacidadePoltrona",
       "capacidade_poltrona",
@@ -359,10 +275,7 @@ function obterCapacidade(
     ],
   };
 
-  const especifica = primeiroNumero(
-    grade,
-    camposPorTipo[tipoVaga] || [],
-  );
+  const especifica = primeiroNumero(grade, camposPorTipo[tipoVaga] || []);
 
   if (especifica > 0) {
     return Math.floor(especifica);
@@ -378,10 +291,7 @@ function obterCapacidade(
   return geral > 0 ? Math.floor(geral) : null;
 }
 
-async function contarPassagensOcupadas(
-  idViagem: string,
-  tipoVaga: string,
-) {
+async function contarPassagensOcupadas(idViagem: string, tipoVaga: string) {
   const snapshot = await db
     .collection("passagens")
     .where("idViagem", "==", idViagem)
@@ -392,12 +302,9 @@ async function contarPassagensOcupadas(
     const status = texto(dados.status).toUpperCase();
     const tipo = texto(dados.tipoVaga).toLowerCase();
 
-    const cancelada = [
-      "CANCELADO",
-      "CANCELADA",
-      "REJEITADO",
-      "REEMBOLSADO",
-    ].includes(status);
+    const cancelada = ["CANCELADO", "CANCELADA", "REJEITADO", "REEMBOLSADO"].includes(
+      status,
+    );
 
     return !cancelada && (!tipo || tipo === tipoVaga);
   }).length;
@@ -427,25 +334,15 @@ function statusVenda(statusPagamento: string) {
   return "aguardando_pagamento";
 }
 
-function taxaProcessador(
-  pagamento: DadosPagamentoMercadoPago,
-) {
+function taxaProcessador(pagamento: DadosPagamentoMercadoPago) {
   return moeda(
-    (pagamento.fee_details || []).reduce(
-      (total, item) => total + numero(item.amount),
-      0,
-    ),
+    (pagamento.fee_details || []).reduce((total, item) => total + numero(item.amount), 0),
   );
 }
 
-async function consultarPagamentoMercadoPago(
-  pagamentoId: string,
-  accessToken: string,
-) {
+async function consultarPagamentoMercadoPago(pagamentoId: string, accessToken: string) {
   const resposta = await fetch(
-    `https://api.mercadopago.com/v1/payments/${encodeURIComponent(
-      pagamentoId,
-    )}`,
+    `https://api.mercadopago.com/v1/payments/${encodeURIComponent(pagamentoId)}`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -454,70 +351,56 @@ async function consultarPagamentoMercadoPago(
     },
   );
 
-  const dados =
-    (await resposta.json()) as DadosPagamentoMercadoPago;
+  const dados = (await resposta.json()) as DadosPagamentoMercadoPago;
 
   if (!resposta.ok) {
-    throw new Error(
-      `Mercado Pago respondeu ${resposta.status}.`,
-    );
+    throw new Error(`Mercado Pago respondeu ${resposta.status}.`);
   }
 
   return dados;
 }
 
-export const receberDadosGPS = functions.https.onRequest(
-  async (req, res) => {
-    try {
-      const dados = req.body;
+export const receberDadosGPS = functions.https.onRequest(async (req, res) => {
+  try {
+    const dados = req.body;
 
-      if (!dados.idBarco || !dados.lat || !dados.lng) {
-        res.status(400).send("Dados incompletos.");
-        return;
-      }
-
-      const timestamp =
-        admin.firestore.FieldValue.serverTimestamp();
-      const pontoGeografico =
-        new admin.firestore.GeoPoint(
-          dados.lat,
-          dados.lng,
-        );
-
-      await db
-        .collection("embarcacoes")
-        .doc(dados.idBarco)
-        .set(
-          {
-            ultima_posicao: pontoGeografico,
-            velocidade: dados.vel || 0,
-            rumo: dados.rumo || 0,
-            ultima_atualizacao: timestamp,
-          },
-          { merge: true },
-        );
-
-      await db
-        .collection("embarcacoes")
-        .doc(dados.idBarco)
-        .collection("rastros_viagem")
-        .add({
-          posicao: pontoGeografico,
-          timestamp,
-          velocidade: dados.vel || 0,
-        });
-
-      res
-        .status(200)
-        .send("Posição e rastro gravados!");
-    } catch (error) {
-      console.error(error);
-      res
-        .status(500)
-        .send("Erro ao processar sinal.");
+    if (!dados.idBarco || !dados.lat || !dados.lng) {
+      res.status(400).send("Dados incompletos.");
+      return;
     }
-  },
-);
+
+    const timestamp = admin.firestore.FieldValue.serverTimestamp();
+    const pontoGeografico = new admin.firestore.GeoPoint(dados.lat, dados.lng);
+
+    await db
+      .collection("embarcacoes")
+      .doc(dados.idBarco)
+      .set(
+        {
+          ultima_posicao: pontoGeografico,
+          velocidade: dados.vel || 0,
+          rumo: dados.rumo || 0,
+          ultima_atualizacao: timestamp,
+        },
+        { merge: true },
+      );
+
+    await db
+      .collection("embarcacoes")
+      .doc(dados.idBarco)
+      .collection("rastros_viagem")
+      .add({
+        posicao: pontoGeografico,
+        timestamp,
+        velocidade: dados.vel || 0,
+      });
+
+    res.status(200).send("Posição e rastro gravados!");
+  } catch (error) {
+    console.error(error);
+    res.status(500).send("Erro ao processar sinal.");
+  }
+});
 
 export const gerarPixSeguro = onRequest(
   {
@@ -528,17 +411,13 @@ export const gerarPixSeguro = onRequest(
   },
   async (req, res) => {
     if (req.method !== "POST") {
-      res
-        .status(405)
-        .json({ erro: "Método não permitido." });
+      res.status(405).json({ erro: "Método não permitido." });
       return;
     }
 
     try {
-      const usuario =
-        await autenticarRequisicao(req);
-      const corpo =
-        (req.body || {}) as Record<string, unknown>;
+      const usuario = await autenticarRequisicao(req);
+      const corpo = (req.body || {}) as Record<string, unknown>;
 
       const gradeId = texto(corpo.gradeId);
       const idViagem = texto(corpo.idViagem);
@@ -549,9 +428,7 @@ export const gerarPixSeguro = onRequest(
       const dataViagem = texto(corpo.dataViagem);
       const horarioSaida = texto(corpo.horarioSaida);
       const incluiRefeicao = corpo.refeicao === true;
-      const chaveCliente = texto(
-        corpo.chaveIdempotencia,
-      ).slice(0, 150);
+      const chaveCliente = texto(corpo.chaveIdempotencia).slice(0, 150);
       const passageiros = Array.isArray(corpo.passageiros)
         ? (corpo.passageiros as PassageiroRecebido[])
         : [];
@@ -561,9 +438,7 @@ export const gerarPixSeguro = onRequest(
         !idViagem ||
         !origem ||
         !destino ||
-        !["rede", "poltrona", "suite"].includes(
-          tipoVaga,
-        )
+        !["rede", "poltrona", "suite"].includes(tipoVaga)
       ) {
         res.status(400).json({
           erro: "Dados da viagem incompletos.",
@@ -571,13 +446,9 @@ export const gerarPixSeguro = onRequest(
         return;
       }
 
-      if (
-        passageiros.length < 1 ||
-        passageiros.length > 20
-      ) {
+      if (passageiros.length < 1 || passageiros.length > 20) {
         res.status(400).json({
-          erro:
-            "A compra deve ter entre 1 e 20 passageiros.",
+          erro: "A compra deve ter entre 1 e 20 passageiros.",
         });
         return;
       }
@@ -595,10 +466,7 @@ export const gerarPixSeguro = onRequest(
         return;
       }
 
-      const gradeSnap = await db
-        .collection("grades_viagens")
-        .doc(gradeId)
-        .get();
+      const gradeSnap = await db.collection("grades_viagens").doc(gradeId).get();
 
       if (!gradeSnap.exists) {
         res.status(404).json({
@@ -607,87 +475,54 @@ export const gerarPixSeguro = onRequest(
         return;
       }
 
-      const grade =
-        gradeSnap.data() as Record<string, unknown>;
-      const barcoLocalizado =
-        await localizarBarcoDaGrade(
-          grade,
-          barcoIdInformado,
-        );
+      const grade = gradeSnap.data() as Record<string, unknown>;
+      const barcoLocalizado = await localizarBarcoDaGrade(grade, barcoIdInformado);
 
       if (!barcoLocalizado) {
         res.status(404).json({
-          erro:
-            "Não foi possível vincular a viagem à embarcação.",
+          erro: "Não foi possível vincular a viagem à embarcação.",
         });
         return;
       }
 
-      const configuracao = obterConfiguracaoVendas(
-        barcoLocalizado.dados,
-      );
+      const configuracao = obterConfiguracaoVendas(barcoLocalizado.dados);
 
-      if (
-        !configuracao.ativa ||
-        !configuracao.pagamento.pixAtivo
-      ) {
+      if (!configuracao.ativa || !configuracao.pagamento.pixAtivo) {
         res.status(403).json({
-          erro:
-            "A venda de passagens não está habilitada para esta embarcação.",
+          erro: "A venda de passagens não está habilitada para esta embarcação.",
         });
         return;
       }
 
-      const parada = localizarParadaDestino(
-        grade,
-        destino,
-      );
+      const parada = localizarParadaDestino(grade, destino);
 
       if (!parada) {
         res.status(400).json({
-          erro:
-            "O destino não foi localizado no itinerário.",
+          erro: "O destino não foi localizado no itinerário.",
         });
         return;
       }
 
-      const valorUnitarioPassagem =
-        calcularPrecoOficial(parada, tipoVaga);
-      const valorUnitarioRefeicao =
-        incluiRefeicao
-          ? primeiroNumero(parada, [
-              "preco_refeicao",
-              "precoRefeicao",
-            ])
-          : 0;
+      const valorUnitarioPassagem = calcularPrecoOficial(parada, tipoVaga);
+      const valorUnitarioRefeicao = incluiRefeicao
+        ? primeiroNumero(parada, ["preco_refeicao", "precoRefeicao"])
+        : 0;
 
       if (valorUnitarioPassagem <= 0) {
         res.status(400).json({
-          erro:
-            "O preço oficial desta acomodação não está configurado.",
+          erro: "O preço oficial desta acomodação não está configurado.",
         });
         return;
       }
 
-      const capacidade = obterCapacidade(
-        grade,
-        tipoVaga,
-      );
+      const capacidade = obterCapacidade(grade, tipoVaga);
 
       if (capacidade !== null) {
-        const ocupadas =
-          await contarPassagensOcupadas(
-            idViagem,
-            tipoVaga,
-          );
+        const ocupadas = await contarPassagensOcupadas(idViagem, tipoVaga);
 
-        if (
-          ocupadas + passageiros.length >
-          capacidade
-        ) {
+        if (ocupadas + passageiros.length > capacidade) {
           res.status(409).json({
-            erro:
-              "Não há vagas suficientes para esta compra.",
+            erro: "Não há vagas suficientes para esta compra.",
             capacidade,
             ocupadas,
             solicitadas: passageiros.length,
@@ -700,62 +535,39 @@ export const gerarPixSeguro = onRequest(
         regra: configuracao.regraTaxa,
         quantidade: passageiros.length,
         valorUnitarioPassagem,
-        valorAdicionais:
-          valorUnitarioRefeicao *
-          passageiros.length,
+        valorAdicionais: valorUnitarioRefeicao * passageiros.length,
       });
 
-      const chaveBase = [
-        usuario.uid,
-        chaveCliente ||
-          `${idViagem}-${Date.now()}`,
-      ].join("|");
-      const hash = createHash("sha256")
-        .update(chaveBase)
-        .digest("hex");
+      const chaveBase = [usuario.uid, chaveCliente || `${idViagem}-${Date.now()}`].join(
+        "|",
+      );
+      const hash = createHash("sha256").update(chaveBase).digest("hex");
       const vendaId = `VND-${hash.slice(0, 24)}`;
-      const vendaRef = db
-        .collection("vendas")
-        .doc(vendaId);
+      const vendaRef = db.collection("vendas").doc(vendaId);
       const existente = await vendaRef.get();
 
       if (existente.exists) {
         const dadosExistentes = existente.data() || {};
-        const pagamentoExistente =
-          (dadosExistentes.pagamento ||
-            {}) as Record<string, unknown>;
+        const pagamentoExistente = (dadosExistentes.pagamento || {}) as Record<
+          string,
+          unknown
+        >;
 
-        if (
-          dadosExistentes.compradorUid !==
-          usuario.uid
-        ) {
+        if (dadosExistentes.compradorUid !== usuario.uid) {
           res.status(403).json({
             erro: "Venda não pertence ao usuário.",
           });
           return;
         }
 
-        if (
-          texto(pagamentoExistente.id) &&
-          texto(pagamentoExistente.qrCode)
-        ) {
+        if (texto(pagamentoExistente.id) && texto(pagamentoExistente.qrCode)) {
           res.status(200).json({
             vendaId,
-            id_transacao: texto(
-              pagamentoExistente.id,
-            ),
-            qr_code_copia_cola: texto(
-              pagamentoExistente.qrCode,
-            ),
-            qr_code_base64: texto(
-              pagamentoExistente.qrCodeBase64,
-            ),
-            status: texto(
-              pagamentoExistente.status,
-            ),
-            financeiro:
-              dadosExistentes.financeiro ||
-              calculo,
+            id_transacao: texto(pagamentoExistente.id),
+            qr_code_copia_cola: texto(pagamentoExistente.qrCode),
+            qr_code_base64: texto(pagamentoExistente.qrCodeBase64),
+            status: texto(pagamentoExistente.status),
+            financeiro: dadosExistentes.financeiro || calculo,
           });
           return;
         }
@@ -767,30 +579,22 @@ export const gerarPixSeguro = onRequest(
           obterNomeBarcoDaGrade(grade) ||
           barcoLocalizado.id,
       );
-      const emailComprador = texto(
-        usuario.email || corpo.email,
-      );
+      const emailComprador = texto(usuario.email || corpo.email);
 
       await vendaRef.set(
         {
           vendaId,
-          chaveIdempotenciaCliente:
-            chaveCliente || null,
+          chaveIdempotenciaCliente: chaveCliente || null,
           compradorUid: usuario.uid,
           compradorEmail: emailComprador,
-          compradorCidadeResidencia:
-            texto(
-              corpo.compradorCidadeResidenciaCompleta ||
-                corpo.compradorCidadeResidencia,
-            ),
+          compradorCidadeResidencia: texto(
+            corpo.compradorCidadeResidenciaCompleta || corpo.compradorCidadeResidencia,
+          ),
           barcoId: barcoLocalizado.id,
           barcoNome: nomeBarco,
-          ownerId: texto(
-            barcoLocalizado.dados.ownerId,
-          ),
+          ownerId: texto(barcoLocalizado.dados.ownerId),
           ownerEmail: texto(
-            barcoLocalizado.dados.ownerEmail ||
-              barcoLocalizado.dados.emailDono,
+            barcoLocalizado.dados.ownerEmail || barcoLocalizado.dados.emailDono,
           ),
           gradeId,
           viagemId: idViagem,
@@ -800,153 +604,108 @@ export const gerarPixSeguro = onRequest(
           horarioSaida,
           tipoVaga,
           incluiRefeicao,
-          quantidadePassagens:
-            passageiros.length,
-          quantidadePassageiros:
-            passageiros.length,
+          quantidadePassagens: passageiros.length,
+          quantidadePassageiros: passageiros.length,
           valorUnitarioPassagem,
           valorUnitarioRefeicao,
-          valorPassagens:
-            calculo.valorPassagens,
-          valorAdicionais:
-            calculo.valorAdicionais,
-          valorTotalCobrado:
-            calculo.totalPagoPassageiro,
-          totalPagoPassageiro:
-            calculo.totalPagoPassageiro,
-          valorBrutoArmador:
-            calculo.valorBrutoArmador,
-          valorLiquidoArmador:
-            calculo.valorLiquidoArmador,
-          taxaPlataformaValor:
-            calculo.receitaBrutaPlataforma,
-          receitaBrutaPlataforma:
-            calculo.receitaBrutaPlataforma,
+          valorPassagens: calculo.valorPassagens,
+          valorAdicionais: calculo.valorAdicionais,
+          valorTotalCobrado: calculo.totalPagoPassageiro,
+          totalPagoPassageiro: calculo.totalPagoPassageiro,
+          valorBrutoArmador: calculo.valorBrutoArmador,
+          valorLiquidoArmador: calculo.valorLiquidoArmador,
+          taxaPlataformaValor: calculo.receitaBrutaPlataforma,
+          receitaBrutaPlataforma: calculo.receitaBrutaPlataforma,
           taxaProcessadorValor: 0,
-          receitaLiquidaPlataforma:
-            calculo.receitaLiquidaPlataforma,
+          receitaLiquidaPlataforma: calculo.receitaLiquidaPlataforma,
           taxaAplicada: calculo.taxaAplicada,
           financeiro: calculo,
           formaPagamento: "pix",
-          statusPagamento:
-            "criando_pagamento",
-          statusVenda:
-            "criando_pagamento",
+          statusPagamento: "criando_pagamento",
+          statusVenda: "criando_pagamento",
           bilhetesEmitidos: 0,
-          criadoEm:
-            admin.firestore.FieldValue.serverTimestamp(),
-          atualizadoEm:
-            admin.firestore.FieldValue.serverTimestamp(),
+          criadoEm: admin.firestore.FieldValue.serverTimestamp(),
+          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true },
       );
 
-      const accessToken =
-        mercadoPagoAccessToken.value();
+      const accessToken = mercadoPagoAccessToken.value();
 
       if (!accessToken) {
-        throw new Error(
-          "O segredo MERCADO_PAGO_ACCESS_TOKEN não está configurado.",
-        );
+        throw new Error("O segredo MERCADO_PAGO_ACCESS_TOKEN não está configurado.");
       }
 
-      const pagamentoResposta = await fetch(
-        "https://api.mercadopago.com/v1/payments",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            "X-Idempotency-Key": vendaId,
-          },
-          body: JSON.stringify({
-            transaction_amount:
-              calculo.totalPagoPassageiro,
-            description:
-              `Passagem ${nomeBarco}: ${origem} para ${destino}`,
-            payment_method_id: "pix",
-            external_reference: vendaId,
-            notification_url:
-              URL_WEBHOOK_MERCADO_PAGO,
-            payer: {
-              email: emailComprador,
-              first_name:
-                texto(passageiros[0].nome)
-                  .split(/\s+/)[0] || "Passageiro",
-              identification: {
-                type: "CPF",
-                number: cpfLimpo(
-                  passageiros[0].documento,
-                ),
-              },
-            },
-            metadata: {
-              venda_id: vendaId,
-              barco_id: barcoLocalizado.id,
-              viagem_id: idViagem,
-            },
-          }),
+      const pagamentoResposta = await fetch("https://api.mercadopago.com/v1/payments", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-Idempotency-Key": vendaId,
         },
-      );
+        body: JSON.stringify({
+          transaction_amount: calculo.totalPagoPassageiro,
+          description: `Passagem ${nomeBarco}: ${origem} para ${destino}`,
+          payment_method_id: "pix",
+          external_reference: vendaId,
+          notification_url: URL_WEBHOOK_MERCADO_PAGO,
+          payer: {
+            email: emailComprador,
+            first_name: texto(passageiros[0].nome).split(/\s+/)[0] || "Passageiro",
+            identification: {
+              type: "CPF",
+              number: cpfLimpo(passageiros[0].documento),
+            },
+          },
+          metadata: {
+            venda_id: vendaId,
+            barco_id: barcoLocalizado.id,
+            viagem_id: idViagem,
+          },
+        }),
+      });
 
-      const pagamento =
-        (await pagamentoResposta.json()) as DadosPagamentoMercadoPago;
+      const pagamento = (await pagamentoResposta.json()) as DadosPagamentoMercadoPago;
 
       if (!pagamentoResposta.ok) {
         await vendaRef.set(
           {
-            statusPagamento:
-              "erro_ao_criar_pagamento",
-            statusVenda:
-              "erro_ao_criar_pagamento",
+            statusPagamento: "erro_ao_criar_pagamento",
+            statusVenda: "erro_ao_criar_pagamento",
             erroPagamento: pagamento,
-            atualizadoEm:
-              admin.firestore.FieldValue.serverTimestamp(),
+            atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
         );
 
         res.status(502).json({
-          erro:
-            "O Mercado Pago não conseguiu criar o Pix.",
+          erro: "O Mercado Pago não conseguiu criar o Pix.",
           detalhes: pagamento,
         });
         return;
       }
 
       const pagamentoId = texto(pagamento.id);
-      const dadosQr =
-        pagamento.point_of_interaction
-          ?.transaction_data;
+      const dadosQr = pagamento.point_of_interaction?.transaction_data;
       const qrCode = texto(dadosQr?.qr_code);
-      const qrCodeBase64 = texto(
-        dadosQr?.qr_code_base64,
-      );
-      const taxaMp =
-        taxaProcessador(pagamento);
-      const receitaLiquida = moeda(
-        calculo.receitaBrutaPlataforma -
-          taxaMp,
-      );
+      const qrCodeBase64 = texto(dadosQr?.qr_code_base64);
+      const taxaMp = taxaProcessador(pagamento);
+      const receitaLiquida = moeda(calculo.receitaBrutaPlataforma - taxaMp);
 
       if (!pagamentoId || !qrCode) {
         await vendaRef.set(
           {
-            statusPagamento:
-              "resposta_pix_incompleta",
-            statusVenda:
-              "resposta_pix_incompleta",
+            statusPagamento: "resposta_pix_incompleta",
+            statusVenda: "resposta_pix_incompleta",
             pagamentoResposta: pagamento,
-            atualizadoEm:
-              admin.firestore.FieldValue.serverTimestamp(),
+            atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
         );
 
         res.status(502).json({
-          erro:
-            "O Mercado Pago retornou um Pix incompleto.",
+          erro: "O Mercado Pago retornou um Pix incompleto.",
         });
         return;
       }
@@ -957,171 +716,88 @@ export const gerarPixSeguro = onRequest(
         vendaRef,
         {
           pagamentoId,
-          statusPagamento:
-            texto(pagamento.status) || "pending",
-          statusVenda: statusVenda(
-            texto(pagamento.status),
-          ),
+          statusPagamento: texto(pagamento.status) || "pending",
+          statusVenda: statusVenda(texto(pagamento.status)),
           taxaProcessadorValor: taxaMp,
-          receitaLiquidaPlataforma:
-            receitaLiquida,
+          receitaLiquidaPlataforma: receitaLiquida,
           pagamento: {
             id: pagamentoId,
-            status:
-              texto(pagamento.status) ||
-              "pending",
+            status: texto(pagamento.status) || "pending",
             qrCode,
             qrCodeBase64,
-            ticketUrl: texto(
-              dadosQr?.ticket_url,
-            ),
+            ticketUrl: texto(dadosQr?.ticket_url),
           },
-          atualizadoEm:
-            admin.firestore.FieldValue.serverTimestamp(),
+          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true },
       );
 
-      passageiros.forEach(
-        (passageiro, indice) => {
-          const ticketId =
-            `TKT-${pagamentoId}-${indice}`;
-          const ticketRef = db
-            .collection("passagens")
-            .doc(ticketId);
-          const rateio =
-            passageiros.length || 1;
+      passageiros.forEach((passageiro, indice) => {
+        const ticketId = `TKT-${pagamentoId}-${indice}`;
+        const ticketRef = db.collection("passagens").doc(ticketId);
+        const rateio = passageiros.length || 1;
 
-          batch.set(
-            ticketRef,
-            {
-              ticketId,
-              vendaId,
-              pagamentoId,
-              barco: nomeBarco,
-              barcoId:
-                barcoLocalizado.id,
-              ownerId: texto(
-                barcoLocalizado.dados.ownerId,
-              ),
-              ownerEmail: texto(
-                barcoLocalizado.dados.ownerEmail ||
-                  barcoLocalizado.dados.emailDono,
-              ),
-              compradorUid: usuario.uid,
-              compradorEmail:
-                emailComprador,
-              compradorCidadeResidencia:
-                texto(
-                  corpo.compradorCidadeResidencia,
-                ),
-              compradorEstadoResidencia:
-                texto(
-                  corpo.compradorEstadoResidencia,
-                ),
-              compradorEstadoResidenciaNome:
-                texto(
-                  corpo.compradorEstadoResidenciaNome,
-                ),
-              compradorCidadeResidenciaCompleta:
-                texto(
-                  corpo.compradorCidadeResidenciaCompleta,
-                ),
-              compradorCidadeResidenciaCodigoIbge:
-                texto(
-                  corpo.compradorCidadeResidenciaCodigoIbge,
-                ),
-              compradorCidadeResidenciaFonte:
-                texto(
-                  corpo.compradorCidadeResidenciaFonte ||
-                    "ibge",
-                ),
-              dataCompra:
-                admin.firestore.FieldValue.serverTimestamp(),
-              dataViagem,
-              horarioSaida,
-              gradeId,
-              idViagem,
-              origem,
-              destino,
-              passageiro:
-                texto(passageiro.nome),
-              documento:
-                cpfMascarado(
-                  passageiro.documento,
-                ),
-              documentoMascarado:
-                cpfMascarado(
-                  passageiro.documento,
-                ),
-              documentoFinal:
-                cpfLimpo(
-                  passageiro.documento,
-                ).slice(-4),
-              nacionalidade:
-                texto(
-                  passageiro.nacionalidade ||
-                    "Brasileira",
-                ),
-              nascimento: "",
-              nascimentoInformado:
-                Boolean(
-                  texto(passageiro.nascimento),
-                ),
-              dadosSensiveisProtegidos: true,
-              status: statusPassagem(
-                texto(pagamento.status),
-              ),
-              tipoVaga,
-              refeicao:
-                incluiRefeicao,
-              valorPassagem:
-                moeda(
-                  calculo.valorPassagens /
-                    rateio,
-                ),
-              valorRefeicao:
-                moeda(
-                  calculo.valorAdicionais /
-                    rateio,
-                ),
-              taxaPlataformaRateada:
-                moeda(
-                  calculo.receitaBrutaPlataforma /
-                    rateio,
-                ),
-              taxaPagaPassageiroRateada:
-                moeda(
-                  calculo.taxaPagaPassageiro /
-                    rateio,
-                ),
-              taxaDescontadaArmadorRateada:
-                moeda(
-                  calculo.taxaDescontadaArmador /
-                    rateio,
-                ),
-              valorTotalRateado:
-                moeda(
-                  calculo.totalPagoPassageiro /
-                    rateio,
-                ),
-              valor:
-                moeda(
-                  calculo.totalPagoPassageiro /
-                    rateio,
-                ),
-              validado: false,
-            },
-            { merge: true },
-          );
-        },
-      );
+        batch.set(
+          ticketRef,
+          {
+            ticketId,
+            vendaId,
+            pagamentoId,
+            barco: nomeBarco,
+            barcoId: barcoLocalizado.id,
+            ownerId: texto(barcoLocalizado.dados.ownerId),
+            ownerEmail: texto(
+              barcoLocalizado.dados.ownerEmail || barcoLocalizado.dados.emailDono,
+            ),
+            compradorUid: usuario.uid,
+            compradorEmail: emailComprador,
+            compradorCidadeResidencia: texto(corpo.compradorCidadeResidencia),
+            compradorEstadoResidencia: texto(corpo.compradorEstadoResidencia),
+            compradorEstadoResidenciaNome: texto(corpo.compradorEstadoResidenciaNome),
+            compradorCidadeResidenciaCompleta: texto(
+              corpo.compradorCidadeResidenciaCompleta,
+            ),
+            compradorCidadeResidenciaCodigoIbge: texto(
+              corpo.compradorCidadeResidenciaCodigoIbge,
+            ),
+            compradorCidadeResidenciaFonte: texto(
+              corpo.compradorCidadeResidenciaFonte || "ibge",
+            ),
+            dataCompra: admin.firestore.FieldValue.serverTimestamp(),
+            dataViagem,
+            horarioSaida,
+            gradeId,
+            idViagem,
+            origem,
+            destino,
+            passageiro: texto(passageiro.nome),
+            documento: cpfMascarado(passageiro.documento),
+            documentoMascarado: cpfMascarado(passageiro.documento),
+            documentoFinal: cpfLimpo(passageiro.documento).slice(-4),
+            nacionalidade: texto(passageiro.nacionalidade || "Brasileira"),
+            nascimento: "",
+            nascimentoInformado: Boolean(texto(passageiro.nascimento)),
+            dadosSensiveisProtegidos: true,
+            status: statusPassagem(texto(pagamento.status)),
+            tipoVaga,
+            refeicao: incluiRefeicao,
+            valorPassagem: moeda(calculo.valorPassagens / rateio),
+            valorRefeicao: moeda(calculo.valorAdicionais / rateio),
+            taxaPlataformaRateada: moeda(calculo.receitaBrutaPlataforma / rateio),
+            taxaPagaPassageiroRateada: moeda(calculo.taxaPagaPassageiro / rateio),
+            taxaDescontadaArmadorRateada: moeda(calculo.taxaDescontadaArmador / rateio),
+            valorTotalRateado: moeda(calculo.totalPagoPassageiro / rateio),
+            valor: moeda(calculo.totalPagoPassageiro / rateio),
+            validado: false,
+          },
+          { merge: true },
+        );
+      });
 
       batch.set(
         vendaRef,
         {
-          bilhetesEmitidos:
-            passageiros.length,
+          bilhetesEmitidos: passageiros.length,
         },
         { merge: true },
       );
@@ -1133,38 +809,25 @@ export const gerarPixSeguro = onRequest(
         id_transacao: pagamentoId,
         qr_code_copia_cola: qrCode,
         qr_code_base64: qrCodeBase64,
-        status:
-          texto(pagamento.status) ||
-          "pending",
+        status: texto(pagamento.status) || "pending",
         financeiro: {
           ...calculo,
           taxaProcessadorValor: taxaMp,
-          receitaLiquidaPlataforma:
-            receitaLiquida,
+          receitaLiquidaPlataforma: receitaLiquida,
         },
       });
     } catch (error) {
-      console.error(
-        "Erro em gerarPixSeguro:",
-        error,
-      );
+      console.error("Erro em gerarPixSeguro:", error);
 
-      if (
-        error instanceof Error &&
-        error.message === "UNAUTHENTICATED"
-      ) {
+      if (error instanceof Error && error.message === "UNAUTHENTICATED") {
         res.status(401).json({
-          erro:
-            "Faça login novamente antes de comprar.",
+          erro: "Faça login novamente antes de comprar.",
         });
         return;
       }
 
       res.status(500).json({
-        erro:
-          error instanceof Error
-            ? error.message
-            : "Falha interna ao gerar o Pix.",
+        erro: error instanceof Error ? error.message : "Falha interna ao gerar o Pix.",
       });
     }
   },
@@ -1180,8 +843,7 @@ export const webhookMercadoPagoCmb = onRequest(
   async (req, res) => {
     try {
       const pagamentoId = texto(
-        (req.body as Record<string, any>)?.data
-          ?.id ||
+        (req.body as Record<string, any>)?.data?.id ||
           req.query["data.id"] ||
           req.query.id,
       );
@@ -1191,23 +853,18 @@ export const webhookMercadoPagoCmb = onRequest(
         return;
       }
 
-      const pagamento =
-        await consultarPagamentoMercadoPago(
-          pagamentoId,
-          mercadoPagoAccessToken.value(),
-        );
-      const vendaId = texto(
-        pagamento.external_reference,
+      const pagamento = await consultarPagamentoMercadoPago(
+        pagamentoId,
+        mercadoPagoAccessToken.value(),
       );
+      const vendaId = texto(pagamento.external_reference);
 
       if (!vendaId) {
         res.status(200).send("Sem referência");
         return;
       }
 
-      const vendaRef = db
-        .collection("vendas")
-        .doc(vendaId);
+      const vendaRef = db.collection("vendas").doc(vendaId);
       const vendaSnap = await vendaRef.get();
 
       if (!vendaSnap.exists) {
@@ -1216,49 +873,28 @@ export const webhookMercadoPagoCmb = onRequest(
       }
 
       const venda = vendaSnap.data() || {};
-      const valorEsperado = numero(
-        venda.totalPagoPassageiro ||
-          venda.valorTotalCobrado,
-      );
-      const valorRecebido = numero(
-        pagamento.transaction_amount,
-      );
-      const valorConfere =
-        Math.abs(valorEsperado - valorRecebido) <=
-        0.01;
-      const statusMp =
-        texto(pagamento.status) || "pending";
-      const taxaMp =
-        taxaProcessador(pagamento);
+      const valorEsperado = numero(venda.totalPagoPassageiro || venda.valorTotalCobrado);
+      const valorRecebido = numero(pagamento.transaction_amount);
+      const valorConfere = Math.abs(valorEsperado - valorRecebido) <= 0.01;
+      const statusMp = texto(pagamento.status) || "pending";
+      const taxaMp = taxaProcessador(pagamento);
       const receitaBruta = numero(
-        venda.receitaBrutaPlataforma ||
-          venda.taxaPlataformaValor,
+        venda.receitaBrutaPlataforma || venda.taxaPlataformaValor,
       );
 
-      const atualizacaoVenda: Record<
-        string,
-        unknown
-      > = {
+      const atualizacaoVenda: Record<string, unknown> = {
         pagamentoId,
-        statusPagamento: valorConfere
-          ? statusMp
-          : "valor_inconsistente",
-        statusVenda: valorConfere
-          ? statusVenda(statusMp)
-          : "auditoria_necessaria",
+        statusPagamento: valorConfere ? statusMp : "valor_inconsistente",
+        statusVenda: valorConfere ? statusVenda(statusMp) : "auditoria_necessaria",
         taxaProcessadorValor: taxaMp,
-        receitaLiquidaPlataforma: moeda(
-          receitaBruta - taxaMp,
-        ),
+        receitaLiquidaPlataforma: moeda(receitaBruta - taxaMp),
         valorRecebido,
         valorPagamentoConfere: valorConfere,
-        atualizadoEm:
-          admin.firestore.FieldValue.serverTimestamp(),
+        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
       };
 
       if (statusMp === "approved" && valorConfere) {
-        atualizacaoVenda.pagoEm =
-          admin.firestore.FieldValue.serverTimestamp();
+        atualizacaoVenda.pagoEm = admin.firestore.FieldValue.serverTimestamp();
       }
 
       const passagensSnap = await db
@@ -1267,112 +903,85 @@ export const webhookMercadoPagoCmb = onRequest(
         .get();
       const batch = db.batch();
 
-      batch.set(
-        vendaRef,
-        atualizacaoVenda,
-        { merge: true },
-      );
+      batch.set(vendaRef, atualizacaoVenda, { merge: true });
 
-      passagensSnap.docs.forEach(
-        (documento) => {
-          batch.set(
-            documento.ref,
-            {
-              status: valorConfere
-                ? statusPassagem(statusMp)
-                : "AUDITORIA",
-              pagamentoStatus: statusMp,
-              atualizadoEm:
-                admin.firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true },
-          );
-        },
-      );
+      passagensSnap.docs.forEach((documento) => {
+        batch.set(
+          documento.ref,
+          {
+            status: valorConfere ? statusPassagem(statusMp) : "AUDITORIA",
+            pagamentoStatus: statusMp,
+            atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      });
 
       await batch.commit();
 
       res.status(200).send("OK");
     } catch (error) {
-      console.error(
-        "Erro no webhook Mercado Pago:",
-        error,
-      );
+      console.error("Erro no webhook Mercado Pago:", error);
       res.status(500).send("Erro");
     }
   },
 );
 
-export const sincronizarVendaPorPassagem =
-  onDocumentWritten(
-    {
-      region: REGIAO,
-      document: "passagens/{ticketId}",
-    },
-    async (event) => {
-      const depois = event.data?.after;
+export const sincronizarVendaPorPassagem = onDocumentWritten(
+  {
+    region: REGIAO,
+    document: "passagens/{ticketId}",
+  },
+  async (event) => {
+    const depois = event.data?.after;
 
-      if (!depois?.exists) {
-        return;
-      }
+    if (!depois?.exists) {
+      return;
+    }
 
-      const passagem = depois.data() || {};
-      const vendaId = texto(
-        passagem.vendaId,
-      );
+    const passagem = depois.data() || {};
+    const vendaId = texto(passagem.vendaId);
 
-      if (!vendaId) {
-        return;
-      }
+    if (!vendaId) {
+      return;
+    }
 
-      const vendaRef = db
-        .collection("vendas")
-        .doc(vendaId);
-      const vendaSnap = await vendaRef.get();
+    const vendaRef = db.collection("vendas").doc(vendaId);
+    const vendaSnap = await vendaRef.get();
 
-      if (!vendaSnap.exists) {
-        return;
-      }
+    if (!vendaSnap.exists) {
+      return;
+    }
 
-      const venda = vendaSnap.data() || {};
-      const statusAtualVenda = normalizar(
-        venda.statusPagamento,
-      );
-      const statusAtualPassagem = texto(
-        passagem.status,
-      ).toUpperCase();
+    const venda = vendaSnap.data() || {};
+    const statusAtualVenda = normalizar(venda.statusPagamento);
+    const statusAtualPassagem = texto(passagem.status).toUpperCase();
 
-      if (
-        statusAtualVenda === "approved" &&
-        statusAtualPassagem !== "APROVADO"
-      ) {
-        await depois.ref.set(
-          {
-            status: "APROVADO",
-            atualizadoEm:
-              admin.firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
-        return;
-      }
-
-      const passagensSnap = await db
-        .collection("passagens")
-        .where("vendaId", "==", vendaId)
-        .get();
-
-      await vendaRef.set(
+    if (statusAtualVenda === "approved" && statusAtualPassagem !== "APROVADO") {
+      await depois.ref.set(
         {
-          bilhetesEmitidos:
-            passagensSnap.size,
-          atualizadoEm:
-            admin.firestore.FieldValue.serverTimestamp(),
+          status: "APROVADO",
+          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
         },
         { merge: true },
       );
-    },
-  );
+      return;
+    }
+
+    const passagensSnap = await db
+      .collection("passagens")
+      .where("vendaId", "==", vendaId)
+      .get();
+
+    await vendaRef.set(
+      {
+        bilhetesEmitidos: passagensSnap.size,
+        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  },
+);
 
 // ============================================================
 // MÉTRICAS DA LANDING PAGE
@@ -1399,9 +1008,7 @@ function dataManaus() {
     timeZone: "America/Manaus",
     year: "numeric",
   }).formatToParts(new Date());
-  const valor = Object.fromEntries(
-    partes.map((parte) => [parte.type, parte.value]),
-  );
+  const valor = Object.fromEntries(partes.map((parte) => [parte.type, parte.value]));
   return `${valor.year}-${valor.month}-${valor.day}`;
 }
 
@@ -1428,10 +1035,7 @@ function dispositivoLandingValido(valor: unknown): DispositivoLanding {
   return "computador";
 }
 
-function primeiroIp(req: {
-  ip?: string;
-  headers: Record<string, unknown>;
-}) {
+function primeiroIp(req: { ip?: string; headers: Record<string, unknown> }) {
   const encaminhado = texto(req.headers["x-forwarded-for"]);
   return encaminhado.split(",")[0]?.trim() || texto(req.ip) || "sem-ip";
 }
@@ -1445,20 +1049,20 @@ export const registrarMetricaLanding = onRequest(
   },
   async (req, res) => {
     if (req.method !== "POST") {
-      res.status(405).json({erro: "Método não permitido."});
+      res.status(405).json({ erro: "Método não permitido." });
       return;
     }
 
     const origemRequisicao = texto(req.headers.origin);
     if (origemRequisicao !== ORIGEM_LANDING_PERMITIDA) {
-      res.status(403).json({erro: "Origem não autorizada."});
+      res.status(403).json({ erro: "Origem não autorizada." });
       return;
     }
 
     const corpo = (req.body || {}) as Record<string, unknown>;
     const eventoInformado = texto(corpo.evento);
     if (eventoInformado !== "visita" && eventoInformado !== "clique_download") {
-      res.status(400).json({erro: "Evento inválido."});
+      res.status(400).json({ erro: "Evento inválido." });
       return;
     }
 
@@ -1498,7 +1102,7 @@ export const registrarMetricaLanding = onRequest(
         ]);
 
         if (eventoSnap.exists) {
-          return {duplicado: true};
+          return { duplicado: true };
         }
 
         const incremento = admin.firestore.FieldValue.increment(1);
@@ -1509,8 +1113,8 @@ export const registrarMetricaLanding = onRequest(
 
         if (evento === "visita") {
           dadosDia.visitas = incremento;
-          dadosDia.origens = {[origem]: incremento};
-          dadosDia.dispositivos = {[dispositivo]: incremento};
+          dadosDia.origens = { [origem]: incremento };
+          dadosDia.dispositivos = { [dispositivo]: incremento };
 
           if (!visitanteSnap.exists) {
             dadosDia.visitantesUnicos = incremento;
@@ -1523,24 +1127,22 @@ export const registrarMetricaLanding = onRequest(
           dadosDia.cliquesDownload = incremento;
         }
 
-        transacao.set(diaRef, dadosDia, {merge: true});
+        transacao.set(diaRef, dadosDia, { merge: true });
         transacao.create(eventoRef, {
           criadoEm: admin.firestore.FieldValue.serverTimestamp(),
           data,
           evento,
         });
-        return {duplicado: false};
+        return { duplicado: false };
       });
 
-      res.status(200).json({ok: true, ...resultado});
+      res.status(200).json({ ok: true, ...resultado });
     } catch (error) {
       console.error("Erro ao registrar métrica da landing page:", error);
-      res.status(500).json({erro: "Não foi possível registrar a métrica."});
+      res.status(500).json({ erro: "Não foi possível registrar a métrica." });
     }
   },
 );
-
-
 
 // =========================================================================
 // 🧭 TRAJETO COMPLETO COMPACTADO PARA O APP
@@ -1579,20 +1181,12 @@ function cmbExtrairPontoTrajeto(
   const latitude = cmbNumeroSeguro(dados?.latitude ?? dados?.lat);
   const longitude = cmbNumeroSeguro(dados?.longitude ?? dados?.lng);
 
-  if (
-    latitude === null ||
-    longitude === null ||
-    latitude === 0 ||
-    longitude === 0
-  ) {
+  if (latitude === null || longitude === null || latitude === 0 || longitude === 0) {
     return null;
   }
 
   const criadoEmMs = cmbDataMsTrajeto(
-    dados?.[campoData] ??
-      dados?.criado_em ??
-      dados?.criadoEm ??
-      dados?.timestamp,
+    dados?.[campoData] ?? dados?.criado_em ?? dados?.criadoEm ?? dados?.timestamp,
   );
 
   return { latitude, longitude, criadoEmMs };
@@ -1609,8 +1203,7 @@ function cmbDistanciaTrajetoKm(
   const lat2 = (b.latitude * Math.PI) / 180;
 
   const valor =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
 
   return raioTerraKm * 2 * Math.atan2(Math.sqrt(valor), Math.sqrt(1 - valor));
 }
@@ -1657,11 +1250,7 @@ function cmbSimplificarRdp(
   let indiceMaior = 0;
 
   for (let i = 1; i < pontos.length - 1; i += 1) {
-    const distancia = cmbDistanciaPontoSegmentoKm(
-      pontos[i],
-      primeiro,
-      ultimo,
-    );
+    const distancia = cmbDistanciaPontoSegmentoKm(pontos[i], primeiro, ultimo);
 
     if (distancia > maiorDistancia) {
       maiorDistancia = distancia;
@@ -1673,14 +1262,8 @@ function cmbSimplificarRdp(
     return [primeiro, ultimo];
   }
 
-  const esquerda = cmbSimplificarRdp(
-    pontos.slice(0, indiceMaior + 1),
-    toleranciaKm,
-  );
-  const direita = cmbSimplificarRdp(
-    pontos.slice(indiceMaior),
-    toleranciaKm,
-  );
+  const esquerda = cmbSimplificarRdp(pontos.slice(0, indiceMaior + 1), toleranciaKm);
+  const direita = cmbSimplificarRdp(pontos.slice(indiceMaior), toleranciaKm);
 
   return [...esquerda.slice(0, -1), ...direita];
 }
@@ -1747,10 +1330,7 @@ async function cmbBuscarPontosPaginados({
   inicioViagemMs: number;
   limiteDocumentos: number;
 }) {
-  const referencia = db
-    .collection("rastreamento")
-    .doc(barcoId)
-    .collection("pontos");
+  const referencia = db.collection("rastreamento").doc(barcoId).collection("pontos");
 
   const pontos: CmbPontoTrajetoCompacto[] = [];
   let cursor: any = null;
@@ -1761,9 +1341,7 @@ async function cmbBuscarPontosPaginados({
     : Date.now() - 10 * 24 * 60 * 60 * 1000;
 
   while (pontos.length < limiteDocumentos && paginas < 80) {
-    let consulta: any = referencia
-      .orderBy(campoData, "desc")
-      .limit(tamanhoPagina);
+    let consulta: any = referencia.orderBy(campoData, "desc").limit(tamanhoPagina);
 
     if (cursor) consulta = consulta.startAfter(cursor);
 
@@ -1802,17 +1380,13 @@ function cmbSelecionarViagemAtual({
   inicioViagemMs: number;
   origemReferencia: { latitude: number; longitude: number } | null;
 }) {
-  const ordenados = [...pontos].sort(
-    (a, b) => a.criadoEmMs - b.criadoEmMs,
-  );
+  const ordenados = [...pontos].sort((a, b) => a.criadoEmMs - b.criadoEmMs);
 
   if (ordenados.length <= 2) return ordenados;
 
   if (inicioViagemMs) {
     const filtrados = ordenados.filter(
-      (ponto) =>
-        !ponto.criadoEmMs ||
-        ponto.criadoEmMs >= inicioViagemMs - 30 * 60 * 1000,
+      (ponto) => !ponto.criadoEmMs || ponto.criadoEmMs >= inicioViagemMs - 30 * 60 * 1000,
     );
 
     if (filtrados.length > 1) return filtrados;
@@ -1825,11 +1399,7 @@ function cmbSelecionarViagemAtual({
     for (let i = ordenados.length - 2; i >= 0; i -= 1) {
       const ponto = ordenados[i];
 
-      if (
-        ultimoMs &&
-        ponto.criadoEmMs &&
-        ultimoMs - ponto.criadoEmMs < 30 * 60 * 1000
-      ) {
+      if (ultimoMs && ponto.criadoEmMs && ultimoMs - ponto.criadoEmMs < 30 * 60 * 1000) {
         continue;
       }
 
@@ -1909,8 +1479,7 @@ export const obterTrajetoCompletoEmbarcacao = onRequest(
         if (cacheSnapshot.exists) {
           const cache = cacheSnapshot.data() || {};
           const atualizadoEmMs = Number(cache.atualizadoEmMs || 0);
-          const mesmoInicio =
-            Number(cache.inicioViagemMs || 0) === inicioViagemMs;
+          const mesmoInicio = Number(cache.inicioViagemMs || 0) === inicioViagemMs;
           const pontosCache = Array.isArray(cache.pontos) ? cache.pontos : [];
 
           if (
@@ -2001,9 +1570,6 @@ export const obterTrajetoCompletoEmbarcacao = onRequest(
     }
   },
 );
-
-
-
 
 // =====================================================
 // CMB — TRAJETO UNIVERSAL PARA TODAS AS EMBARCAÇÕES
@@ -2159,8 +1725,7 @@ function cmbUniversalDistanciaKm(
   const lat1 = (a.latitude * Math.PI) / 180;
   const lat2 = (b.latitude * Math.PI) / 180;
   const valor =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
   return raio * 2 * Math.atan2(Math.sqrt(valor), Math.sqrt(1 - valor));
 }
 
@@ -2203,11 +1768,7 @@ function cmbUniversalRdp(
   let indiceMaior = 0;
 
   for (let indice = 1; indice < pontos.length - 1; indice += 1) {
-    const distancia = cmbUniversalDistanciaSegmentoKm(
-      pontos[indice],
-      primeiro,
-      ultimo,
-    );
+    const distancia = cmbUniversalDistanciaSegmentoKm(pontos[indice], primeiro, ultimo);
 
     if (distancia > maiorDistancia) {
       maiorDistancia = distancia;
@@ -2217,10 +1778,7 @@ function cmbUniversalRdp(
 
   if (maiorDistancia <= toleranciaKm) return [primeiro, ultimo];
 
-  const esquerda = cmbUniversalRdp(
-    pontos.slice(0, indiceMaior + 1),
-    toleranciaKm,
-  );
+  const esquerda = cmbUniversalRdp(pontos.slice(0, indiceMaior + 1), toleranciaKm);
   const direita = cmbUniversalRdp(pontos.slice(indiceMaior), toleranciaKm);
 
   return [...esquerda.slice(0, -1), ...direita];
@@ -2250,8 +1808,7 @@ function cmbUniversalSelecionarViagem({
   if (inicioViagemMs > 0) {
     const filtrados = ordenados.filter(
       (ponto) =>
-        !ponto.criadoEmMs ||
-        ponto.criadoEmMs >= inicioViagemMs - 2 * 60 * 60 * 1000,
+        !ponto.criadoEmMs || ponto.criadoEmMs >= inicioViagemMs - 2 * 60 * 60 * 1000,
     );
     if (filtrados.length > 1) return filtrados;
   }
@@ -2263,11 +1820,7 @@ function cmbUniversalSelecionarViagem({
 
     for (let indice = 0; indice < ordenados.length - 1; indice += 1) {
       const ponto = ordenados[indice];
-      if (
-        ultimoMs &&
-        ponto.criadoEmMs &&
-        ultimoMs - ponto.criadoEmMs < 20 * 60 * 1000
-      ) {
+      if (ultimoMs && ponto.criadoEmMs && ultimoMs - ponto.criadoEmMs < 20 * 60 * 1000) {
         continue;
       }
 
@@ -2297,10 +1850,7 @@ function cmbUniversalSelecionarViagem({
   return ordenados.slice(indiceAposPausa);
 }
 
-function cmbUniversalCompactar(
-  pontosOriginais: CmbUniversalPonto[],
-  limite = 400,
-) {
+function cmbUniversalCompactar(pontosOriginais: CmbUniversalPonto[], limite = 400) {
   if (pontosOriginais.length <= 2) return pontosOriginais;
 
   const filtrados: CmbUniversalPonto[] = [pontosOriginais[0]];
@@ -2355,10 +1905,7 @@ async function cmbUniversalLerColecaoDireta({
   inicioViagemMs: number;
   limiteDocumentos: number;
 }) {
-  const referencia = db
-    .collection("rastreamento")
-    .doc(parentId)
-    .collection("pontos");
+  const referencia = db.collection("rastreamento").doc(parentId).collection("pontos");
 
   const pontos: CmbUniversalPonto[] = [];
   let cursor: any = null;
@@ -2382,11 +1929,7 @@ async function cmbUniversalLerColecaoDireta({
     let maisAntigoPagina = Number.POSITIVE_INFINITY;
 
     for (const documento of snapshot.docs) {
-      const ponto = cmbUniversalExtrairPonto(
-        documento.data(),
-        documento.id,
-        ordem,
-      );
+      const ponto = cmbUniversalExtrairPonto(documento.data(), documento.id, ordem);
       ordem += 1;
       if (!ponto) continue;
       pontos.push(ponto);
@@ -2498,16 +2041,15 @@ export const obterTrajetoUniversalEmbarcacao = onRequest(
           : null;
 
       const chaveCache = cmbUniversalNormalizarId(aliases[0]);
-      const cacheRef = db.collection("trajetos_compactados").doc(
-        `universal_${chaveCache}`,
-      );
+      const cacheRef = db
+        .collection("trajetos_compactados")
+        .doc(`universal_${chaveCache}`);
       const cacheSnapshot = await cacheRef.get();
 
       if (cacheSnapshot.exists) {
         const cache = cacheSnapshot.data() || {};
         const pontosCache = Array.isArray(cache.pontos) ? cache.pontos : [];
-        const mesmoInicio =
-          Number(cache.inicioViagemMs || 0) === inicioViagemMs;
+        const mesmoInicio = Number(cache.inicioViagemMs || 0) === inicioViagemMs;
         const atualizadoEmMs = Number(cache.atualizadoEmMs || 0);
 
         if (
@@ -2528,21 +2070,17 @@ export const obterTrajetoUniversalEmbarcacao = onRequest(
       }
 
       const parents = new Set<string>(aliases);
-      const encontradosCampo = await cmbUniversalDescobrirParentsPorCampos(
-        aliases,
-      );
+      const encontradosCampo = await cmbUniversalDescobrirParentsPorCampos(aliases);
       encontradosCampo.forEach((id) => parents.add(id));
       const encontradosNome = await cmbUniversalDescobrirParentsPorNome(aliases);
       encontradosNome.forEach((id) => parents.add(id));
 
       const parentsTestados: string[] = [];
-      let melhor:
-        | {
-            parentId: string;
-            pontos: CmbUniversalPonto[];
-            viagem: CmbUniversalPonto[];
-          }
-        | null = null;
+      let melhor: {
+        parentId: string;
+        pontos: CmbUniversalPonto[];
+        viagem: CmbUniversalPonto[];
+      } | null = null;
 
       for (const parentId of parents) {
         parentsTestados.push(parentId);
@@ -2641,8 +2179,6 @@ export const obterTrajetoUniversalEmbarcacao = onRequest(
   },
 );
 
-
-
 // =========================================================================
 // CMB — HISTÓRICO AUTOMÁTICO DOS RASTREADORES NOVOS
 //
@@ -2704,19 +2240,14 @@ function cmbHistoricoExtrairPosicao(
     dados.atualizadoEm ??
     dados.updatedAt;
 
-  const dataMs =
-    cmbUniversalDataMs(dataOriginal) ||
-    fallbackMs;
+  const dataMs = cmbUniversalDataMs(dataOriginal) || fallbackMs;
 
   return {
     latitude,
     longitude,
     velocidade:
       cmbUniversalNumero(
-        posicao?.velocidade ??
-          posicao?.speed ??
-          dados.velocidade ??
-          dados.vel,
+        posicao?.velocidade ?? posicao?.speed ?? dados.velocidade ?? dados.vel,
       ) ?? 0,
     direcao:
       cmbUniversalNumero(
@@ -2726,11 +2257,7 @@ function cmbHistoricoExtrairPosicao(
           dados.direcao ??
           dados.rumo,
       ) ?? 0,
-    satelites:
-      cmbUniversalNumero(
-        posicao?.satelites ??
-          dados.satelites,
-      ) ?? 0,
+    satelites: cmbUniversalNumero(posicao?.satelites ?? dados.satelites) ?? 0,
     dataMs,
     dataOriginal,
   };
@@ -2753,9 +2280,7 @@ function cmbHistoricoAtualizarPontosCache(
   dadosCache: Record<string, any>,
   pontoNovo: CmbHistoricoPosicaoEmbarcacao,
 ) {
-  const pontosOriginais = Array.isArray(dadosCache.pontos)
-    ? dadosCache.pontos
-    : [];
+  const pontosOriginais = Array.isArray(dadosCache.pontos) ? dadosCache.pontos : [];
 
   if (pontosOriginais.length < 2) {
     return null;
@@ -2763,19 +2288,10 @@ function cmbHistoricoAtualizarPontosCache(
 
   const pontosValidos: CmbUniversalPonto[] = pontosOriginais
     .map((ponto: any, ordem: number) => {
-      const latitude = cmbUniversalNumero(
-        ponto?.latitude ?? ponto?.lat,
-      );
-      const longitude = cmbUniversalNumero(
-        ponto?.longitude ?? ponto?.lng ?? ponto?.lon,
-      );
+      const latitude = cmbUniversalNumero(ponto?.latitude ?? ponto?.lat);
+      const longitude = cmbUniversalNumero(ponto?.longitude ?? ponto?.lng ?? ponto?.lon);
 
-      if (
-        latitude === null ||
-        longitude === null ||
-        latitude === 0 ||
-        longitude === 0
-      ) {
+      if (latitude === null || longitude === null || latitude === 0 || longitude === 0) {
         return null;
       }
 
@@ -2784,17 +2300,13 @@ function cmbHistoricoAtualizarPontosCache(
         longitude,
         criadoEmMs:
           cmbUniversalDataMs(
-            ponto?.criadoEmMs ??
-              ponto?.criado_em ??
-              ponto?.criadoEm ??
-              ponto?.timestamp,
+            ponto?.criadoEmMs ?? ponto?.criado_em ?? ponto?.criadoEm ?? ponto?.timestamp,
           ) || ordem,
         ordem,
       };
     })
     .filter(
-      (ponto: CmbUniversalPonto | null):
-        ponto is CmbUniversalPonto => ponto !== null,
+      (ponto: CmbUniversalPonto | null): ponto is CmbUniversalPonto => ponto !== null,
     );
 
   if (pontosValidos.length < 2) {
@@ -2802,10 +2314,7 @@ function cmbHistoricoAtualizarPontosCache(
   }
 
   const ultimo = pontosValidos[pontosValidos.length - 1];
-  const distanciaUltimoKm = cmbUniversalDistanciaKm(
-    ultimo,
-    pontoNovo,
-  );
+  const distanciaUltimoKm = cmbUniversalDistanciaKm(ultimo, pontoNovo);
 
   if (
     distanciaUltimoKm < 0.004 &&
@@ -2824,289 +2333,218 @@ function cmbHistoricoAtualizarPontosCache(
     },
   ];
 
-  return cmbUniversalCompactar(
-    cmbUniversalOrdenar(comNovoPonto),
-    400,
-  ).map((ponto) => ({
+  return cmbUniversalCompactar(cmbUniversalOrdenar(comNovoPonto), 400).map((ponto) => ({
     latitude: ponto.latitude,
     longitude: ponto.longitude,
     criadoEmMs: ponto.criadoEmMs,
   }));
 }
 
-export const registrarHistoricoAutomaticoGps =
-  onDocumentWritten(
-    {
-      region: REGIAO,
-      document: "embarcacoes/{barcoId}",
-      maxInstances: 50,
-    },
-    async (event) => {
-      const depois = event.data?.after;
+export const registrarHistoricoAutomaticoGps = onDocumentWritten(
+  {
+    region: REGIAO,
+    document: "embarcacoes/{barcoId}",
+    maxInstances: 50,
+  },
+  async (event) => {
+    const depois = event.data?.after;
 
-      if (!depois?.exists) {
-        return;
-      }
+    if (!depois?.exists) {
+      return;
+    }
 
-      const barcoId = texto(event.params.barcoId);
+    const barcoId = texto(event.params.barcoId);
 
-      if (
-        !barcoId ||
-        barcoId.length > 150 ||
-        barcoId.includes("/")
-      ) {
-        console.log(
-          "Histórico GPS ignorado: barcoId inválido.",
+    if (!barcoId || barcoId.length > 150 || barcoId.includes("/")) {
+      console.log("Histórico GPS ignorado: barcoId inválido.", barcoId);
+      return;
+    }
+
+    const eventoMs = cmbUniversalDataMs((event as any).time) || Date.now();
+    const dadosDepois = (depois.data() || {}) as Record<string, any>;
+    const dadosAntes = event.data?.before.exists
+      ? ((event.data.before.data() || {}) as Record<string, any>)
+      : undefined;
+
+    const pontoDepois = cmbHistoricoExtrairPosicao(dadosDepois, eventoMs);
+    const pontoAntes = cmbHistoricoExtrairPosicao(dadosAntes, eventoMs);
+
+    if (!pontoDepois) {
+      return;
+    }
+
+    // Alterações administrativas, de Wi-Fi ou de configuração não devem
+    // criar pontos repetidos quando a posição oficial não mudou.
+    if (cmbHistoricoMesmoPonto(pontoAntes, pontoDepois)) {
+      return;
+    }
+
+    const distanciaAnteriorKm = pontoAntes
+      ? cmbUniversalDistanciaKm(pontoAntes, pontoDepois)
+      : Number.POSITIVE_INFINITY;
+    const intervaloAnteriorMs = pontoAntes
+      ? Math.abs(pontoDepois.dataMs - pontoAntes.dataMs)
+      : Number.POSITIVE_INFINITY;
+
+    const eventoId = texto((event as any).id);
+    const hashPonto = createHash("sha256")
+      .update(
+        [
           barcoId,
-        );
+          pontoDepois.latitude.toFixed(7),
+          pontoDepois.longitude.toFixed(7),
+          String(pontoDepois.dataMs),
+          eventoId,
+        ].join("|"),
+      )
+      .digest("hex")
+      .slice(0, 24);
+    const pontoId = `P_${pontoDepois.dataMs}_${hashPonto}`;
+
+    const rastreamentoRef = db.collection("rastreamento").doc(barcoId);
+    const pontoRef = rastreamentoRef.collection("pontos").doc(pontoId);
+    const criadoEm = admin.firestore.Timestamp.fromMillis(pontoDepois.dataMs);
+    const agoraServidor = admin.firestore.FieldValue.serverTimestamp();
+
+    const cacheDiretoRef = db.collection("trajetos_compactados").doc(barcoId);
+    const cacheUniversalRef = db
+      .collection("trajetos_compactados")
+      .doc(`universal_${cmbUniversalNormalizarId(barcoId)}`);
+
+    const [rastreamentoSnap, cacheDiretoSnap, cacheUniversalSnap] = await Promise.all([
+      rastreamentoRef.get(),
+      cacheDiretoRef.get(),
+      cacheUniversalRef.get(),
+    ]);
+
+    // Quando o barco estiver parado, preserva um ponto de referência a cada
+    // cinco minutos. O primeiro ponto sempre é criado, mesmo sem deslocamento.
+    if (
+      distanciaAnteriorKm < 0.008 &&
+      intervaloAnteriorMs > 0 &&
+      intervaloAnteriorMs < 5 * 60 * 1000 &&
+      rastreamentoSnap.exists
+    ) {
+      const ultimoPontoMs = cmbUniversalDataMs(rastreamentoSnap.data()?.ultimoPontoEm);
+
+      if (ultimoPontoMs > 0 && pontoDepois.dataMs - ultimoPontoMs < 5 * 60 * 1000) {
         return;
       }
+    }
 
-      const eventoMs =
-        cmbUniversalDataMs((event as any).time) ||
-        Date.now();
-      const dadosDepois =
-        (depois.data() || {}) as Record<string, any>;
-      const dadosAntes = event.data?.before.exists
-        ? ((event.data.before.data() || {}) as Record<string, any>)
-        : undefined;
+    const batch = db.batch();
 
-      const pontoDepois = cmbHistoricoExtrairPosicao(
-        dadosDepois,
-        eventoMs,
-      );
-      const pontoAntes = cmbHistoricoExtrairPosicao(
-        dadosAntes,
-        eventoMs,
-      );
-
-      if (!pontoDepois) {
-        return;
-      }
-
-      // Alterações administrativas, de Wi-Fi ou de configuração não devem
-      // criar pontos repetidos quando a posição oficial não mudou.
-      if (cmbHistoricoMesmoPonto(pontoAntes, pontoDepois)) {
-        return;
-      }
-
-      const distanciaAnteriorKm = pontoAntes
-        ? cmbUniversalDistanciaKm(
-            pontoAntes,
-            pontoDepois,
-          )
-        : Number.POSITIVE_INFINITY;
-      const intervaloAnteriorMs = pontoAntes
-        ? Math.abs(
-            pontoDepois.dataMs - pontoAntes.dataMs,
-          )
-        : Number.POSITIVE_INFINITY;
-
-      const eventoId = texto((event as any).id);
-      const hashPonto = createHash("sha256")
-        .update(
-          [
-            barcoId,
-            pontoDepois.latitude.toFixed(7),
-            pontoDepois.longitude.toFixed(7),
-            String(pontoDepois.dataMs),
-            eventoId,
-          ].join("|"),
-        )
-        .digest("hex")
-        .slice(0, 24);
-      const pontoId =
-        `P_${pontoDepois.dataMs}_${hashPonto}`;
-
-      const rastreamentoRef = db
-        .collection("rastreamento")
-        .doc(barcoId);
-      const pontoRef = rastreamentoRef
-        .collection("pontos")
-        .doc(pontoId);
-      const criadoEm =
-        admin.firestore.Timestamp.fromMillis(
-          pontoDepois.dataMs,
-        );
-      const agoraServidor =
-        admin.firestore.FieldValue.serverTimestamp();
-
-      const cacheDiretoRef = db
-        .collection("trajetos_compactados")
-        .doc(barcoId);
-      const cacheUniversalRef = db
-        .collection("trajetos_compactados")
-        .doc(
-          `universal_${cmbUniversalNormalizarId(barcoId)}`,
-        );
-
-      const [
-        rastreamentoSnap,
-        cacheDiretoSnap,
-        cacheUniversalSnap,
-      ] = await Promise.all([
-        rastreamentoRef.get(),
-        cacheDiretoRef.get(),
-        cacheUniversalRef.get(),
-      ]);
-
-      // Quando o barco estiver parado, preserva um ponto de referência a cada
-      // cinco minutos. O primeiro ponto sempre é criado, mesmo sem deslocamento.
-      if (
-        distanciaAnteriorKm < 0.008 &&
-        intervaloAnteriorMs > 0 &&
-        intervaloAnteriorMs < 5 * 60 * 1000 &&
-        rastreamentoSnap.exists
-      ) {
-        const ultimoPontoMs = cmbUniversalDataMs(
-          rastreamentoSnap.data()?.ultimoPontoEm,
-        );
-
-        if (
-          ultimoPontoMs > 0 &&
-          pontoDepois.dataMs - ultimoPontoMs < 5 * 60 * 1000
-        ) {
-          return;
-        }
-      }
-
-      const batch = db.batch();
-
-      // Cria também o documento-pai. Assim o ID passa a aparecer normalmente
-      // na coleção rastreamento no Console do Firebase.
-      batch.set(
-        rastreamentoRef,
-        {
-          barcoId,
-          barco_id: barcoId,
-          nome:
-            texto(
-              dadosDepois.nome ||
-                dadosDepois.nome_barco ||
-                dadosDepois.nomeBarco ||
-                dadosDepois.apelido,
-            ) || barcoId,
-          deviceId: texto(
-            dadosDepois.deviceId ||
-              dadosDepois.rastreadorDeviceId,
-          ),
-          origemHistorico:
-            "CLOUD_FUNCTION_EMBARCACOES",
-          ativo: dadosDepois.ativo !== false,
-          ultimoPontoId: pontoId,
-          ultimoPontoEm: criadoEm,
-          ultima_posicao: {
-            latitude: pontoDepois.latitude,
-            longitude: pontoDepois.longitude,
-          },
-          atualizadoEm: agoraServidor,
-        },
-        { merge: true },
-      );
-
-      batch.set(
-        pontoRef,
-        {
-          barco_id: barcoId,
-          barcoId,
-          embarcacaoId: barcoId,
+    // Cria também o documento-pai. Assim o ID passa a aparecer normalmente
+    // na coleção rastreamento no Console do Firebase.
+    batch.set(
+      rastreamentoRef,
+      {
+        barcoId,
+        barco_id: barcoId,
+        nome:
+          texto(
+            dadosDepois.nome ||
+              dadosDepois.nome_barco ||
+              dadosDepois.nomeBarco ||
+              dadosDepois.apelido,
+          ) || barcoId,
+        deviceId: texto(dadosDepois.deviceId || dadosDepois.rastreadorDeviceId),
+        origemHistorico: "CLOUD_FUNCTION_EMBARCACOES",
+        ativo: dadosDepois.ativo !== false,
+        ultimoPontoId: pontoId,
+        ultimoPontoEm: criadoEm,
+        ultima_posicao: {
           latitude: pontoDepois.latitude,
           longitude: pontoDepois.longitude,
-          velocidade: pontoDepois.velocidade,
-          direcao: pontoDepois.direcao,
-          satelites: Math.round(
-            pontoDepois.satelites,
-          ),
-          criado_em: criadoEm,
-          criadoEm,
-          timestamp: criadoEm,
-          dataOrigem:
-            pontoDepois.dataOriginal ?? null,
-          origem:
-            "CLOUD_FUNCTION_EMBARCACOES",
-          deviceId: texto(
-            dadosDepois.deviceId ||
-              dadosDepois.rastreadorDeviceId,
-          ),
-          eventoId: eventoId || null,
-          gravadoEm: agoraServidor,
         },
-        { merge: false },
-      );
+        atualizadoEm: agoraServidor,
+      },
+      { merge: true },
+    );
 
-      const caches = [
-        {
-          ref: cacheDiretoRef,
-          snap: cacheDiretoSnap,
-        },
-        {
-          ref: cacheUniversalRef,
-          snap: cacheUniversalSnap,
-        },
-      ];
+    batch.set(
+      pontoRef,
+      {
+        barco_id: barcoId,
+        barcoId,
+        embarcacaoId: barcoId,
+        latitude: pontoDepois.latitude,
+        longitude: pontoDepois.longitude,
+        velocidade: pontoDepois.velocidade,
+        direcao: pontoDepois.direcao,
+        satelites: Math.round(pontoDepois.satelites),
+        criado_em: criadoEm,
+        criadoEm,
+        timestamp: criadoEm,
+        dataOrigem: pontoDepois.dataOriginal ?? null,
+        origem: "CLOUD_FUNCTION_EMBARCACOES",
+        deviceId: texto(dadosDepois.deviceId || dadosDepois.rastreadorDeviceId),
+        eventoId: eventoId || null,
+        gravadoEm: agoraServidor,
+      },
+      { merge: false },
+    );
 
-      for (const cache of caches) {
-        if (!cache.snap.exists) {
-          continue;
-        }
+    const caches = [
+      {
+        ref: cacheDiretoRef,
+        snap: cacheDiretoSnap,
+      },
+      {
+        ref: cacheUniversalRef,
+        snap: cacheUniversalSnap,
+      },
+    ];
 
-        const dadosCache =
-          (cache.snap.data() || {}) as Record<string, any>;
-        const pontosAtualizados =
-          cmbHistoricoAtualizarPontosCache(
-            dadosCache,
-            pontoDepois,
-          );
+    for (const cache of caches) {
+      if (!cache.snap.exists) {
+        continue;
+      }
 
-        if (!pontosAtualizados) {
-          batch.set(
-            cache.ref,
-            {
-              atualizadoEmMs: 0,
-              invalidadoEm: agoraServidor,
-              motivoInvalidacao:
-                "novo_ponto_historico",
-            },
-            { merge: true },
-          );
-          continue;
-        }
+      const dadosCache = (cache.snap.data() || {}) as Record<string, any>;
+      const pontosAtualizados = cmbHistoricoAtualizarPontosCache(dadosCache, pontoDepois);
 
+      if (!pontosAtualizados) {
         batch.set(
           cache.ref,
           {
-            pontos: pontosAtualizados,
-            atualizadoEmMs: Date.now(),
-            atualizadoEm: agoraServidor,
-            ultimoPontoEm: criadoEm,
-            totalCompactado:
-              pontosAtualizados.length,
-            totalOriginal:
-              Math.max(
-                (Number(dadosCache.totalOriginal) || 0) + 1,
-                pontosAtualizados.length,
-              ),
-            cacheIncremental: true,
+            atualizadoEmMs: 0,
+            invalidadoEm: agoraServidor,
+            motivoInvalidacao: "novo_ponto_historico",
           },
           { merge: true },
         );
+        continue;
       }
 
-      await batch.commit();
-
-      console.log(
-        "Histórico GPS gravado.",
+      batch.set(
+        cache.ref,
         {
-          barcoId,
-          pontoId,
-          latitude: pontoDepois.latitude,
-          longitude: pontoDepois.longitude,
+          pontos: pontosAtualizados,
+          atualizadoEmMs: Date.now(),
+          atualizadoEm: agoraServidor,
+          ultimoPontoEm: criadoEm,
+          totalCompactado: pontosAtualizados.length,
+          totalOriginal: Math.max(
+            (Number(dadosCache.totalOriginal) || 0) + 1,
+            pontosAtualizados.length,
+          ),
+          cacheIncremental: true,
         },
+        { merge: true },
       );
-    },
-  );
+    }
 
+    await batch.commit();
 
+    console.log("Histórico GPS gravado.", {
+      barcoId,
+      pontoId,
+      latitude: pontoDepois.latitude,
+      longitude: pontoDepois.longitude,
+    });
+  },
+);
 
 // =========================================================================
 // CMB — TRAJETO INTELIGENTE V3
@@ -3121,9 +2559,7 @@ type CmbV3CandidatoTrajeto = {
   idDireto: boolean;
 };
 
-function cmbV3RemoverPontosIsolados(
-  pontos: CmbUniversalPonto[],
-) {
+function cmbV3RemoverPontosIsolados(pontos: CmbUniversalPonto[]) {
   if (pontos.length < 3) return pontos;
 
   const resultado: CmbUniversalPonto[] = [pontos[0]];
@@ -3133,24 +2569,15 @@ function cmbV3RemoverPontosIsolados(
     const atual = pontos[indice];
     const proximo = pontos[indice + 1];
 
-    const distanciaAnteriorAtual =
-      cmbUniversalDistanciaKm(anterior, atual);
-    const distanciaAtualProximo =
-      cmbUniversalDistanciaKm(atual, proximo);
-    const distanciaAnteriorProximo =
-      cmbUniversalDistanciaKm(anterior, proximo);
+    const distanciaAnteriorAtual = cmbUniversalDistanciaKm(anterior, atual);
+    const distanciaAtualProximo = cmbUniversalDistanciaKm(atual, proximo);
+    const distanciaAnteriorProximo = cmbUniversalDistanciaKm(anterior, proximo);
 
     const isolado =
       distanciaAnteriorAtual > 3 &&
       distanciaAtualProximo > 3 &&
       distanciaAnteriorProximo <
-        Math.min(
-          2,
-          Math.max(
-            distanciaAnteriorAtual,
-            distanciaAtualProximo,
-          ) * 0.25,
-        );
+        Math.min(2, Math.max(distanciaAnteriorAtual, distanciaAtualProximo) * 0.25);
 
     if (!isolado) {
       resultado.push(atual);
@@ -3161,12 +2588,8 @@ function cmbV3RemoverPontosIsolados(
   return resultado;
 }
 
-function cmbV3SepararTrechos(
-  pontosOriginais: CmbUniversalPonto[],
-) {
-  const pontos = cmbV3RemoverPontosIsolados(
-    cmbUniversalOrdenar(pontosOriginais),
-  );
+function cmbV3SepararTrechos(pontosOriginais: CmbUniversalPonto[]) {
+  const pontos = cmbV3RemoverPontosIsolados(cmbUniversalOrdenar(pontosOriginais));
 
   if (pontos.length < 2) return [];
 
@@ -3176,36 +2599,21 @@ function cmbV3SepararTrechos(
   for (let indice = 1; indice < pontos.length; indice += 1) {
     const anterior = pontos[indice - 1];
     const atual = pontos[indice];
-    const distanciaKm =
-      cmbUniversalDistanciaKm(anterior, atual);
+    const distanciaKm = cmbUniversalDistanciaKm(anterior, atual);
     const intervaloMs =
       anterior.criadoEmMs && atual.criadoEmMs
-        ? Math.max(
-            0,
-            atual.criadoEmMs - anterior.criadoEmMs,
-          )
+        ? Math.max(0, atual.criadoEmMs - anterior.criadoEmMs)
         : 0;
     const velocidadeCalculadaKmh =
-      intervaloMs > 0
-        ? distanciaKm / (intervaloMs / 3_600_000)
-        : 0;
+      intervaloMs > 0 ? distanciaKm / (intervaloMs / 3_600_000) : 0;
 
     const saltoImpossivel =
       distanciaKm > 35 ||
       (intervaloMs <= 0 && distanciaKm > 8) ||
-      (
-        intervaloMs > 0 &&
-        distanciaKm > 1 &&
-        velocidadeCalculadaKmh > 95
-      ) ||
-      (
-        intervaloMs > 0 &&
-        intervaloMs < 60_000 &&
-        distanciaKm > 2.5
-      );
+      (intervaloMs > 0 && distanciaKm > 1 && velocidadeCalculadaKmh > 95) ||
+      (intervaloMs > 0 && intervaloMs < 60_000 && distanciaKm > 2.5);
 
-    const novaViagem =
-      intervaloMs >= 8 * 60 * 60 * 1000;
+    const novaViagem = intervaloMs >= 8 * 60 * 60 * 1000;
 
     if (saltoImpossivel || novaViagem) {
       if (trechoAtual.length > 1) {
@@ -3234,12 +2642,8 @@ function cmbV3SelecionarTrechoAtual({
 }: {
   pontos: CmbUniversalPonto[];
   inicioViagemMs: number;
-  origemReferencia:
-    | {latitude: number; longitude: number}
-    | null;
-  posicaoAtual:
-    | {latitude: number; longitude: number}
-    | null;
+  origemReferencia: { latitude: number; longitude: number } | null;
+  posicaoAtual: { latitude: number; longitude: number } | null;
 }) {
   const viagemBase = cmbUniversalSelecionarViagem({
     pontos,
@@ -3290,21 +2694,12 @@ function cmbV3CandidatoMelhor(
       return novoPerto;
     }
 
-    if (
-      Math.abs(novo.ultimoMs - atual.ultimoMs) >
-      5 * 60 * 1000
-    ) {
+    if (Math.abs(novo.ultimoMs - atual.ultimoMs) > 5 * 60 * 1000) {
       return novo.ultimoMs > atual.ultimoMs;
     }
 
-    if (
-      Math.abs(
-        novo.distanciaAtualKm -
-        atual.distanciaAtualKm,
-      ) > 1
-    ) {
-      return novo.distanciaAtualKm <
-        atual.distanciaAtualKm;
+    if (Math.abs(novo.distanciaAtualKm - atual.distanciaAtualKm) > 1) {
+      return novo.distanciaAtualKm < atual.distanciaAtualKm;
     }
   } else if (novo.ultimoMs !== atual.ultimoMs) {
     return novo.ultimoMs > atual.ultimoMs;
@@ -3317,355 +2712,232 @@ function cmbV3CandidatoMelhor(
   return novo.viagem.length > atual.viagem.length;
 }
 
-export const obterTrajetoInteligenteEmbarcacao =
-  onRequest(
-    {
-      region: REGIAO,
-      cors: true,
-      timeoutSeconds: 300,
-      memory: "1GiB",
-      invoker: "public",
-    },
-    async (req, res) => {
-      try {
-        if (req.method !== "POST") {
-          res.status(405).json({
-            erro: "Use POST.",
-          });
-          return;
-        }
-
-        const corpo =
-          (req.body || {}) as Record<string, any>;
-        const aliases = cmbUniversalVariantesIds([
-          corpo.barcoId,
-          ...(Array.isArray(corpo.barcoIds)
-            ? corpo.barcoIds
-            : []),
-        ]);
-
-        if (aliases.length === 0) {
-          res.status(400).json({
-            erro:
-              "Identificador da embarcação obrigatório.",
-          });
-          return;
-        }
-
-        const inicioViagemMs = Math.max(
-          0,
-          Number(corpo.inicioViagemMs) || 0,
-        );
-        const origemLat = cmbUniversalNumero(
-          corpo.origemReferencia?.latitude ??
-            corpo.origemReferencia?.lat,
-        );
-        const origemLng = cmbUniversalNumero(
-          corpo.origemReferencia?.longitude ??
-            corpo.origemReferencia?.lng,
-        );
-        const origemReferencia =
-          origemLat !== null && origemLng !== null
-            ? {
-                latitude: origemLat,
-                longitude: origemLng,
-              }
-            : null;
-        const atualLat = cmbUniversalNumero(
-          corpo.posicaoAtual?.latitude ??
-            corpo.posicaoAtual?.lat,
-        );
-        const atualLng = cmbUniversalNumero(
-          corpo.posicaoAtual?.longitude ??
-            corpo.posicaoAtual?.lng,
-        );
-        const posicaoAtual =
-          atualLat !== null && atualLng !== null
-            ? {
-                latitude: atualLat,
-                longitude: atualLng,
-              }
-            : null;
-
-        const idOficialNormalizado =
-          cmbUniversalNormalizarId(
-            aliases[0],
-          );
-        const cacheRef = db
-          .collection("trajetos_compactados")
-          .doc(
-            `universal_${idOficialNormalizado}`,
-          );
-        const cacheSnapshot =
-          await cacheRef.get();
-
-        if (cacheSnapshot.exists) {
-          const cache =
-            (cacheSnapshot.data() || {}) as Record<
-              string,
-              any
-            >;
-          const pontosCache = Array.isArray(
-            cache.pontos,
-          )
-            ? cache.pontos
-            : [];
-          const mesmoInicio =
-            Number(cache.inicioViagemMs || 0) ===
-            inicioViagemMs;
-          const versao =
-            Number(cache.versao || 0);
-          const ultimoCache =
-            pontosCache[pontosCache.length - 1];
-          const distanciaCacheAtual =
-            posicaoAtual && ultimoCache
-              ? cmbUniversalDistanciaKm(
-                  {
-                    latitude:
-                      Number(
-                        ultimoCache.latitude,
-                      ),
-                    longitude:
-                      Number(
-                        ultimoCache.longitude,
-                      ),
-                  },
-                  posicaoAtual,
-                )
-              : 0;
-
-          if (
-            versao === 3 &&
-            mesmoInicio &&
-            pontosCache.length > 1 &&
-            (
-              !posicaoAtual ||
-              (
-                Number.isFinite(
-                  distanciaCacheAtual,
-                ) &&
-                distanciaCacheAtual <= 25
-              )
-            )
-          ) {
-            res.status(200).json({
-              pontos: pontosCache,
-              cache: true,
-              versao: 3,
-              barcoIdUsado: String(
-                cache.barcoIdUsado ||
-                  aliases[0],
-              ),
-              estrategia:
-                "cache_incremental_v3",
-              totalOriginal: Number(
-                cache.totalOriginal ||
-                  pontosCache.length,
-              ),
-            });
-            return;
-          }
-        }
-
-        const parents = new Set<string>(
-          aliases,
-        );
-        const encontradosCampo =
-          await cmbUniversalDescobrirParentsPorCampos(
-            aliases,
-          );
-        encontradosCampo.forEach((id) =>
-          parents.add(id),
-        );
-        const encontradosNome =
-          await cmbUniversalDescobrirParentsPorNome(
-            aliases,
-          );
-        encontradosNome.forEach((id) =>
-          parents.add(id),
-        );
-
-        const parentsTestados: string[] = [];
-        let melhor:
-          | CmbV3CandidatoTrajeto
-          | null = null;
-
-        for (const parentId of parents) {
-          parentsTestados.push(parentId);
-
-          let pontos =
-            await cmbUniversalLerColecaoDireta({
-              parentId,
-              inicioViagemMs,
-              limiteDocumentos: 30000,
-            });
-
-          if (
-            pontos.length <= 1 &&
-            inicioViagemMs > 0
-          ) {
-            pontos =
-              await cmbUniversalLerColecaoDireta({
-                parentId,
-                inicioViagemMs: 0,
-                limiteDocumentos: 30000,
-              });
-          }
-
-          if (pontos.length <= 1) {
-            continue;
-          }
-
-          const viagem =
-            cmbV3SelecionarTrechoAtual({
-              pontos,
-              inicioViagemMs,
-              origemReferencia,
-              posicaoAtual,
-            });
-
-          if (viagem.length <= 1) {
-            continue;
-          }
-
-          const ultimo =
-            viagem[viagem.length - 1];
-          const candidato: CmbV3CandidatoTrajeto =
-            {
-              parentId,
-              pontosLidos: pontos,
-              viagem,
-              ultimoMs:
-                Number(
-                  ultimo.criadoEmMs,
-                ) || 0,
-              distanciaAtualKm:
-                posicaoAtual
-                  ? cmbUniversalDistanciaKm(
-                      ultimo,
-                      posicaoAtual,
-                    )
-                  : Number.POSITIVE_INFINITY,
-              idDireto:
-                cmbUniversalNormalizarId(
-                  parentId,
-                ) === idOficialNormalizado,
-            };
-
-          if (
-            cmbV3CandidatoMelhor(
-              candidato,
-              melhor,
-              Boolean(posicaoAtual),
-            )
-          ) {
-            melhor = candidato;
-          }
-        }
-
-        if (!melhor) {
-          res.status(404).json({
-            erro:
-              "Nenhum trecho atual compatível foi localizado.",
-            aliasesTestados: aliases,
-            parentsTestados,
-          });
-          return;
-        }
-
-        const compactados =
-          cmbUniversalCompactar(
-            melhor.viagem,
-            180,
-          );
-
-        if (compactados.length <= 1) {
-          res.status(404).json({
-            erro:
-              "O trecho atual não possui deslocamento suficiente.",
-            barcoIdUsado: melhor.parentId,
-          });
-          return;
-        }
-
-        const respostaPontos =
-          compactados.map((ponto) => ({
-            latitude: ponto.latitude,
-            longitude: ponto.longitude,
-            criadoEmMs: ponto.criadoEmMs,
-          }));
-        const ultimoPonto =
-          compactados[
-            compactados.length - 1
-          ];
-
-        await cacheRef.set(
-          {
-            versao: 3,
-            barcoIdUsado:
-              melhor.parentId,
-            inicioViagemMs,
-            atualizadoEmMs: Date.now(),
-            atualizadoEm:
-              admin.firestore.FieldValue
-                .serverTimestamp(),
-            ultimoPontoMs:
-              Number(
-                ultimoPonto.criadoEmMs,
-              ) || 0,
-            totalOriginal:
-              melhor.viagem.length,
-            totalCompactado:
-              respostaPontos.length,
-            estrategia:
-              melhor.idDireto
-                ? "id_oficial_atual"
-                : encontradosCampo.includes(
-                      melhor.parentId,
-                    )
-                  ? "barco_id_do_ponto_atual"
-                  : "alias_mais_recente",
-            aliasesTestados: aliases,
-            parentsTestados,
-            pontos: respostaPontos,
-          },
-          {merge: true},
-        );
-
-        res.status(200).json({
-          pontos: respostaPontos,
-          cache: false,
-          versao: 3,
-          barcoIdUsado:
-            melhor.parentId,
-          estrategia:
-            melhor.idDireto
-              ? "id_oficial_atual"
-              : encontradosCampo.includes(
-                    melhor.parentId,
-                  )
-                ? "barco_id_do_ponto_atual"
-                : "alias_mais_recente",
-          totalOriginal:
-            melhor.viagem.length,
-          totalCompactado:
-            respostaPontos.length,
-          ultimoPontoMs:
-            Number(
-              ultimoPonto.criadoEmMs,
-            ) || 0,
-          distanciaAtualKm:
-            melhor.distanciaAtualKm,
+export const obterTrajetoInteligenteEmbarcacao = onRequest(
+  {
+    region: REGIAO,
+    cors: true,
+    timeoutSeconds: 300,
+    memory: "1GiB",
+    invoker: "public",
+  },
+  async (req, res) => {
+    try {
+      if (req.method !== "POST") {
+        res.status(405).json({
+          erro: "Use POST.",
         });
-      } catch (error) {
-        console.error(
-          "Erro no trajeto inteligente V3:",
-          error,
-        );
-        res.status(500).json({
-          erro:
-            "Não foi possível montar o trajeto inteligente.",
-        });
+        return;
       }
-    },
-  );
+
+      const corpo = (req.body || {}) as Record<string, any>;
+      const aliases = cmbUniversalVariantesIds([
+        corpo.barcoId,
+        ...(Array.isArray(corpo.barcoIds) ? corpo.barcoIds : []),
+      ]);
+
+      if (aliases.length === 0) {
+        res.status(400).json({
+          erro: "Identificador da embarcação obrigatório.",
+        });
+        return;
+      }
+
+      const inicioViagemMs = Math.max(0, Number(corpo.inicioViagemMs) || 0);
+      const origemLat = cmbUniversalNumero(
+        corpo.origemReferencia?.latitude ?? corpo.origemReferencia?.lat,
+      );
+      const origemLng = cmbUniversalNumero(
+        corpo.origemReferencia?.longitude ?? corpo.origemReferencia?.lng,
+      );
+      const origemReferencia =
+        origemLat !== null && origemLng !== null
+          ? {
+              latitude: origemLat,
+              longitude: origemLng,
+            }
+          : null;
+      const atualLat = cmbUniversalNumero(
+        corpo.posicaoAtual?.latitude ?? corpo.posicaoAtual?.lat,
+      );
+      const atualLng = cmbUniversalNumero(
+        corpo.posicaoAtual?.longitude ?? corpo.posicaoAtual?.lng,
+      );
+      const posicaoAtual =
+        atualLat !== null && atualLng !== null
+          ? {
+              latitude: atualLat,
+              longitude: atualLng,
+            }
+          : null;
+
+      const idOficialNormalizado = cmbUniversalNormalizarId(aliases[0]);
+      const cacheRef = db
+        .collection("trajetos_compactados")
+        .doc(`universal_${idOficialNormalizado}`);
+      const cacheSnapshot = await cacheRef.get();
+
+      if (cacheSnapshot.exists) {
+        const cache = (cacheSnapshot.data() || {}) as Record<string, any>;
+        const pontosCache = Array.isArray(cache.pontos) ? cache.pontos : [];
+        const mesmoInicio = Number(cache.inicioViagemMs || 0) === inicioViagemMs;
+        const versao = Number(cache.versao || 0);
+        const ultimoCache = pontosCache[pontosCache.length - 1];
+        const distanciaCacheAtual =
+          posicaoAtual && ultimoCache
+            ? cmbUniversalDistanciaKm(
+                {
+                  latitude: Number(ultimoCache.latitude),
+                  longitude: Number(ultimoCache.longitude),
+                },
+                posicaoAtual,
+              )
+            : 0;
+
+        if (
+          versao === 3 &&
+          mesmoInicio &&
+          pontosCache.length > 1 &&
+          (!posicaoAtual ||
+            (Number.isFinite(distanciaCacheAtual) && distanciaCacheAtual <= 25))
+        ) {
+          res.status(200).json({
+            pontos: pontosCache,
+            cache: true,
+            versao: 3,
+            barcoIdUsado: String(cache.barcoIdUsado || aliases[0]),
+            estrategia: "cache_incremental_v3",
+            totalOriginal: Number(cache.totalOriginal || pontosCache.length),
+          });
+          return;
+        }
+      }
+
+      const parents = new Set<string>(aliases);
+      const encontradosCampo = await cmbUniversalDescobrirParentsPorCampos(aliases);
+      encontradosCampo.forEach((id) => parents.add(id));
+      const encontradosNome = await cmbUniversalDescobrirParentsPorNome(aliases);
+      encontradosNome.forEach((id) => parents.add(id));
+
+      const parentsTestados: string[] = [];
+      let melhor: CmbV3CandidatoTrajeto | null = null;
+
+      for (const parentId of parents) {
+        parentsTestados.push(parentId);
+
+        let pontos = await cmbUniversalLerColecaoDireta({
+          parentId,
+          inicioViagemMs,
+          limiteDocumentos: 30000,
+        });
+
+        if (pontos.length <= 1 && inicioViagemMs > 0) {
+          pontos = await cmbUniversalLerColecaoDireta({
+            parentId,
+            inicioViagemMs: 0,
+            limiteDocumentos: 30000,
+          });
+        }
+
+        if (pontos.length <= 1) {
+          continue;
+        }
+
+        const viagem = cmbV3SelecionarTrechoAtual({
+          pontos,
+          inicioViagemMs,
+          origemReferencia,
+          posicaoAtual,
+        });
+
+        if (viagem.length <= 1) {
+          continue;
+        }
+
+        const ultimo = viagem[viagem.length - 1];
+        const candidato: CmbV3CandidatoTrajeto = {
+          parentId,
+          pontosLidos: pontos,
+          viagem,
+          ultimoMs: Number(ultimo.criadoEmMs) || 0,
+          distanciaAtualKm: posicaoAtual
+            ? cmbUniversalDistanciaKm(ultimo, posicaoAtual)
+            : Number.POSITIVE_INFINITY,
+          idDireto: cmbUniversalNormalizarId(parentId) === idOficialNormalizado,
+        };
+
+        if (cmbV3CandidatoMelhor(candidato, melhor, Boolean(posicaoAtual))) {
+          melhor = candidato;
+        }
+      }
+
+      if (!melhor) {
+        res.status(404).json({
+          erro: "Nenhum trecho atual compatível foi localizado.",
+          aliasesTestados: aliases,
+          parentsTestados,
+        });
+        return;
+      }
+
+      const compactados = cmbUniversalCompactar(melhor.viagem, 180);
+
+      if (compactados.length <= 1) {
+        res.status(404).json({
+          erro: "O trecho atual não possui deslocamento suficiente.",
+          barcoIdUsado: melhor.parentId,
+        });
+        return;
+      }
+
+      const respostaPontos = compactados.map((ponto) => ({
+        latitude: ponto.latitude,
+        longitude: ponto.longitude,
+        criadoEmMs: ponto.criadoEmMs,
+      }));
+      const ultimoPonto = compactados[compactados.length - 1];
+
+      await cacheRef.set(
+        {
+          versao: 3,
+          barcoIdUsado: melhor.parentId,
+          inicioViagemMs,
+          atualizadoEmMs: Date.now(),
+          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+          ultimoPontoMs: Number(ultimoPonto.criadoEmMs) || 0,
+          totalOriginal: melhor.viagem.length,
+          totalCompactado: respostaPontos.length,
+          estrategia: melhor.idDireto
+            ? "id_oficial_atual"
+            : encontradosCampo.includes(melhor.parentId)
+              ? "barco_id_do_ponto_atual"
+              : "alias_mais_recente",
+          aliasesTestados: aliases,
+          parentsTestados,
+          pontos: respostaPontos,
+        },
+        { merge: true },
+      );
+
+      res.status(200).json({
+        pontos: respostaPontos,
+        cache: false,
+        versao: 3,
+        barcoIdUsado: melhor.parentId,
+        estrategia: melhor.idDireto
+          ? "id_oficial_atual"
+          : encontradosCampo.includes(melhor.parentId)
+            ? "barco_id_do_ponto_atual"
+            : "alias_mais_recente",
+        totalOriginal: melhor.viagem.length,
+        totalCompactado: respostaPontos.length,
+        ultimoPontoMs: Number(ultimoPonto.criadoEmMs) || 0,
+        distanciaAtualKm: melhor.distanciaAtualKm,
+      });
+    } catch (error) {
+      console.error("Erro no trajeto inteligente V3:", error);
+      res.status(500).json({
+        erro: "Não foi possível montar o trajeto inteligente.",
+      });
+    }
+  },
+);

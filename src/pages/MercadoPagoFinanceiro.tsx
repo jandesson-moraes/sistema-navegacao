@@ -112,6 +112,20 @@ const URL_CRIAR_LINK_OAUTH =
   "https://us-central1-sistema-navegacao.cloudfunctions.net/criarLinkOAuthMercadoPago";
 const URL_CALLBACK_OAUTH =
   "https://us-central1-sistema-navegacao.cloudfunctions.net/mercadoPagoOAuthCallback";
+const URL_PIX_SPLIT_TESTE =
+  "https://us-central1-sistema-navegacao.cloudfunctions.net/gerarPixSplitTeste";
+
+type ResultadoSplitTeste = {
+  testeId: string;
+  pagamentoId: string;
+  status: string;
+  statusDetalhe: string;
+  liveMode: boolean;
+  valorTotal: number;
+  applicationFee: number;
+  valorPrevistoVendedorAntesTarifaMp: number;
+  aviso: string;
+};
 
 function formatarData(valor: any) {
   try {
@@ -185,6 +199,8 @@ export default function MercadoPagoFinanceiro() {
   const [linkGerado, setLinkGerado] = useState("");
   const [taxaPercentual, setTaxaPercentual] = useState("8");
   const [taxaFixa, setTaxaFixa] = useState("0");
+  const [resultadoSplitTeste, setResultadoSplitTeste] =
+    useState<ResultadoSplitTeste | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "embarcacoes"), (snapshot) => {
@@ -219,6 +235,7 @@ export default function MercadoPagoFinanceiro() {
     setTaxaPercentual(String(financeiro.taxaPlataformaPercentual ?? 8).replace(".", ","));
     setTaxaFixa(String(financeiro.taxaPlataformaValorFixo ?? 0).replace(".", ","));
     setLinkGerado("");
+    setResultadoSplitTeste(null);
   }, [selecionado?.id]);
 
   const barcosFiltrados = useMemo(() => {
@@ -356,6 +373,61 @@ export default function MercadoPagoFinanceiro() {
     }
   };
 
+  const executarTesteSplit = async () => {
+    if (!selecionado || selecionado.id !== "AGUIA_DOURADA") return;
+
+    const confirmou = await modal.confirmar({
+      tipo: "warning",
+      titulo: "Criar PIX técnico de R$ 1,00?",
+      mensagem:
+        "O PIX servirá apenas para verificar se a API aceita o split de R$ 0,08. Não pague o QR e não habilite a venda.",
+      confirmarTexto: "Criar teste",
+      cancelarTexto: "Cancelar",
+    });
+    if (!confirmou) return;
+
+    setSalvando(true);
+    setResultadoSplitTeste(null);
+    try {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("Faça login novamente antes do teste.");
+      const idToken = await user.getIdToken();
+      const chaveIdempotencia =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `split_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+      const resposta = await fetch(URL_PIX_SPLIT_TESTE, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          embarcacaoId: selecionado.id,
+          chaveIdempotencia,
+        }),
+      });
+      const dados = await resposta.json();
+      if (!resposta.ok) {
+        throw new Error([dados?.erro, dados?.detalhe].filter(Boolean).join(": "));
+      }
+
+      setResultadoSplitTeste(dados as ResultadoSplitTeste);
+      await modal.sucesso(
+        "API de split aceita",
+        "O PIX técnico foi criado. Não pague. Confira os valores exibidos no painel.",
+      );
+    } catch (error: any) {
+      await modal.erro(
+        "Teste de split não concluído",
+        error?.message || "A API do Mercado Pago recusou o teste.",
+      );
+    } finally {
+      setSalvando(false);
+    }
+  };
+
   const salvarTaxas = async () => {
     if (!selecionado) return;
 
@@ -490,7 +562,7 @@ export default function MercadoPagoFinanceiro() {
               Mercado Pago
             </p>
             <h2 className="mt-1 text-xl font-black tracking-tight text-white">
-              Checkout Pro + Split por embarcação
+              Checkout Transparente + Split por embarcação
             </h2>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-sky-100/50">
               Use esta área para gerar o link de conexão, controlar o status financeiro e
@@ -790,12 +862,45 @@ export default function MercadoPagoFinanceiro() {
 
                 <div className="rounded-2xl border border-amber-300/20 bg-amber-400/5 p-4">
                   <h3 className="text-sm font-black text-amber-200">
-                    Próximo passo técnico
+                    Teste técnico do split
                   </h3>
                   <p className="mt-2 text-xs leading-5 text-amber-100/70">
-                    O callback registra a autorização no servidor. Confira a conta antes
-                    de ativar vendas; nunca cole tokens no frontend ou no Firestore público.
+                    Restrito à Águia Dourada conectada com Seller Test User. Cria um PIX
+                    pendente de R$ 1,00 com taxa CMB de R$ 0,08. Não pague o QR.
                   </p>
+
+                  <button
+                    type="button"
+                    onClick={executarTesteSplit}
+                    disabled={
+                      salvando ||
+                      selecionado.id !== "AGUIA_DOURADA" ||
+                      financeiroSelecionado.status !== "pendente" ||
+                      !financeiroSelecionado.contaConectada ||
+                      financeiroSelecionado.vendaPassagemHabilitada
+                    }
+                    className="mt-3 w-full rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-xs font-black uppercase text-amber-200 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {salvando ? "Testando..." : "Criar PIX split de teste"}
+                  </button>
+
+                  {resultadoSplitTeste && (
+                    <div className="mt-3 space-y-1 rounded-xl border border-emerald-300/25 bg-emerald-400/10 p-3 text-[11px] text-emerald-100">
+                      <p className="font-black uppercase text-emerald-300">
+                        Split aceito pela API — não pagar
+                      </p>
+                      <p>Pagamento: {resultadoSplitTeste.pagamentoId}</p>
+                      <p>Status: {resultadoSplitTeste.status}</p>
+                      <p>Valor técnico: {moeda(resultadoSplitTeste.valorTotal)}</p>
+                      <p>Taxa CMB solicitada: {moeda(resultadoSplitTeste.applicationFee)}</p>
+                      <p>
+                        Vendedor antes da tarifa MP: {moeda(
+                          resultadoSplitTeste.valorPrevistoVendedorAntesTarifaMp,
+                        )}
+                      </p>
+                      <p>Ambiente real: {resultadoSplitTeste.liveMode ? "Sim" : "Não"}</p>
+                    </div>
+                  )}
                 </div>
               </aside>
             </div>

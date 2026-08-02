@@ -613,7 +613,12 @@ service cloud.firestore {
     match /{colecao}/{document=**} {
       allow read, write: if isAdminSistema() &&
         colecao != "mercado_pago_conexoes" &&
-        colecao != "mercado_pago_oauth_states";
+        colecao != "mercado_pago_oauth_states" &&
+        colecao != "testes_split_mercado_pago";
+    }
+
+    match /testes_split_mercado_pago/{document=**} {
+      allow read, write: if false;
     }
   }
 }

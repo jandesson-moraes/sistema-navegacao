@@ -108,17 +108,10 @@ function financeiroPadrao(financeiro?: FinanceiroMercadoPago): FinanceiroMercado
   };
 }
 
-function env(nome: string) {
-  return String((import.meta as any).env?.[nome] || "").trim();
-}
-
-function mercadoPagoAppId() {
-  return env("VITE_MERCADO_PAGO_APP_ID") || env("VITE_MP_APP_ID");
-}
-
-function mercadoPagoRedirectUri() {
-  return env("VITE_MERCADO_PAGO_REDIRECT_URI") || env("VITE_MP_REDIRECT_URI");
-}
+const URL_CRIAR_LINK_OAUTH =
+  "https://us-central1-sistema-navegacao.cloudfunctions.net/criarLinkOAuthMercadoPago";
+const URL_CALLBACK_OAUTH =
+  "https://us-central1-sistema-navegacao.cloudfunctions.net/mercadoPagoOAuthCallback";
 
 function formatarData(valor: any) {
   try {
@@ -161,51 +154,6 @@ function tipoEmbarcacao(barco: EmbarcacaoFinanceira) {
 
 function categoriaPlano(barco: EmbarcacaoFinanceira) {
   return barco.categoriaPlano || barco.planoSistema || "GPS";
-}
-
-function gerarIdSeguro() {
-  const random =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}_${Math.random().toString(36).slice(2)}`;
-
-  return String(random).replace(/[^a-zA-Z0-9_-]/g, "_");
-}
-
-function gerarStateOAuth(barco: EmbarcacaoFinanceira) {
-  const user = getAuth().currentUser;
-  const base = [
-    "cmb",
-    "mercado_pago",
-    barco.id,
-    user?.uid || "sem_uid",
-    Date.now(),
-    gerarIdSeguro(),
-  ].join("|");
-
-  try {
-    return btoa(unescape(encodeURIComponent(base)))
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/g, "");
-  } catch {
-    return base.replace(/[^a-zA-Z0-9_-]/g, "_");
-  }
-}
-
-function montarLinkOAuth({ state }: { state: string }) {
-  const appId = mercadoPagoAppId();
-  const redirectUri = mercadoPagoRedirectUri();
-
-  const params = new URLSearchParams({
-    client_id: appId,
-    response_type: "code",
-    platform_id: "mp",
-    state,
-    redirect_uri: redirectUri,
-  });
-
-  return `https://auth.mercadopago.com/authorization?${params.toString()}`;
 }
 
 function statusVendaTexto(financeiro: FinanceiroMercadoPago) {
@@ -270,7 +218,7 @@ export default function MercadoPagoFinanceiro() {
     const financeiro = financeiroPadrao(selecionado.financeiroMercadoPago);
     setTaxaPercentual(String(financeiro.taxaPlataformaPercentual ?? 8).replace(".", ","));
     setTaxaFixa(String(financeiro.taxaPlataformaValorFixo ?? 0).replace(".", ","));
-    setLinkGerado(financeiro.ultimoLinkConexao || "");
+    setLinkGerado("");
   }, [selecionado?.id]);
 
   const barcosFiltrados = useMemo(() => {
@@ -351,54 +299,25 @@ export default function MercadoPagoFinanceiro() {
   const gerarLinkConexao = async () => {
     if (!selecionado) return;
 
-    const appId = mercadoPagoAppId();
-    const redirectUri = mercadoPagoRedirectUri();
-
-    if (!appId || !redirectUri) {
-      await modal.aviso(
-        "Configuração pendente",
-        "Configure VITE_MERCADO_PAGO_APP_ID e VITE_MERCADO_PAGO_REDIRECT_URI no .env antes de gerar o link oficial.",
-      );
-      return;
-    }
-
     setSalvando(true);
 
     try {
-      const state = gerarStateOAuth(selecionado);
-      const link = montarLinkOAuth({ state });
-      const usuario = usuarioAuditoria();
-
-      await setDoc(
-        doc(db, "mercado_pago_oauth_states", state),
-        {
-          state,
-          embarcacaoId: selecionado.id,
-          embarcacaoNome: selecionado.nome || selecionado.id,
-          status: "link_gerado",
-          usado: false,
-          appIdFinal: appId.slice(-6),
-          redirectUri,
-          criadoPorUid: usuario.uid,
-          criadoPorNome: usuario.nome,
-          criadoPorEmail: usuario.email,
-          criadoEmISO: new Date().toISOString(),
-          criadoEm: serverTimestamp(),
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("Faça login novamente antes de gerar o link.");
+      const idToken = await user.getIdToken();
+      const resposta = await fetch(URL_CRIAR_LINK_OAUTH, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
         },
-        { merge: true },
-      );
-
-      await atualizarFinanceiro(
-        selecionado,
-        {
-          status: "link_gerado",
-          contaConectada: false,
-          ultimoLinkConexao: link,
-          ultimoState: state,
-          ultimoLinkGeradoEm: serverTimestamp(),
-        },
-        "link_mercado_pago_gerado",
-      );
+        body: JSON.stringify({ embarcacaoId: selecionado.id }),
+      });
+      const dados = await resposta.json();
+      if (!resposta.ok || !dados?.link) {
+        throw new Error(dados?.erro || "Não foi possível gerar o link seguro.");
+      }
+      const link = String(dados.link);
 
       setLinkGerado(link);
       await copiarTexto(link, false);
@@ -556,47 +475,6 @@ export default function MercadoPagoFinanceiro() {
       await modal.erro(
         "Erro ao atualizar",
         error?.message || "Não foi possível alterar a venda.",
-      );
-    } finally {
-      setSalvando(false);
-    }
-  };
-
-  const registrarVendedorManual = async () => {
-    if (!selecionado) return;
-
-    const vendedorId = window.prompt(
-      "Informe o ID do vendedor Mercado Pago apenas se você já tiver recebido esse dado no callback/OAuth:",
-      financeiroSelecionado.vendedorMercadoPagoId || "",
-    );
-
-    if (vendedorId === null) return;
-
-    setSalvando(true);
-
-    try {
-      await atualizarFinanceiro(
-        selecionado,
-        {
-          vendedorMercadoPagoId: vendedorId.trim(),
-          contaConectada:
-            Boolean(vendedorId.trim()) || financeiroSelecionado.contaConectada,
-          status: vendedorId.trim() ? "pendente" : financeiroSelecionado.status,
-          conectadoEm: vendedorId.trim()
-            ? financeiroSelecionado.conectadoEm || serverTimestamp()
-            : financeiroSelecionado.conectadoEm,
-        },
-        "vendedor_mercado_pago_registrado_manual",
-      );
-
-      await modal.sucesso(
-        "Recebedor atualizado",
-        "Identificação do vendedor Mercado Pago foi salva.",
-      );
-    } catch (error: any) {
-      await modal.erro(
-        "Erro ao salvar",
-        error?.message || "Não foi possível salvar o recebedor.",
       );
     } finally {
       setSalvando(false);
@@ -775,7 +653,7 @@ export default function MercadoPagoFinanceiro() {
 
                   <div className="mt-4 grid gap-3 xl:grid-cols-[1fr_auto_auto]">
                     <input
-                      value={linkGerado || financeiroSelecionado.ultimoLinkConexao || ""}
+                      value={linkGerado}
                       readOnly
                       placeholder="Gere o link para exibir aqui..."
                       className="h-11 rounded-xl border border-[#7ba6d4]/20 bg-[#0d0c2c] px-3 text-xs font-semibold text-sky-100 outline-none placeholder:text-sky-100/25"
@@ -794,7 +672,7 @@ export default function MercadoPagoFinanceiro() {
                       type="button"
                       onClick={() =>
                         copiarTexto(
-                          linkGerado || financeiroSelecionado.ultimoLinkConexao || "",
+                          linkGerado,
                         )
                       }
                       className="h-11 rounded-xl border border-[#7ba6d4]/20 bg-[#17345e] px-4 text-xs font-black uppercase text-sky-100 transition hover:bg-[#1d426f]"
@@ -810,15 +688,11 @@ export default function MercadoPagoFinanceiro() {
                     />
                     <Info
                       label="State"
-                      valor={
-                        financeiroSelecionado.ultimoState
-                          ? `${financeiroSelecionado.ultimoState.slice(0, 12)}...`
-                          : "—"
-                      }
+                      valor="Protegido no servidor"
                     />
                     <Info
                       label="Redirect URI"
-                      valor={mercadoPagoRedirectUri() || "Não configurado"}
+                      valor={URL_CALLBACK_OAUTH}
                     />
                   </div>
                 </div>
@@ -911,14 +785,6 @@ export default function MercadoPagoFinanceiro() {
                       Desabilitar venda
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={registrarVendedorManual}
-                      disabled={salvando}
-                      className="rounded-xl border border-[#7ba6d4]/20 bg-[#0d0c2c] px-3 py-3 text-xs font-black uppercase text-sky-100/60 transition hover:bg-[#17345e] hover:text-white disabled:opacity-60"
-                    >
-                      Registrar ID vendedor
-                    </button>
                   </div>
                 </div>
 
@@ -927,9 +793,8 @@ export default function MercadoPagoFinanceiro() {
                     Próximo passo técnico
                   </h3>
                   <p className="mt-2 text-xs leading-5 text-amber-100/70">
-                    Depois desta tela, precisamos criar a Cloud Function de callback para
-                    trocar o code do Mercado Pago por token seguro. Não cole tokens no
-                    frontend.
+                    O callback registra a autorização no servidor. Confira a conta antes
+                    de ativar vendas; nunca cole tokens no frontend ou no Firestore público.
                   </p>
                 </div>
               </aside>

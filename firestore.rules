@@ -600,8 +600,20 @@ service cloud.firestore {
       allow create, update, delete: if isAdminSistema();
     }
 
-    match /{document=**} {
-      allow read, write: if isAdminSistema();
+    // Tokens OAuth e states são exclusivos das Cloud Functions (Admin SDK).
+    // Nem administradores acessam estas coleções diretamente pelo navegador.
+    match /mercado_pago_conexoes/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /mercado_pago_oauth_states/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /{colecao}/{document=**} {
+      allow read, write: if isAdminSistema() &&
+        colecao != "mercado_pago_conexoes" &&
+        colecao != "mercado_pago_oauth_states";
     }
   }
 }

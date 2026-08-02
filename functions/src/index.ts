@@ -10,6 +10,10 @@ import {
 } from "./motorVendas";
 
 export {processarVencimentoPlanos} from "./vencimentoPlanos";
+export {
+  criarLinkOAuthMercadoPago,
+  mercadoPagoOAuthCallback,
+} from "./oauthMercadoPago";
 export {solicitarCadastroPublicoEmbarcacao} from "./cadastroPublicoEmbarcacoes";
 export {
   consultarEdicaoPublicaEmbarcacao,

@@ -6,6 +6,7 @@ import {
   onSnapshot,
   serverTimestamp,
   setDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../config/firebase";
 
@@ -47,6 +48,18 @@ type EscalaFormulario = {
   horarioSaida: string;
 };
 
+type TarifaTrechoFormulario = {
+  chave: string;
+  origemPortoId: string;
+  origemNome: string;
+  destinoPortoId: string;
+  destinoNome: string;
+  precoRede: string;
+  precoPoltrona: string;
+  precoSuite: string;
+  precoRefeicao: string;
+};
+
 type FormProgramacao = {
   id: string;
   barcoId: string;
@@ -59,6 +72,7 @@ type FormProgramacao = {
   destinoDiaRelativo: string;
   destinoHorarioChegada: string;
   escalas: EscalaFormulario[];
+  tarifasTrechos: TarifaTrechoFormulario[];
   diasSemana: number[];
   horarioSaida: string;
   duracaoHoras: string;
@@ -127,6 +141,7 @@ const FORM_VAZIO: FormProgramacao = {
   destinoDiaRelativo: "0",
   destinoHorarioChegada: "",
   escalas: [],
+  tarifasTrechos: [],
   diasSemana: [],
   horarioSaida: "08:00",
   duracaoHoras: "24",
@@ -145,7 +160,9 @@ function texto(valor: any) {
 }
 
 function numero(valor: any, padrao = 0) {
-  const n = Number(valor);
+  const n = Number(
+    typeof valor === "string" ? valor.replace(",", ".") : valor,
+  );
   return Number.isFinite(n) ? n : padrao;
 }
 
@@ -312,6 +329,111 @@ function escalaVazia(): EscalaFormulario {
     horarioChegada: "",
     horarioSaida: "",
   };
+}
+
+function chaveTarifa(origemPortoId: string, destinoPortoId: string) {
+  return `${texto(origemPortoId)}__${texto(destinoPortoId)}`;
+}
+
+function precoFormulario(valor: any) {
+  const resultado = numero(valor, 0);
+  return resultado > 0 ? String(resultado) : "";
+}
+
+function tarifasDoDocumento(fonte: any, itinerario: any[]) {
+  const cadastradas = Array.isArray(fonte?.tarifasTrechos)
+    ? fonte.tarifasTrechos
+    : [];
+
+  if (cadastradas.length > 0) {
+    return cadastradas.map((tarifa: any) => {
+      const origemPortoId = texto(
+        tarifa.origemPortoId || tarifa.origemId || tarifa.origem,
+      );
+      const destinoPortoId = texto(
+        tarifa.destinoPortoId || tarifa.destinoId || tarifa.destino,
+      );
+      return {
+        chave: chaveTarifa(origemPortoId, destinoPortoId),
+        origemPortoId,
+        origemNome: texto(tarifa.origemNome || tarifa.origem),
+        destinoPortoId,
+        destinoNome: texto(tarifa.destinoNome || tarifa.destino),
+        precoRede: precoFormulario(
+          tarifa.precoRede ?? tarifa.preco_rede ?? tarifa.preco_da_origem,
+        ),
+        precoPoltrona: precoFormulario(
+          tarifa.precoPoltrona ?? tarifa.preco_poltrona,
+        ),
+        precoSuite: precoFormulario(tarifa.precoSuite ?? tarifa.preco_suite),
+        precoRefeicao: precoFormulario(
+          tarifa.precoRefeicao ?? tarifa.preco_refeicao,
+        ),
+      } as TarifaTrechoFormulario;
+    });
+  }
+
+  const origem = itinerario[0] || {};
+  const origemPortoId = texto(origem.portoId || origem.id);
+  const origemNome = texto(origem.nome || origem.porto || origem.cidade);
+
+  return itinerario.slice(1).map((destino: any) => {
+    const destinoPortoId = texto(destino.portoId || destino.id);
+    return {
+      chave: chaveTarifa(origemPortoId, destinoPortoId),
+      origemPortoId,
+      origemNome,
+      destinoPortoId,
+      destinoNome: texto(destino.nome || destino.porto || destino.cidade),
+      precoRede: precoFormulario(
+        destino.precoRede ?? destino.preco_rede ?? destino.preco_da_origem,
+      ),
+      precoPoltrona: precoFormulario(
+        destino.precoPoltrona ?? destino.preco_poltrona,
+      ),
+      precoSuite: precoFormulario(destino.precoSuite ?? destino.preco_suite),
+      precoRefeicao: precoFormulario(
+        destino.precoRefeicao ?? destino.preco_refeicao,
+      ),
+    } as TarifaTrechoFormulario;
+  });
+}
+
+function itinerarioCompletoDaGrade(grade: any) {
+  const itinerario = Array.isArray(grade?.itinerario)
+    ? [...grade.itinerario]
+    : Array.isArray(grade?.escalas)
+      ? [...grade.escalas]
+      : [];
+  const origemNome = texto(
+    grade?.porto_origem ||
+      grade?.portoOrigem ||
+      grade?.origemPortoNome ||
+      grade?.origem,
+  );
+  if (!origemNome) return itinerario;
+
+  const primeira = itinerario[0] || {};
+  const primeiraNormalizada = texto(
+    primeira.porto || primeira.nome || primeira.cidade,
+  ).toLowerCase();
+  if (primeiraNormalizada.includes(origemNome.toLowerCase())) {
+    return itinerario;
+  }
+
+  return [
+    {
+      portoId: grade?.origemPortoId || "",
+      nome: origemNome,
+      porto: origemNome,
+      cidade: grade?.origemCidade || grade?.origem || origemNome,
+      horarioSaida: grade?.horarioSaida || grade?.horario_saida_origem || "",
+      diaRelativo: 0,
+      dias_apos_saida: 0,
+      tipo: "origem",
+    },
+    ...itinerario,
+  ];
 }
 
 function nomeLocal(local: LocalOperacional | undefined | null) {
@@ -600,11 +722,7 @@ export default function ProgramacaoViagens() {
     }
 
     const grade = gradesDoBarco.find((item) => item.id === gradeId);
-    const itinerario = Array.isArray(grade?.itinerario)
-      ? grade.itinerario
-      : Array.isArray(grade?.escalas)
-        ? grade.escalas
-        : [];
+    const itinerario = itinerarioCompletoDaGrade(grade);
 
     const origemDados = itinerario[0] || {
       portoId: grade?.origemPortoId,
@@ -643,6 +761,7 @@ export default function ProgramacaoViagens() {
         "",
       ),
       escalas: escalasIntermediarias.map(escalaParaFormulario),
+      tarifasTrechos: tarifasDoDocumento(grade, itinerario),
       diasSemana: diasNormalizados(grade?.diasSemana || grade?.dias_da_semana),
       horarioSaida: horario(grade?.horarioSaida || grade?.horario_saida),
       duracaoHoras: String(Math.floor(numero(grade?.tempoTotalMin, 24 * 60) / 60)),
@@ -985,6 +1104,40 @@ export default function ProgramacaoViagens() {
       }
     }
 
+    if (trechosTarifarios.length === 0) {
+      return alert("Defina a origem e o destino antes de cadastrar as tarifas.");
+    }
+
+    const trechoSemTarifa = trechosTarifarios.find((trecho) => {
+      const preenchida = form.tarifasTrechos.find(
+        (tarifa) => tarifa.chave === trecho.chave,
+      );
+      return (
+        numero(preenchida?.precoRede, 0) <= 0 &&
+        numero(preenchida?.precoPoltrona, 0) <= 0 &&
+        numero(preenchida?.precoSuite, 0) <= 0
+      );
+    });
+    if (trechoSemTarifa) {
+      return alert(
+        `Informe ao menos uma tarifa de passagem para ${trechoSemTarifa.origemNome} → ${trechoSemTarifa.destinoNome}.`,
+      );
+    }
+
+    const tarifasOficiais = trechosTarifarios.map((trecho) => {
+      const preenchida = form.tarifasTrechos.find(
+        (tarifa) => tarifa.chave === trecho.chave,
+      );
+      return {
+        ...trecho,
+        precoRede: Math.max(0, numero(preenchida?.precoRede, 0)),
+        precoPoltrona: Math.max(0, numero(preenchida?.precoPoltrona, 0)),
+        precoSuite: Math.max(0, numero(preenchida?.precoSuite, 0)),
+        precoRefeicao: Math.max(0, numero(preenchida?.precoRefeicao, 0)),
+        ativo: true,
+      };
+    });
+
     const escalasResolvidas = form.escalas.map((escala, index) =>
       criarPontoItinerario({
         local: localPorChave.get(escala.portoChave) as LocalOperacional,
@@ -997,7 +1150,7 @@ export default function ProgramacaoViagens() {
       }),
     );
 
-    const itinerario = [
+    const itinerarioBase = [
       criarPontoItinerario({
         local: origemLocal,
         cidade: form.origemCidade,
@@ -1023,6 +1176,29 @@ export default function ProgramacaoViagens() {
       }),
     ];
 
+    const origemTarifariaId = texto(itinerarioBase[0]?.portoId);
+    const itinerario = itinerarioBase.map((ponto, index) => {
+      if (index === 0) return ponto;
+      const tarifaLegada = tarifasOficiais.find(
+        (tarifa) =>
+          tarifa.origemPortoId === origemTarifariaId &&
+          tarifa.destinoPortoId === texto(ponto.portoId),
+      );
+      if (!tarifaLegada) return ponto;
+      return {
+        ...ponto,
+        preco_da_origem: tarifaLegada.precoRede,
+        preco_rede: tarifaLegada.precoRede,
+        precoRede: tarifaLegada.precoRede,
+        preco_poltrona: tarifaLegada.precoPoltrona,
+        precoPoltrona: tarifaLegada.precoPoltrona,
+        preco_suite: tarifaLegada.precoSuite,
+        precoSuite: tarifaLegada.precoSuite,
+        preco_refeicao: tarifaLegada.precoRefeicao,
+        precoRefeicao: tarifaLegada.precoRefeicao,
+      };
+    });
+
     const duracaoPrevistaMinutos = Math.max(
       30,
       numero(form.duracaoHoras, 0) * 60 + numero(form.duracaoMinutos, 0),
@@ -1041,9 +1217,8 @@ export default function ProgramacaoViagens() {
 
     try {
       setSalvando(true);
-      await setDoc(
-        doc(db, "programacoes_viagem", id),
-        {
+      const lote = writeBatch(db);
+      const dadosComuns = {
           id,
           barcoId,
           barcoNome: texto(barcoSelecionado?.nome || barcoId),
@@ -1083,15 +1258,72 @@ export default function ProgramacaoViagens() {
           destinoCoordenadas: destinoLocal.coordenadas,
           escalas: itinerario,
           itinerario,
+          tarifasTrechos: tarifasOficiais,
+          tarifaStatus: form.ativo ? "publicada" : "suspensa",
+          tarifaVersao: 1,
           nome: nomeRota,
           ativo: form.ativo,
           atualizadoEm: serverTimestamp(),
           ...(form.id ? {} : { criadoEm: serverTimestamp() }),
+      };
+
+      lote.set(
+        doc(db, "programacoes_viagem", id),
+        dadosComuns,
+        { merge: true },
+      );
+
+      lote.set(
+        doc(db, "grades_viagens", gradeId),
+        {
+          ...dadosComuns,
+          id: gradeId,
+          programacaoId: id,
+          id_barco: barcoId,
+          barco_id: barcoId,
+          nome_barco: texto(barcoSelecionado?.nome || barcoId),
+          porto_origem: origemLocal.nome,
+          portoOrigem: origemLocal.nome,
+          horario_saida_origem: form.horarioSaida,
+          horarioSaida: form.horarioSaida,
+          dias_da_semana: form.diasSemana,
+          diasSemana: form.diasSemana,
+          tempoTotalMin: duracaoPrevistaMinutos,
+          capacidadeRede: Math.max(
+            0,
+            numero(
+              barcoSelecionado?.capacidade?.rede ??
+                barcoSelecionado?.vagasRede ??
+                barcoSelecionado?.capacidadeRede,
+              0,
+            ),
+          ),
+          capacidadePoltrona: Math.max(
+            0,
+            numero(
+              barcoSelecionado?.capacidade?.poltrona ??
+                barcoSelecionado?.vagasPoltrona ??
+                barcoSelecionado?.capacidadePoltrona,
+              0,
+            ),
+          ),
+          capacidadeSuite: Math.max(
+            0,
+            numero(
+              barcoSelecionado?.capacidade?.suite ??
+                barcoSelecionado?.vagasSuite ??
+                barcoSelecionado?.capacidadeSuite,
+              0,
+            ),
+          ),
+          publicadoParaVenda: form.ativo,
         },
         { merge: true },
       );
+
+      await lote.commit();
       limparFormulario();
-      alert("Programação e itinerário salvos com sucesso.");
+      alert("Programação, itinerário e tarifas sincronizados com sucesso.");
     } catch (error: any) {
       alert(error?.message || "Não foi possível salvar a programação.");
     } finally {
@@ -1145,6 +1377,7 @@ export default function ProgramacaoViagens() {
         itinerario.length > 2
           ? itinerario.slice(1, -1).map(escalaParaFormulario)
           : [],
+      tarifasTrechos: tarifasDoDocumento(item, itinerario),
       diasSemana: diasNormalizados(item.diasSemana),
       horarioSaida: horario(item.horarioSaida),
       duracaoHoras: String(Math.floor(total / 60)),
@@ -1176,11 +1409,30 @@ export default function ProgramacaoViagens() {
   };
 
   const alternarAtiva = async (item: any) => {
-    await setDoc(
+    const ativa = item.ativo === false;
+    const lote = writeBatch(db);
+    lote.set(
       doc(db, "programacoes_viagem", item.id),
-      { ativo: item.ativo === false, atualizadoEm: serverTimestamp() },
+      {
+        ativo: ativa,
+        tarifaStatus: ativa ? "publicada" : "suspensa",
+        atualizadoEm: serverTimestamp(),
+      },
       { merge: true },
     );
+    if (texto(item.gradeId)) {
+      lote.set(
+        doc(db, "grades_viagens", texto(item.gradeId)),
+        {
+          ativo: ativa,
+          publicadoParaVenda: ativa,
+          tarifaStatus: ativa ? "publicada" : "suspensa",
+          atualizadoEm: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    }
+    await lote.commit();
   };
 
   const excluir = async (item: any) => {
@@ -1214,11 +1466,7 @@ export default function ProgramacaoViagens() {
       );
       if (jaExiste) continue;
 
-      const itinerarioOriginal = Array.isArray(grade.itinerario)
-        ? grade.itinerario
-        : Array.isArray(grade.escalas)
-          ? grade.escalas
-          : [];
+      const itinerarioOriginal = itinerarioCompletoDaGrade(grade);
       const itinerario = itinerarioOriginal.map((ponto: any, index: number) => {
         const local = encontrarLocalPorDados(ponto);
         if (!local) return { ...ponto, ordem: index, ativo: ponto?.ativo !== false };
@@ -1274,6 +1522,9 @@ export default function ProgramacaoViagens() {
         portoDestino: texto(destinoPonto.nome || grade.portoDestino || grade.destino),
         escalas: itinerario,
         itinerario,
+        tarifasTrechos: tarifasDoDocumento(grade, itinerarioOriginal),
+        tarifaStatus: "publicada",
+        tarifaVersao: 1,
         nome: texto(grade.nome),
         ativo: true,
         origemDados: "grade_importada",
@@ -1293,6 +1544,93 @@ export default function ProgramacaoViagens() {
   const origemSelecionada = localPorChave.get(form.origemPortoChave);
   const destinoSelecionado = localPorChave.get(form.destinoPortoChave);
 
+  const pontosTarifarios = useMemo(() => {
+    const pontos: Array<{
+      portoId: string;
+      nome: string;
+      cidade: string;
+    }> = [];
+
+    const adicionar = (chave: string, cidade: string) => {
+      const local = localPorChave.get(chave);
+      if (!local) return;
+      pontos.push({
+        portoId: local.id,
+        nome: local.nome,
+        cidade,
+      });
+    };
+
+    adicionar(form.origemPortoChave, form.origemCidade);
+    form.escalas.forEach((escala) =>
+      adicionar(escala.portoChave, escala.cidade),
+    );
+    adicionar(form.destinoPortoChave, form.destinoCidade);
+    return pontos;
+  }, [form.origemPortoChave, form.origemCidade, form.escalas, form.destinoPortoChave, form.destinoCidade, localPorChave]);
+
+  const trechosTarifarios = useMemo(() => {
+    const trechos: Array<{
+      chave: string;
+      origemPortoId: string;
+      origemNome: string;
+      destinoPortoId: string;
+      destinoNome: string;
+    }> = [];
+
+    for (let origem = 0; origem < pontosTarifarios.length - 1; origem += 1) {
+      for (
+        let destino = origem + 1;
+        destino < pontosTarifarios.length;
+        destino += 1
+      ) {
+        const pontoOrigem = pontosTarifarios[origem];
+        const pontoDestino = pontosTarifarios[destino];
+        trechos.push({
+          chave: chaveTarifa(pontoOrigem.portoId, pontoDestino.portoId),
+          origemPortoId: pontoOrigem.portoId,
+          origemNome: pontoOrigem.cidade || pontoOrigem.nome,
+          destinoPortoId: pontoDestino.portoId,
+          destinoNome: pontoDestino.cidade || pontoDestino.nome,
+        });
+      }
+    }
+    return trechos;
+  }, [pontosTarifarios]);
+
+  const atualizarTarifa = (
+    trecho: (typeof trechosTarifarios)[number],
+    campo: "precoRede" | "precoPoltrona" | "precoSuite" | "precoRefeicao",
+    valor: string,
+  ) => {
+    setForm((atual) => {
+      const existente = atual.tarifasTrechos.find(
+        (tarifa) => tarifa.chave === trecho.chave,
+      );
+      const tarifa: TarifaTrechoFormulario = {
+        chave: trecho.chave,
+        origemPortoId: trecho.origemPortoId,
+        origemNome: trecho.origemNome,
+        destinoPortoId: trecho.destinoPortoId,
+        destinoNome: trecho.destinoNome,
+        precoRede: existente?.precoRede || "",
+        precoPoltrona: existente?.precoPoltrona || "",
+        precoSuite: existente?.precoSuite || "",
+        precoRefeicao: existente?.precoRefeicao || "",
+        [campo]: valor,
+      };
+      return {
+        ...atual,
+        tarifasTrechos: [
+          ...atual.tarifasTrechos.filter(
+            (item) => item.chave !== trecho.chave,
+          ),
+          tarifa,
+        ],
+      };
+    });
+  };
+
   return (
     <div className="min-h-screen text-white">
       <section className="mb-6 rounded-3xl border border-sky-400/10 bg-[#143760]/80 p-6 shadow-2xl">
@@ -1301,7 +1639,9 @@ export default function ProgramacaoViagens() {
             <p className="text-[10px] font-black uppercase tracking-[0.22em] text-sky-300">
               Agenda operacional
             </p>
-            <h1 className="mt-2 text-2xl font-black">Programação de viagens</h1>
+            <h1 className="mt-2 text-2xl font-black">
+              Programação e tarifas
+            </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
               Cadastre a cidade, o porto de origem, todas as escalas e o porto de destino. Cada saída pode ter dias, horários e vigência próprios.
             </p>
@@ -1566,6 +1906,96 @@ export default function ProgramacaoViagens() {
               </div>
             </div>
 
+            <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-4">
+              <div>
+                <p className="text-xs font-black uppercase text-emerald-300">
+                  Tarifas oficiais por trecho
+                </p>
+                <p className="mt-1 text-[11px] leading-5 text-slate-400">
+                  Informe o valor de cada origem até cada destino. O aplicativo
+                  apenas exibirá estes valores; o backend continuará validando a
+                  tarifa oficial antes do pagamento.
+                </p>
+                <p className="mt-2 text-[11px] font-bold text-sky-200/70">
+                  Capacidade sincronizada da embarcação: Rede {numero(
+                    barcoSelecionado?.capacidade?.rede ??
+                      barcoSelecionado?.vagasRede ??
+                      barcoSelecionado?.capacidadeRede,
+                    0,
+                  )} · Poltrona {numero(
+                    barcoSelecionado?.capacidade?.poltrona ??
+                      barcoSelecionado?.vagasPoltrona ??
+                      barcoSelecionado?.capacidadePoltrona,
+                    0,
+                  )} · Suíte {numero(
+                    barcoSelecionado?.capacidade?.suite ??
+                      barcoSelecionado?.vagasSuite ??
+                      barcoSelecionado?.capacidadeSuite,
+                    0,
+                  )}
+                </p>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                {trechosTarifarios.map((trecho) => {
+                  const tarifa = form.tarifasTrechos.find(
+                    (item) => item.chave === trecho.chave,
+                  );
+                  return (
+                    <article
+                      key={trecho.chave}
+                      className="rounded-2xl border border-white/10 bg-[#0d0c2c]/80 p-4"
+                    >
+                      <p className="text-sm font-black text-emerald-100">
+                        {trecho.origemNome} → {trecho.destinoNome}
+                      </p>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <Input
+                          label="Rede (R$)"
+                          type="number"
+                          value={tarifa?.precoRede || ""}
+                          onChange={(valor) =>
+                            atualizarTarifa(trecho, "precoRede", valor)
+                          }
+                        />
+                        <Input
+                          label="Poltrona (R$)"
+                          type="number"
+                          value={tarifa?.precoPoltrona || ""}
+                          onChange={(valor) =>
+                            atualizarTarifa(trecho, "precoPoltrona", valor)
+                          }
+                        />
+                        <Input
+                          label="Suíte (R$)"
+                          type="number"
+                          value={tarifa?.precoSuite || ""}
+                          onChange={(valor) =>
+                            atualizarTarifa(trecho, "precoSuite", valor)
+                          }
+                        />
+                        <Input
+                          label="Refeição (R$)"
+                          type="number"
+                          value={tarifa?.precoRefeicao || ""}
+                          onChange={(valor) =>
+                            atualizarTarifa(trecho, "precoRefeicao", valor)
+                          }
+                        />
+                      </div>
+                    </article>
+                  );
+                })}
+
+                {trechosTarifarios.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-white/10 p-5 text-center text-xs text-slate-500">
+                    Selecione origem, destino e eventuais escalas para gerar a
+                    matriz de tarifas.
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div>
               <p className="mb-2 text-xs font-bold text-slate-400">Dias da semana</p>
               <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
@@ -1722,8 +2152,8 @@ export default function ProgramacaoViagens() {
               {salvando
                 ? "Salvando..."
                 : form.id
-                  ? "Atualizar saída"
-                  : "Adicionar saída"}
+                ? "Atualizar programação e tarifas"
+                  : "Adicionar programação e tarifas"}
             </button>
           </div>
         </section>
@@ -2039,6 +2469,8 @@ function Input({
       {label}
       <input
         type={type}
+        step={type === "number" ? "0.01" : undefined}
+        min={type === "number" ? "0" : undefined}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="campo"

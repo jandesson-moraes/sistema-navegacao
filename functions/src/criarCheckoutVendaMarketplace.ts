@@ -92,14 +92,70 @@ function localizarDestino(grade: Record<string, unknown>, destino: string) {
   }) as Record<string, unknown> | undefined;
 }
 
-function preco(parada: Record<string, unknown>, tipo: TipoVagaVenda) {
+function localizarTarifaTrecho(
+  grade: Record<string, unknown>,
+  origem: string,
+  destino: string,
+) {
+  const tarifas = Array.isArray(grade.tarifasTrechos)
+    ? grade.tarifasTrechos
+    : [];
+  if (tarifas.length === 0) return undefined;
+
+  const itinerario = Array.isArray(grade.itinerario)
+    ? grade.itinerario
+    : Array.isArray(grade.escalas)
+      ? grade.escalas
+      : [];
+  const encontrarPonto = (valor: string) => {
+    const procurado = normalizar(valor).split(" - ")[0];
+    return itinerario.find((item) => {
+      const ponto = item as Record<string, unknown>;
+      return [ponto.porto, ponto.nome, ponto.cidade].some(
+        (campo) => normalizar(campo).split(" - ")[0] === procurado,
+      );
+    }) as Record<string, unknown> | undefined;
+  };
+
+  const pontoOrigem = encontrarPonto(origem);
+  const pontoDestino = encontrarPonto(destino);
+  const origemId = texto(pontoOrigem?.portoId || pontoOrigem?.id);
+  const destinoId = texto(pontoDestino?.portoId || pontoDestino?.id);
+  const origemNormalizada = normalizar(origem).split(" - ")[0];
+  const destinoNormalizado = normalizar(destino).split(" - ")[0];
+
+  return tarifas.find((item) => {
+    const tarifa = item as Record<string, unknown>;
+    if (tarifa.ativo === false) return false;
+    const correspondeIds =
+      origemId &&
+      destinoId &&
+      texto(tarifa.origemPortoId) === origemId &&
+      texto(tarifa.destinoPortoId) === destinoId;
+    const correspondeNomes =
+      normalizar(tarifa.origemNome || tarifa.origem).split(" - ")[0] ===
+        origemNormalizada &&
+      normalizar(tarifa.destinoNome || tarifa.destino).split(" - ")[0] ===
+        destinoNormalizado;
+    return correspondeIds || correspondeNomes;
+  }) as Record<string, unknown> | undefined;
+}
+
+function preco(
+  grade: Record<string, unknown>,
+  parada: Record<string, unknown>,
+  tipo: TipoVagaVenda,
+  origem: string,
+  destino: string,
+) {
+  const tarifa = localizarTarifaTrecho(grade, origem, destino) || parada;
   if (tipo === "poltrona") {
-    return primeiroNumero(parada, ["preco_poltrona", "precoPoltrona"]);
+    return primeiroNumero(tarifa, ["preco_poltrona", "precoPoltrona"]);
   }
   if (tipo === "suite") {
-    return primeiroNumero(parada, ["preco_suite", "precoSuite"]);
+    return primeiroNumero(tarifa, ["preco_suite", "precoSuite"]);
   }
-  return primeiroNumero(parada, [
+  return primeiroNumero(tarifa, [
     "preco_da_origem",
     "precoRede",
     "preco_rede",
@@ -248,6 +304,10 @@ export const criarCheckoutVendaMarketplace = onRequest(
         res.status(409).json({ erro: "VIAGEM_NAO_PERTENCE_A_EMBARCACAO" });
         return;
       }
+      if (grade.ativo === false || grade.publicadoParaVenda === false) {
+        res.status(403).json({ erro: "VIAGEM_SUSPENSA_PARA_VENDA" });
+        return;
+      }
 
       const config = configuracao(barco);
       if (!config.ativa) {
@@ -258,13 +318,23 @@ export const criarCheckoutVendaMarketplace = onRequest(
 
       const parada = localizarDestino(grade, destino);
       if (!parada) throw new Error("DESTINO_FORA_DO_ITINERARIO");
-      const valorUnitarioPassagem = preco(parada, tipoVaga);
+      const tarifaTrecho = localizarTarifaTrecho(grade, origem, destino);
+      const valorUnitarioPassagem = preco(
+        grade,
+        parada,
+        tipoVaga,
+        origem,
+        destino,
+      );
       const capacidadeOficial = capacidade(grade, tipoVaga);
       if (valorUnitarioPassagem <= 0) throw new Error("PRECO_OFICIAL_NAO_CONFIGURADO");
       if (capacidadeOficial <= 0) throw new Error("CAPACIDADE_OFICIAL_NAO_CONFIGURADA");
 
       const valorUnitarioRefeicao = incluiRefeicao
-        ? primeiroNumero(parada, ["preco_refeicao", "precoRefeicao"])
+        ? primeiroNumero(tarifaTrecho || parada, [
+            "preco_refeicao",
+            "precoRefeicao",
+          ])
         : 0;
       const calculo = calcularVendaNoServidor({
         regra: config.regra,

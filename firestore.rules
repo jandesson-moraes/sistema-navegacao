@@ -99,7 +99,26 @@ service cloud.firestore {
 
     match /usuarios/{userId} {
       allow read: if estaLogado();
-      allow write: if estaLogado() && (
+      allow create: if estaLogado() && (
+        isAdminSistema() ||
+        (
+          (isDono() || request.auth.uid == userId) &&
+          (
+            !request.resource.data.keys().hasAny(["pilotoMarketplace"]) ||
+            request.resource.data.pilotoMarketplace != true
+          )
+        )
+      );
+      allow update: if estaLogado() && (
+        isAdminSistema() ||
+        (
+          (isDono() || request.auth.uid == userId) &&
+          !request.resource.data.diff(resource.data).changedKeys().hasAny([
+            "pilotoMarketplace"
+          ])
+        )
+      );
+      allow delete: if estaLogado() && (
         request.auth.uid == userId ||
         isAdminSistema() ||
         isDono()

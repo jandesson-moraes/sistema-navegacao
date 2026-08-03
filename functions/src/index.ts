@@ -14,6 +14,7 @@ export {
   solicitarAlteracaoPublicaEmbarcacao,
 } from "./alteracoesPublicasEmbarcacoes";
 export { gerarPixSplitTeste } from "./splitMercadoPagoTeste";
+export { criarCheckoutProSplitSandbox } from "./checkoutProSplitSandbox";
 
 if (!admin.apps.length) {
   admin.initializeApp();

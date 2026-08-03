@@ -112,18 +112,18 @@ const URL_CRIAR_LINK_OAUTH =
   "https://us-central1-sistema-navegacao.cloudfunctions.net/criarLinkOAuthMercadoPago";
 const URL_CALLBACK_OAUTH =
   "https://us-central1-sistema-navegacao.cloudfunctions.net/mercadoPagoOAuthCallback";
-const URL_PIX_SPLIT_TESTE =
-  "https://us-central1-sistema-navegacao.cloudfunctions.net/gerarPixSplitTeste";
+const URL_CHECKOUT_PRO_SPLIT_SANDBOX =
+  "https://us-central1-sistema-navegacao.cloudfunctions.net/criarCheckoutProSplitSandbox";
 
-type ResultadoSplitTeste = {
+type ResultadoCheckoutSandbox = {
   testeId: string;
-  pagamentoId: string;
-  status: string;
-  statusDetalhe: string;
-  liveMode: boolean;
+  preferenciaId: string;
+  sandboxInitPoint: string;
   valorTotal: number;
-  applicationFee: number;
+  marketplaceFee: number;
   valorPrevistoVendedorAntesTarifaMp: number;
+  sellerTestUserValidado: boolean;
+  ambiente: "sandbox";
   aviso: string;
 };
 
@@ -199,8 +199,8 @@ export default function MercadoPagoFinanceiro() {
   const [linkGerado, setLinkGerado] = useState("");
   const [taxaPercentual, setTaxaPercentual] = useState("8");
   const [taxaFixa, setTaxaFixa] = useState("0");
-  const [resultadoSplitTeste, setResultadoSplitTeste] =
-    useState<ResultadoSplitTeste | null>(null);
+  const [resultadoCheckoutSandbox, setResultadoCheckoutSandbox] =
+    useState<ResultadoCheckoutSandbox | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "embarcacoes"), (snapshot) => {
@@ -235,7 +235,7 @@ export default function MercadoPagoFinanceiro() {
     setTaxaPercentual(String(financeiro.taxaPlataformaPercentual ?? 8).replace(".", ","));
     setTaxaFixa(String(financeiro.taxaPlataformaValorFixo ?? 0).replace(".", ","));
     setLinkGerado("");
-    setResultadoSplitTeste(null);
+    setResultadoCheckoutSandbox(null);
   }, [selecionado?.id]);
 
   const barcosFiltrados = useMemo(() => {
@@ -373,21 +373,21 @@ export default function MercadoPagoFinanceiro() {
     }
   };
 
-  const executarTesteSplit = async () => {
+  const criarCheckoutSplitSandbox = async () => {
     if (!selecionado || selecionado.id !== "AGUIA_DOURADA") return;
 
     const confirmou = await modal.confirmar({
       tipo: "warning",
-      titulo: "Criar PIX técnico de R$ 1,00?",
+      titulo: "Criar Checkout sandbox de R$ 1,00?",
       mensagem:
-        "O PIX servirá apenas para verificar se a API aceita o split de R$ 0,08. Não pague o QR e não habilite a venda.",
+        "Será criada uma preferência de teste com split de R$ 0,08. Use somente o Buyer Test User e cartão oficial de teste. Não use cartão real e não habilite a venda.",
       confirmarTexto: "Criar teste",
       cancelarTexto: "Cancelar",
     });
     if (!confirmou) return;
 
     setSalvando(true);
-    setResultadoSplitTeste(null);
+    setResultadoCheckoutSandbox(null);
     try {
       const user = getAuth().currentUser;
       if (!user) throw new Error("Faça login novamente antes do teste.");
@@ -397,7 +397,7 @@ export default function MercadoPagoFinanceiro() {
           ? crypto.randomUUID()
           : `split_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-      const resposta = await fetch(URL_PIX_SPLIT_TESTE, {
+      const resposta = await fetch(URL_CHECKOUT_PRO_SPLIT_SANDBOX, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -413,15 +413,15 @@ export default function MercadoPagoFinanceiro() {
         throw new Error([dados?.erro, dados?.detalhe].filter(Boolean).join(": "));
       }
 
-      setResultadoSplitTeste(dados as ResultadoSplitTeste);
+      setResultadoCheckoutSandbox(dados as ResultadoCheckoutSandbox);
       await modal.sucesso(
-        "API de split aceita",
-        "O PIX técnico foi criado. Não pague. Confira os valores exibidos no painel.",
+        "Checkout sandbox preparado",
+        "A preferência de teste foi criada. Use o botão exibido no painel para abrir o ambiente sandbox.",
       );
     } catch (error: any) {
       await modal.erro(
-        "Teste de split não concluído",
-        error?.message || "A API do Mercado Pago recusou o teste.",
+        "Checkout sandbox não criado",
+        error?.message || "A API do Mercado Pago recusou a preferência de teste.",
       );
     } finally {
       setSalvando(false);
@@ -862,16 +862,17 @@ export default function MercadoPagoFinanceiro() {
 
                 <div className="rounded-2xl border border-amber-300/20 bg-amber-400/5 p-4">
                   <h3 className="text-sm font-black text-amber-200">
-                    Teste técnico do split
+                    Teste seguro do split
                   </h3>
                   <p className="mt-2 text-xs leading-5 text-amber-100/70">
-                    Restrito à Águia Dourada conectada com Seller Test User. Cria um PIX
-                    pendente de R$ 1,00 com taxa CMB de R$ 0,08. Não pague o QR.
+                    Restrito à Águia Dourada e ao ambiente sandbox. Cria um Checkout Pro
+                    de R$ 1,00 com taxa CMB de R$ 0,08. Use somente Buyer Test User e
+                    cartão oficial de teste.
                   </p>
 
                   <button
                     type="button"
-                    onClick={executarTesteSplit}
+                    onClick={criarCheckoutSplitSandbox}
                     disabled={
                       salvando ||
                       selecionado.id !== "AGUIA_DOURADA" ||
@@ -881,24 +882,31 @@ export default function MercadoPagoFinanceiro() {
                     }
                     className="mt-3 w-full rounded-xl border border-amber-300/30 bg-amber-400/10 px-4 py-3 text-xs font-black uppercase text-amber-200 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    {salvando ? "Testando..." : "Criar PIX split de teste"}
+                    {salvando ? "Preparando..." : "Criar checkout sandbox"}
                   </button>
 
-                  {resultadoSplitTeste && (
+                  {resultadoCheckoutSandbox && (
                     <div className="mt-3 space-y-1 rounded-xl border border-emerald-300/25 bg-emerald-400/10 p-3 text-[11px] text-emerald-100">
                       <p className="font-black uppercase text-emerald-300">
-                        Split aceito pela API — não pagar
+                        Preferência sandbox criada
                       </p>
-                      <p>Pagamento: {resultadoSplitTeste.pagamentoId}</p>
-                      <p>Status: {resultadoSplitTeste.status}</p>
-                      <p>Valor técnico: {moeda(resultadoSplitTeste.valorTotal)}</p>
-                      <p>Taxa CMB solicitada: {moeda(resultadoSplitTeste.applicationFee)}</p>
+                      <p>Preferência: {resultadoCheckoutSandbox.preferenciaId}</p>
+                      <p>Valor técnico: {moeda(resultadoCheckoutSandbox.valorTotal)}</p>
+                      <p>Taxa CMB: {moeda(resultadoCheckoutSandbox.marketplaceFee)}</p>
                       <p>
                         Vendedor antes da tarifa MP: {moeda(
-                          resultadoSplitTeste.valorPrevistoVendedorAntesTarifaMp,
+                          resultadoCheckoutSandbox.valorPrevistoVendedorAntesTarifaMp,
                         )}
                       </p>
-                      <p>Ambiente real: {resultadoSplitTeste.liveMode ? "Sim" : "Não"}</p>
+                      <p>Ambiente: Sandbox</p>
+                      <a
+                        href={resultadoCheckoutSandbox.sandboxInitPoint}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-3 block rounded-lg border border-emerald-300/30 bg-emerald-400/15 px-3 py-2 text-center text-xs font-black uppercase text-emerald-200 transition hover:bg-emerald-400/25"
+                      >
+                        Abrir checkout sandbox
+                      </a>
                     </div>
                   )}
                 </div>

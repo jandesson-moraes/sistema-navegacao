@@ -20,6 +20,7 @@ export { webhookMercadoPagoMarketplace } from "./webhookMercadoPagoMarketplace";
 export { gerenciarPagamentoMarketplaceSandbox } from "./gerenciarPagamentoMarketplaceSandbox";
 export { criarCheckoutVendaMarketplace } from "./criarCheckoutVendaMarketplace";
 export { webhookVendaMarketplace } from "./webhookVendaMarketplace";
+export { gerenciarAcessoPortalArmador } from "./portalArmador";
 
 if (!admin.apps.length) {
   admin.initializeApp();

@@ -51,6 +51,30 @@ service cloud.firestore {
       return estaLogado() && perfilUsuario().tipo == "tripulante";
     }
 
+    function armadorAtivo() {
+      return estaLogado() &&
+        exists(
+          /databases/$(database)/documents/acessos_armadores/$(request.auth.uid)
+        ) &&
+        get(
+          /databases/$(database)/documents/acessos_armadores/$(request.auth.uid)
+        ).data.get("ativo", false) == true;
+    }
+
+    function armadorTemBarco(barcoId) {
+      return armadorAtivo() &&
+        barcoId in get(
+          /databases/$(database)/documents/acessos_armadores/$(request.auth.uid)
+        ).data.get("embarcacaoIds", []);
+    }
+
+    function armadorTemPermissao(chave) {
+      return armadorAtivo() &&
+        get(
+          /databases/$(database)/documents/acessos_armadores/$(request.auth.uid)
+        ).data.get("permissoes", {}).get(chave, false) == true;
+    }
+
     // ============================================================
     // FUNÇÕES DE VALIDAÇÃO DAS MÉTRICAS DO APLICATIVO
     // ============================================================
@@ -95,6 +119,19 @@ service cloud.firestore {
           "atualizadoEm"
         ])
       );
+    }
+
+    // O armador lê somente o próprio vínculo. Toda criação e alteração
+    // é feita pela Cloud Function administrativa com registro de auditoria.
+    match /acessos_armadores/{uid} {
+      allow read: if isAdminSistema() || (
+        estaLogado() && request.auth.uid == uid
+      );
+      allow create, update, delete: if false;
+    }
+
+    match /auditoria_portal_armador/{document=**} {
+      allow read, write: if false;
     }
 
     match /usuarios/{userId} {
@@ -615,7 +652,11 @@ service cloud.firestore {
           resource.data.get("compradorUid", "") == request.auth.uid ||
           resource.data.get("compradorEmail", "") == emailUsuario() ||
           resource.data.get("ownerId", "") == request.auth.uid ||
-          resource.data.get("ownerEmail", "") == emailUsuario()
+          resource.data.get("ownerEmail", "") == emailUsuario() ||
+          (
+            armadorTemPermissao("vendas") &&
+            armadorTemBarco(resource.data.get("barcoId", ""))
+          )
         )
       );
 
@@ -643,7 +684,9 @@ service cloud.firestore {
         colecao != "mercado_pago_operacoes_financeiras" &&
         colecao != "reservas_vendas" &&
         colecao != "inventarios_vagas" &&
-        colecao != "vendas_dados_privados";
+        colecao != "vendas_dados_privados" &&
+        colecao != "acessos_armadores" &&
+        colecao != "auditoria_portal_armador";
     }
 
     match /mercado_pago_operacoes_financeiras/{document=**} {

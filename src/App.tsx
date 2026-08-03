@@ -30,6 +30,7 @@ import MetricasLandingPage from "../src/pages/MetricasLandingPage";
 import CadastroPublicoEmbarcacao from "../src/pages/CadastroPublicoEmbarcacao";
 import SolicitacoesCadastroEmbarcacoes from "../src/pages/SolicitacoesCadastroEmbarcacoes";
 import AlteracaoPublicaEmbarcacao from "../src/pages/AlteracaoPublicaEmbarcacao";
+import GestaoPortalArmadores from "../src/pages/GestaoPortalArmadores";
 
 function AppShell({ children }: { children: React.ReactNode }) {
   return <Layout>{children}</Layout>;
@@ -392,6 +393,15 @@ export default function App() {
             element={
               <RotaAdmin>
                 <FuncionariosPermissoes />
+              </RotaAdmin>
+            }
+          />
+
+          <Route
+            path="/portal-armadores"
+            element={
+              <RotaAdmin>
+                <GestaoPortalArmadores />
               </RotaAdmin>
             }
           />

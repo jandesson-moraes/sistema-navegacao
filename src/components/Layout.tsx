@@ -29,6 +29,7 @@ type MenuItem = {
   match?: string[];
   badge?: string;
   permissao?: PermissaoKey;
+  somenteAdmin?: boolean;
 };
 
 const principal: MenuItem[] = [
@@ -141,6 +142,13 @@ const admin: MenuItem[] = [
     permissao: "funcionarios",
   },
   {
+    to: "/portal-armadores",
+    icon: "♙",
+    label: "Portal dos Armadores",
+    match: ["/portal-armadores"],
+    somenteAdmin: true,
+  },
+  {
     to: "/financeiro",
     icon: "◈",
     label: "Financeiro",
@@ -184,6 +192,7 @@ const titulos: Record<string, string> = {
   "/gestao-gps": "GPS",
   "/usuarios": "Permissões de Usuários",
   "/funcionarios": "Permissões de Usuários",
+  "/portal-armadores": "Portal dos Armadores",
   "/financeiro": "Financeiro",
   "/relatorios-app": "Relatórios do Aplicativo",
   "/metricas-landing": "Métricas da Landing Page",
@@ -211,6 +220,7 @@ const subtitulos: Record<string, string> = {
   "/provisionamento-gps": "Rastreadores, configuração, provisionamento e modo teste",
   "/usuarios": "Equipe, acessos e permissões do sistema",
   "/funcionarios": "Equipe, acessos e permissões do sistema",
+  "/portal-armadores": "Contas, embarcações vinculadas e acessos externos",
   "/financeiro":
     "Clientes GPS, mensalidades, movimentos, fornecedores, saldo e relatórios",
   "/relatorios-app":
@@ -510,8 +520,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   const adminVisivel = useMemo(() => {
     if (carregandoPermissoes && usuario) return [];
-    return admin.filter((item) => permissaoAtiva(permissoesUsuario, item.permissao));
-  }, [carregandoPermissoes, permissoesUsuario, usuario]);
+    return admin.filter(
+      (item) =>
+        (!item.somenteAdmin || tipoUsuario === "admin") &&
+        permissaoAtiva(permissoesUsuario, item.permissao),
+    );
+  }, [carregandoPermissoes, permissoesUsuario, tipoUsuario, usuario]);
 
   const menuCompletoVisivel = useMemo(
     () => [...principalVisivel, ...adminVisivel],

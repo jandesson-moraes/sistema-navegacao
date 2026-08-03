@@ -14,7 +14,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import {db} from "../config/firebase";
+import { db } from "../config/firebase";
 import RotasCadastroPublico, {
   type RotaCadastro,
 } from "../components/RotasCadastroPublico";
@@ -66,7 +66,9 @@ function separarEscalas(valor?: string) {
 }
 
 function formatarCnpj(valor?: string) {
-  return String(valor || "").replace(/\D/g, "").slice(0, 14)
+  return String(valor || "")
+    .replace(/\D/g, "")
+    .slice(0, 14)
     .replace(/^(\d{2})(\d)/, "$1.$2")
     .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
     .replace(/\.(\d{3})(\d)/, ".$1/$2")
@@ -79,26 +81,36 @@ function formatarWhatsApp(valor?: string) {
   numeros = numeros.slice(0, 11);
   if (!numeros) return "";
   if (numeros.length <= 2) return `+55 (${numeros}`;
-  if (numeros.length <= 7) return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
-  if (numeros.length <= 10) return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2, 6)}-${numeros.slice(6)}`;
+  if (numeros.length <= 7)
+    return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2)}`;
+  if (numeros.length <= 10)
+    return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2, 6)}-${numeros.slice(6)}`;
   return `+55 (${numeros.slice(0, 2)}) ${numeros.slice(2, 7)}-${numeros.slice(7)}`;
 }
 
 function nomeVinculo(valor?: string) {
-  return {
-    dono: "Proprietário",
-    tripulante: "Tripulante",
-    representante: "Representante",
-    passageiro: "Passageiro/colaborador",
-  }[valor || ""] || valor || "Não informado";
+  return (
+    {
+      dono: "Proprietário",
+      tripulante: "Tripulante",
+      representante: "Representante",
+      passageiro: "Passageiro/colaborador",
+    }[valor || ""] ||
+    valor ||
+    "Não informado"
+  );
 }
 
 function nomePlano(valor?: string) {
-  return {
-    basico: "Básico gratuito",
-    vitrine: "Vitrine",
-    tempo_real: "Tempo Real",
-  }[valor || ""] || valor || "Não informado";
+  return (
+    {
+      basico: "Básico gratuito",
+      vitrine: "Vitrine",
+      tempo_real: "Tempo Real",
+    }[valor || ""] ||
+    valor ||
+    "Não informado"
+  );
 }
 
 function normalizarIdEmbarcacao(nome?: string) {
@@ -112,7 +124,22 @@ function normalizarIdEmbarcacao(nome?: string) {
 }
 
 function caixaAlta(valor?: string) {
-  return String(valor || "").trim().toLocaleUpperCase("pt-BR");
+  return String(valor || "")
+    .trim()
+    .toLocaleUpperCase("pt-BR");
+}
+
+function normalizarUrlImagem(valor?: string) {
+  const url = String(valor || "").trim();
+  if (!url) return "";
+  try {
+    const analisada = new URL(url);
+    return analisada.protocol === "http:" || analisada.protocol === "https:"
+      ? analisada.toString()
+      : "";
+  } catch {
+    return "";
+  }
 }
 
 function idEhAleatorio(id?: string) {
@@ -137,9 +164,18 @@ function CampoEdicao({
     <label className="block text-xs font-black uppercase tracking-wide text-slate-500">
       {label}
       {multiline ? (
-        <textarea rows={4} value={value || ""} onChange={(e) => onChange(e.target.value)} className={classe} />
+        <textarea
+          rows={4}
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          className={classe}
+        />
       ) : (
-        <input value={value || ""} onChange={(e) => onChange(e.target.value)} className={classe} />
+        <input
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          className={classe}
+        />
       )}
     </label>
   );
@@ -152,62 +188,131 @@ export default function SolicitacoesCadastroEmbarcacoes() {
   const [filtro, setFiltro] = useState("pendentes");
   const [ocupado, setOcupado] = useState(false);
   const [portosSugeridos, setPortosSugeridos] = useState<PortoSugerido[]>([]);
+  const [erroImagem, setErroImagem] = useState(false);
 
-  useEffect(() => onSnapshot(
-    query(collection(db, "solicitacoes_cadastro_embarcacoes"), orderBy("criadoEm", "desc")),
-    (snapshot) => setItens(snapshot.docs.map((item) => ({id: item.id, ...item.data()}))),
-  ), []);
+  useEffect(
+    () =>
+      onSnapshot(
+        query(
+          collection(db, "solicitacoes_cadastro_embarcacoes"),
+          orderBy("criadoEm", "desc"),
+        ),
+        (snapshot) =>
+          setItens(
+            snapshot.docs.map((item) => ({ id: item.id, ...item.data() })),
+          ),
+      ),
+    [],
+  );
 
-  useEffect(() => onSnapshot(
-    collection(db, "portos_sugeridos"),
-    (snapshot) => setPortosSugeridos(snapshot.docs
-      .map((item) => ({id: item.id, ...item.data()} as PortoSugerido))
-      .filter((item) => item.statusAprovacao !== "aprovado")),
-  ), []);
+  useEffect(
+    () =>
+      onSnapshot(collection(db, "portos_sugeridos"), (snapshot) =>
+        setPortosSugeridos(
+          snapshot.docs
+            .map((item) => ({ id: item.id, ...item.data() }) as PortoSugerido)
+            .filter((item) => item.statusAprovacao !== "aprovado"),
+        ),
+      ),
+    [],
+  );
 
   const visiveis = useMemo(
-    () => itens.filter((item) => filtro === "todos" ||
-      (filtro === "pendentes" ? pendentes.includes(item.status || "") : item.status === filtro)),
+    () =>
+      itens.filter(
+        (item) =>
+          filtro === "todos" ||
+          (filtro === "pendentes"
+            ? pendentes.includes(item.status || "")
+            : item.status === filtro),
+      ),
     [filtro, itens],
   );
 
   function selecionar(item: Solicitacao) {
     setSelecionada(item);
-    setRascunho({...item});
+    setRascunho({ ...item });
+    setErroImagem(false);
   }
 
   function editar(campo: keyof Solicitacao, valor: string) {
-    setRascunho((atual) => atual ? {...atual, [campo]: valor} : atual);
+    setRascunho((atual) => (atual ? { ...atual, [campo]: valor } : atual));
+  }
+
+  function editarImagemUrl(valor: string) {
+    setErroImagem(false);
+    setRascunho((atual) =>
+      atual
+        ? {
+            ...atual,
+            fotoOriginalUrl: valor,
+            imagemValidada:
+              valor.trim() === String(selecionada?.fotoOriginalUrl || "").trim()
+                ? selecionada?.imagemValidada === true
+                : false,
+          }
+        : atual,
+    );
   }
 
   function editarRota(indice: number, campos: Partial<RotaCadastro>) {
-    setRascunho((atual) => atual ? {
-      ...atual,
-      rotas: (atual.rotas || []).map((rota, atualIndice) =>
-        atualIndice === indice ? {...rota, ...campos} : rota),
-    } : atual);
+    setRascunho((atual) =>
+      atual
+        ? {
+            ...atual,
+            rotas: (atual.rotas || []).map((rota, atualIndice) =>
+              atualIndice === indice ? { ...rota, ...campos } : rota,
+            ),
+          }
+        : atual,
+    );
   }
 
-  function editarEscala(indiceRota: number, indiceEscala: number, campos: Partial<RotaCadastro["escalas"][number]>) {
-    setRascunho((atual) => atual ? {
-      ...atual,
-      rotas: (atual.rotas || []).map((rota, atualIndice) => atualIndice === indiceRota ? {
-        ...rota,
-        escalas: rota.escalas.map((escala, escalaAtual) =>
-          escalaAtual === indiceEscala ? {...escala, ...campos} : escala),
-      } : rota),
-    } : atual);
+  function editarEscala(
+    indiceRota: number,
+    indiceEscala: number,
+    campos: Partial<RotaCadastro["escalas"][number]>,
+  ) {
+    setRascunho((atual) =>
+      atual
+        ? {
+            ...atual,
+            rotas: (atual.rotas || []).map((rota, atualIndice) =>
+              atualIndice === indiceRota
+                ? {
+                    ...rota,
+                    escalas: rota.escalas.map((escala, escalaAtual) =>
+                      escalaAtual === indiceEscala
+                        ? { ...escala, ...campos }
+                        : escala,
+                    ),
+                  }
+                : rota,
+            ),
+          }
+        : atual,
+    );
   }
 
-  async function alterarStatus(status: string, extras: Record<string, unknown> = {}) {
+  async function alterarStatus(
+    status: string,
+    extras: Record<string, unknown> = {},
+  ) {
     if (!selecionada) return;
     setOcupado(true);
     try {
-      await updateDoc(doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id), {
-        status, atualizadoEm: serverTimestamp(), ...extras,
-      });
-      setSelecionada((atual) => atual ? {...atual, status, ...extras} : atual);
-      setRascunho((atual) => atual ? {...atual, status, ...extras} : atual);
+      await updateDoc(
+        doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id),
+        {
+          status,
+          atualizadoEm: serverTimestamp(),
+          ...extras,
+        },
+      );
+      setSelecionada((atual) =>
+        atual ? { ...atual, status, ...extras } : atual,
+      );
+      setRascunho((atual) => (atual ? { ...atual, status, ...extras } : atual));
     } finally {
       setOcupado(false);
     }
@@ -215,9 +320,10 @@ export default function SolicitacoesCadastroEmbarcacoes() {
 
   async function excluirRegistroValidacao() {
     if (!selecionada) return;
-    const aviso = selecionada.status === "aprovado"
-      ? "Este cadastro está aprovado. A exclusão removerá somente o registro da fila de validação; a embarcação publicada continuará preservada."
-      : "Este cadastro será removido definitivamente da fila de validação.";
+    const aviso =
+      selecionada.status === "aprovado"
+        ? "Este cadastro está aprovado. A exclusão removerá somente o registro da fila de validação; a embarcação publicada continuará preservada."
+        : "Este cadastro será removido definitivamente da fila de validação.";
     if (!window.confirm(`${aviso}\n\nDeseja continuar?`)) return;
     const confirmacao = window.prompt('Para confirmar, digite "EXCLUIR":');
     if (confirmacao?.trim().toUpperCase() !== "EXCLUIR") {
@@ -226,7 +332,9 @@ export default function SolicitacoesCadastroEmbarcacoes() {
     }
     setOcupado(true);
     try {
-      await deleteDoc(doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id));
+      await deleteDoc(
+        doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id),
+      );
       setSelecionada(null);
       setRascunho(null);
       window.alert("Registro removido da validação.");
@@ -240,7 +348,8 @@ export default function SolicitacoesCadastroEmbarcacoes() {
 
   async function decidirPorto(porto: PortoSugerido, aprovar: boolean) {
     const acao = aprovar ? "aprovar" : "recusar e excluir";
-    if (!window.confirm(`Deseja ${acao} “${porto.nome}” em ${porto.cidade}?`)) return;
+    if (!window.confirm(`Deseja ${acao} “${porto.nome}” em ${porto.cidade}?`))
+      return;
     setOcupado(true);
     try {
       if (aprovar) {
@@ -273,24 +382,59 @@ export default function SolicitacoesCadastroEmbarcacoes() {
       window.alert("Não existe imagem para validar.");
       return;
     }
+    const fotoOriginalUrl = normalizarUrlImagem(rascunho.fotoOriginalUrl);
+    if (!fotoOriginalUrl) {
+      window.alert(
+        "Informe um link de imagem válido, começando com http:// ou https://.",
+      );
+      return;
+    }
+    if (erroImagem) {
+      window.alert(
+        "A imagem não pôde ser carregada. Confira se o link é público e direto.",
+      );
+      return;
+    }
     setOcupado(true);
     try {
-      const campos = {imagemValidada: true, imagemValidadaEm: serverTimestamp()};
-      await updateDoc(doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id), campos);
-      setSelecionada((atual) => atual ? {...atual, imagemValidada: true} : atual);
-      setRascunho((atual) => atual ? {...atual, imagemValidada: true} : atual);
+      const campos = {
+        fotoOriginalUrl,
+        imagemValidada: true,
+        imagemValidadaEm: serverTimestamp(),
+      };
+      await updateDoc(
+        doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id),
+        campos,
+      );
+      setSelecionada((atual) =>
+        atual ? { ...atual, fotoOriginalUrl, imagemValidada: true } : atual,
+      );
+      setRascunho((atual) =>
+        atual ? { ...atual, fotoOriginalUrl, imagemValidada: true } : atual,
+      );
     } finally {
       setOcupado(false);
     }
   }
 
-  async function salvarRevisao() {
-    if (!selecionada || !rascunho) return;
+  async function salvarRevisao({
+    silencioso = false,
+  }: { silencioso?: boolean } = {}) {
+    if (!selecionada || !rascunho) return false;
     if (!selecionada.autorizaMelhoria) {
       const continuar = window.confirm(
         "O solicitante não autorizou melhorias. Deseja salvar somente uma correção necessária?",
       );
-      if (!continuar) return;
+      if (!continuar) return false;
+    }
+    const fotoOriginalUrl = rascunho.fotoOriginalUrl?.trim()
+      ? normalizarUrlImagem(rascunho.fotoOriginalUrl)
+      : "";
+    if (rascunho.fotoOriginalUrl?.trim() && !fotoOriginalUrl) {
+      window.alert(
+        "O link da imagem é inválido. Use um endereço público começando com http:// ou https://.",
+      );
+      return false;
     }
     setOcupado(true);
     try {
@@ -326,13 +470,23 @@ export default function SolicitacoesCadastroEmbarcacoes() {
             porto: caixaAlta(escala.porto),
           })),
         })),
-        fotoOriginalUrl: rascunho.fotoOriginalUrl || "",
+        fotoOriginalUrl,
+        imagemValidada: rascunho.imagemValidada === true,
         revisadoPelaEquipe: true,
         atualizadoEm: serverTimestamp(),
       };
-      await updateDoc(doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id), campos);
-      setSelecionada((atual) => atual ? {...atual, ...campos} : atual);
-      window.alert("Revisão salva. Agora você pode aprovar.");
+      await updateDoc(
+        doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id),
+        campos,
+      );
+      setSelecionada((atual) => (atual ? { ...atual, ...campos } : atual));
+      setRascunho((atual) => (atual ? { ...atual, ...campos } : atual));
+      if (!silencioso) window.alert("Revisão salva. Agora você pode aprovar.");
+      return true;
+    } catch (erro) {
+      console.error("Erro ao salvar revisão:", erro);
+      window.alert("Não foi possível salvar a revisão.");
+      return false;
     } finally {
       setOcupado(false);
     }
@@ -349,17 +503,20 @@ export default function SolicitacoesCadastroEmbarcacoes() {
       return;
     }
     if (!rascunho.fotoOriginalUrl) {
-      window.alert("Solicite uma foto da embarcação ou logomarca oficial antes de aprovar.");
+      window.alert(
+        "Solicite uma foto da embarcação ou logomarca oficial antes de aprovar.",
+      );
       return;
     }
     if (!rascunho.imagemValidada) {
       window.alert("Confira e valide a imagem antes de aprovar.");
       return;
     }
+    const revisaoSalva = await salvarRevisao({ silencioso: true });
+    if (!revisaoSalva) return;
     setOcupado(true);
     try {
-      await salvarRevisao();
-      const foto = rascunho.fotoOriginalUrl || "";
+      const foto = normalizarUrlImagem(rascunho.fotoOriginalUrl);
       const escalasLegadas = separarEscalas(rascunho.escalasTexto);
       const idBase = normalizarIdEmbarcacao(
         rascunho.idEmbarcacaoSugerido || rascunho.nomeEmbarcacao,
@@ -387,11 +544,14 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         origemCidade: rascunho.origemCidade || "",
         destino: rascunho.destinoCidade || "",
         destinoCidade: rascunho.destinoCidade || "",
-        escalasBasicas: Array.from(new Set(
-          (rascunho.rotas || []).flatMap((rota) => rota.escalas.map((escala) => escala.cidade))
-            .concat(escalasLegadas)
-            .filter(Boolean),
-        )),
+        escalasBasicas: Array.from(
+          new Set(
+            (rascunho.rotas || [])
+              .flatMap((rota) => rota.escalas.map((escala) => escala.cidade))
+              .concat(escalasLegadas)
+              .filter(Boolean),
+          ),
+        ),
         escalasBasicasDetalhadas: (rascunho.rotas || []).flatMap((rota) =>
           rota.escalas.map((escala) => ({
             sentido: rota.sentido,
@@ -399,7 +559,8 @@ export default function SolicitacoesCadastroEmbarcacoes() {
             cidade: escala.cidade,
             porto: escala.porto,
             diasPassagem: escala.diasPassagem || [],
-          }))),
+          })),
+        ),
         cnpj: rascunho.cnpj || "",
         codigoEmbarcacao: rascunho.codigoProvisorio || "",
         foto,
@@ -430,23 +591,35 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         atualizadoEm: serverTimestamp(),
       });
 
-      const rotasCompletas = rascunho.rotas?.length ? rascunho.rotas : [{
-        sentido: "ida" as const,
-        origemUf: "",
-        origemCidade: rascunho.origemCidade || rascunho.cidade || "",
-        portoOrigem: rascunho.portoSaida || "",
-        destinoUf: "",
-        destinoCidade: rascunho.destinoCidade || "",
-        portoDestino: "",
-        diasSemana: [],
-        horarioSaida: "",
-        duracaoHoras: 0,
-        escalas: escalasLegadas.map((cidade) => ({
-          cidade, porto: cidade, diaRelativo: 0, horarioChegada: "", horarioSaida: "",
-        })),
-      }];
+      const rotasCompletas = rascunho.rotas?.length
+        ? rascunho.rotas
+        : [
+            {
+              sentido: "ida" as const,
+              origemUf: "",
+              origemCidade: rascunho.origemCidade || rascunho.cidade || "",
+              portoOrigem: rascunho.portoSaida || "",
+              destinoUf: "",
+              destinoCidade: rascunho.destinoCidade || "",
+              portoDestino: "",
+              diasSemana: [],
+              horarioSaida: "",
+              duracaoHoras: 0,
+              escalas: escalasLegadas.map((cidade) => ({
+                cidade,
+                porto: cidade,
+                diaRelativo: 0,
+                horarioChegada: "",
+                horarioSaida: "",
+              })),
+            },
+          ];
 
-      for (let indiceRota = 0; indiceRota < rotasCompletas.length; indiceRota += 1) {
+      for (
+        let indiceRota = 0;
+        indiceRota < rotasCompletas.length;
+        indiceRota += 1
+      ) {
         const rota = rotasCompletas[indiceRota];
         const intermediarios = rota.escalas.map((escala, indice) => ({
           id: `escala_${indice + 1}`,
@@ -461,17 +634,26 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         }));
         const itinerario = [
           {
-            id: "origem", tipo: "origem", ordem: 0,
-            cidade: rota.origemCidade, portoNome: rota.portoOrigem,
-            diaRelativo: 0, horarioSaida: rota.horarioSaida,
+            id: "origem",
+            tipo: "origem",
+            ordem: 0,
+            cidade: rota.origemCidade,
+            portoNome: rota.portoOrigem,
+            diaRelativo: 0,
+            horarioSaida: rota.horarioSaida,
           },
           ...intermediarios,
           {
-            id: "destino", tipo: "destino", ordem: intermediarios.length + 1,
-            cidade: rota.destinoCidade, portoNome: rota.portoDestino,
-            diaRelativo: rota.destinoDiaRelativo ??
+            id: "destino",
+            tipo: "destino",
+            ordem: intermediarios.length + 1,
+            cidade: rota.destinoCidade,
+            portoNome: rota.portoDestino,
+            diaRelativo:
+              rota.destinoDiaRelativo ??
               Math.max(0, ...rota.escalas.map((item) => item.diaRelativo)),
-            horarioChegada: rota.destinoHorarioChegada || "", horarioSaida: "",
+            horarioChegada: rota.destinoHorarioChegada || "",
+            horarioSaida: "",
           },
         ].filter((ponto) => ponto.cidade || ponto.portoNome);
         if (!itinerario.length) continue;
@@ -496,7 +678,9 @@ export default function SolicitacoesCadastroEmbarcacoes() {
           destinoDiaRelativo: rota.destinoDiaRelativo || 0,
           destinoHorarioChegada: rota.destinoHorarioChegada || "",
           itinerarioPersonalizado: rota.itinerarioPersonalizado === true,
-          duracaoPrevistaMinutos: rota.duracaoNaoInformada ? null : rota.duracaoHoras * 60,
+          duracaoPrevistaMinutos: rota.duracaoNaoInformada
+            ? null
+            : rota.duracaoHoras * 60,
           duracaoInformada: rota.duracaoNaoInformada !== true,
           timezone: "America/Manaus",
           itinerario,
@@ -508,15 +692,26 @@ export default function SolicitacoesCadastroEmbarcacoes() {
           atualizadoEm: serverTimestamp(),
         });
       }
-      await alterarStatus("aprovado", {embarcacaoId: barco.id, aprovadoEm: serverTimestamp()});
+      await alterarStatus("aprovado", {
+        embarcacaoId: barco.id,
+        aprovadoEm: serverTimestamp(),
+      });
       const telefone = String(rascunho.telefone || "").replace(/\D/g, "");
       if (telefone) {
         const numero = telefone.startsWith("55") ? telefone : `55${telefone}`;
         const mensagem = encodeURIComponent(
           `Olá, ${rascunho.nomeSolicitante || ""}! A embarcação ${rascunho.nomeEmbarcacao} foi aprovada e já está cadastrada no aplicativo Cadê Meu Barco. Código: ${rascunho.codigoProvisorio || ""}.`,
         );
-        if (window.confirm("Embarcação aprovada. Deseja avisar o solicitante pelo WhatsApp agora?")) {
-          window.open(`https://wa.me/${numero}?text=${mensagem}`, "_blank", "noopener,noreferrer");
+        if (
+          window.confirm(
+            "Embarcação aprovada. Deseja avisar o solicitante pelo WhatsApp agora?",
+          )
+        ) {
+          window.open(
+            `https://wa.me/${numero}?text=${mensagem}`,
+            "_blank",
+            "noopener,noreferrer",
+          );
         }
       }
     } finally {
@@ -541,12 +736,17 @@ export default function SolicitacoesCadastroEmbarcacoes() {
     }
     if (idAnterior === idNovo) return;
     if ((await getDoc(doc(db, "embarcacoes", idNovo))).exists()) {
-      window.alert(`O ID ${idNovo} já está sendo usado. Revise antes de migrar.`);
+      window.alert(
+        `O ID ${idNovo} já está sendo usado. Revise antes de migrar.`,
+      );
       return;
     }
-    if (!window.confirm(
-      `Migrar a embarcação de ${idAnterior} para ${idNovo} e atualizar os vínculos?`,
-    )) return;
+    if (
+      !window.confirm(
+        `Migrar a embarcação de ${idAnterior} para ${idNovo} e atualizar os vínculos?`,
+      )
+    )
+      return;
 
     setOcupado(true);
     try {
@@ -565,9 +765,11 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         id: idNovo,
         barcoId: idNovo,
         embarcacaoId: idNovo,
-        nome: rascunho.nomeEmbarcacao?.trim() || snapshotAntigo.data().nome || "",
+        nome:
+          rascunho.nomeEmbarcacao?.trim() || snapshotAntigo.data().nome || "",
         tipo: rascunho.tipoEmbarcacao || snapshotAntigo.data().tipo || "",
-        tipoBarco: rascunho.tipoEmbarcacao || snapshotAntigo.data().tipoBarco || "",
+        tipoBarco:
+          rascunho.tipoEmbarcacao || snapshotAntigo.data().tipoBarco || "",
         cidade: rascunho.cidade || rascunho.origemCidade || "",
         portoSaida: rascunho.portoSaida || "",
         descricao: rascunho.descricao || "",
@@ -575,11 +777,14 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         origemCidade: rascunho.origemCidade || "",
         destino: rascunho.destinoCidade || "",
         destinoCidade: rascunho.destinoCidade || "",
-        escalasBasicas: Array.from(new Set(
-          rotasAprovadas.flatMap((rota) =>
-            rota.escalas.map((escala) => escala.cidade),
-          ).concat(escalasLegadas).filter(Boolean),
-        )),
+        escalasBasicas: Array.from(
+          new Set(
+            rotasAprovadas
+              .flatMap((rota) => rota.escalas.map((escala) => escala.cidade))
+              .concat(escalasLegadas)
+              .filter(Boolean),
+          ),
+        ),
         escalasBasicasDetalhadas: rotasAprovadas.flatMap((rota) =>
           rota.escalas.map((escala) => ({
             sentido: rota.sentido,
@@ -597,18 +802,20 @@ export default function SolicitacoesCadastroEmbarcacoes() {
       });
 
       const referencias = [
-        {colecao: "grades_viagens", campo: "id_barco"},
-        {colecao: "grades_viagens", campo: "barcoId"},
-        {colecao: "rotas_historicas", campo: "barcoId"},
-        {colecao: "banners_promocionais", campo: "barcoId"},
-        {colecao: "acessos_comandantes", campo: "barcoId"},
+        { colecao: "grades_viagens", campo: "id_barco" },
+        { colecao: "grades_viagens", campo: "barcoId" },
+        { colecao: "rotas_historicas", campo: "barcoId" },
+        { colecao: "banners_promocionais", campo: "barcoId" },
+        { colecao: "acessos_comandantes", campo: "barcoId" },
       ];
 
       for (const referencia of referencias) {
-        const encontrados = await getDocs(query(
-          collection(db, referencia.colecao),
-          where(referencia.campo, "==", idAnterior),
-        ));
+        const encontrados = await getDocs(
+          query(
+            collection(db, referencia.colecao),
+            where(referencia.campo, "==", idAnterior),
+          ),
+        );
         encontrados.forEach((item) => {
           batch.update(item.ref, {
             [referencia.campo]: idNovo,
@@ -617,10 +824,12 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         });
       }
 
-      const programacoesAntigas = await getDocs(query(
-        collection(db, "programacoes_viagem"),
-        where("barcoId", "==", idAnterior),
-      ));
+      const programacoesAntigas = await getDocs(
+        query(
+          collection(db, "programacoes_viagem"),
+          where("barcoId", "==", idAnterior),
+        ),
+      );
       programacoesAntigas.forEach((item) => batch.delete(item.ref));
 
       rotasAprovadas.forEach((rota, indiceRota) => {
@@ -687,64 +896,91 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         });
       });
 
-      batch.update(doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id), {
-        embarcacaoId: idNovo,
-        idEmbarcacaoSugerido: idNovo,
-        idEmbarcacaoAnterior: idAnterior,
-        idEmbarcacaoMigradoEm: serverTimestamp(),
-        atualizadoEm: serverTimestamp(),
-      });
+      batch.update(
+        doc(db, "solicitacoes_cadastro_embarcacoes", selecionada.id),
+        {
+          embarcacaoId: idNovo,
+          idEmbarcacaoSugerido: idNovo,
+          idEmbarcacaoAnterior: idAnterior,
+          idEmbarcacaoMigradoEm: serverTimestamp(),
+          atualizadoEm: serverTimestamp(),
+        },
+      );
       await batch.commit();
 
       await deleteDoc(referenciaAntiga);
-      setSelecionada((atual) => atual ? {
-        ...atual,
-        embarcacaoId: idNovo,
-        idEmbarcacaoSugerido: idNovo,
-      } : atual);
-      setRascunho((atual) => atual ? {
-        ...atual,
-        embarcacaoId: idNovo,
-        idEmbarcacaoSugerido: idNovo,
-      } : atual);
+      setSelecionada((atual) =>
+        atual
+          ? {
+              ...atual,
+              embarcacaoId: idNovo,
+              idEmbarcacaoSugerido: idNovo,
+            }
+          : atual,
+      );
+      setRascunho((atual) =>
+        atual
+          ? {
+              ...atual,
+              embarcacaoId: idNovo,
+              idEmbarcacaoSugerido: idNovo,
+            }
+          : atual,
+      );
       window.alert(
         `Cadastro sincronizado. ID: ${idNovo}. As programações de ida e volta foram reconstruídas.`,
       );
     } catch (erro) {
       console.error("Erro ao corrigir ID da embarcação:", erro);
-      window.alert("Não foi possível corrigir o ID. O documento antigo foi preservado.");
+      window.alert(
+        "Não foi possível corrigir o ID. O documento antigo foi preservado.",
+      );
     } finally {
       setOcupado(false);
     }
   }
 
-  const chip = (status?: string) => ({
-    aguardando_whatsapp: "Aguardando WhatsApp",
-    em_analise: "Em análise",
-    correcao_solicitada: "Correção solicitada",
-    aprovado: "Aprovado",
-    rejeitado: "Rejeitado",
-    duplicado: "Duplicado",
-  }[status || ""] || status || "Novo");
+  const chip = (status?: string) =>
+    ({
+      aguardando_whatsapp: "Aguardando WhatsApp",
+      em_analise: "Em análise",
+      correcao_solicitada: "Correção solicitada",
+      aprovado: "Aprovado",
+      rejeitado: "Rejeitado",
+      duplicado: "Duplicado",
+    })[status || ""] ||
+    status ||
+    "Novo";
 
   return (
     <div className="h-full overflow-y-auto bg-slate-50 p-4 sm:p-7">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-wrap gap-2">
-          {["pendentes", "aprovado", "rejeitado", "duplicado", "todos"].map((valor) => (
-            <button key={valor} onClick={() => setFiltro(valor)}
-              className={`rounded-full px-4 py-2 text-sm font-black ${filtro === valor ? "bg-[#0f2240] text-white" : "bg-white text-slate-600"}`}>
-              {valor === "pendentes" ? `Pendentes (${itens.filter((i) => pendentes.includes(i.status || "")).length})` : valor}
-            </button>
-          ))}
+          {["pendentes", "aprovado", "rejeitado", "duplicado", "todos"].map(
+            (valor) => (
+              <button
+                key={valor}
+                onClick={() => setFiltro(valor)}
+                className={`rounded-full px-4 py-2 text-sm font-black ${filtro === valor ? "bg-[#0f2240] text-white" : "bg-white text-slate-600"}`}
+              >
+                {valor === "pendentes"
+                  ? `Pendentes (${itens.filter((i) => pendentes.includes(i.status || "")).length})`
+                  : valor}
+              </button>
+            ),
+          )}
         </div>
 
         {portosSugeridos.length > 0 && (
           <section className="mt-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 text-slate-900 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">Novos portos</p>
-                <h2 className="mt-1 text-lg font-black">{portosSugeridos.length} aguardando análise</h2>
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-amber-700">
+                  Novos portos
+                </p>
+                <h2 className="mt-1 text-lg font-black">
+                  {portosSugeridos.length} aguardando análise
+                </h2>
               </div>
               <span className="rounded-full bg-amber-200 px-3 py-1 text-xs font-black text-amber-900">
                 Enviados no cadastro público
@@ -752,16 +988,31 @@ export default function SolicitacoesCadastroEmbarcacoes() {
             </div>
             <div className="mt-3 grid gap-2 lg:grid-cols-2">
               {portosSugeridos.map((porto) => (
-                <div key={porto.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-white p-3">
+                <div
+                  key={porto.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-white p-3"
+                >
                   <div>
                     <p className="font-black">{porto.nome}</p>
-                    <p className="text-xs font-semibold text-slate-500">{porto.cidade}</p>
+                    <p className="text-xs font-semibold text-slate-500">
+                      {porto.cidade}
+                    </p>
                   </div>
                   <div className="flex gap-2">
-                    <button disabled={ocupado} onClick={() => decidirPorto(porto, false)}
-                      className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-700">Excluir</button>
-                    <button disabled={ocupado} onClick={() => decidirPorto(porto, true)}
-                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white">Aprovar</button>
+                    <button
+                      disabled={ocupado}
+                      onClick={() => decidirPorto(porto, false)}
+                      className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-700"
+                    >
+                      Excluir
+                    </button>
+                    <button
+                      disabled={ocupado}
+                      onClick={() => decidirPorto(porto, true)}
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white"
+                    >
+                      Aprovar
+                    </button>
                   </div>
                 </div>
               ))}
@@ -772,23 +1023,41 @@ export default function SolicitacoesCadastroEmbarcacoes() {
         <div className="mt-5 grid min-h-0 gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
           <section className="space-y-3 xl:max-h-[calc(100vh-180px)] xl:overflow-y-auto xl:pr-2">
             {visiveis.map((item) => (
-              <button key={item.id} onClick={() => selecionar(item)}
+              <button
+                key={item.id}
+                onClick={() => selecionar(item)}
                 className={`w-full rounded-2xl border p-4 text-left shadow-sm transition ${
                   selecionada?.id === item.id
                     ? "border-sky-400 bg-sky-50 ring-2 ring-sky-200"
                     : "border-slate-200 bg-white hover:border-sky-300"
-                }`}>
+                }`}
+              >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-xs font-black uppercase tracking-widest text-sky-700">{item.codigoProvisorio}</p>
-                    <h2 className="mt-1 text-xl font-black text-[#0f2240]">{item.nomeEmbarcacao}</h2>
-                    <p className="mt-1 text-sm text-slate-500">{item.cidade || item.origemCidade || "Cidade não informada"} · {item.nomeSolicitante}</p>
+                    <p className="text-xs font-black uppercase tracking-widest text-sky-700">
+                      {item.codigoProvisorio}
+                    </p>
+                    <h2 className="mt-1 text-xl font-black text-[#0f2240]">
+                      {item.nomeEmbarcacao}
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {item.cidade ||
+                        item.origemCidade ||
+                        "Cidade não informada"}{" "}
+                      · {item.nomeSolicitante}
+                    </p>
                   </div>
-                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">{chip(item.status)}</span>
+                  <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-800">
+                    {chip(item.status)}
+                  </span>
                 </div>
               </button>
             ))}
-            {!visiveis.length && <div className="rounded-3xl bg-white p-8 text-center font-bold text-slate-500">Nenhum cadastro neste filtro.</div>}
+            {!visiveis.length && (
+              <div className="rounded-3xl bg-white p-8 text-center font-bold text-slate-500">
+                Nenhum cadastro neste filtro.
+              </div>
+            )}
           </section>
 
           <aside className="min-w-0 xl:max-h-[calc(100vh-180px)] xl:overflow-y-auto xl:pr-2">
@@ -811,318 +1080,659 @@ export default function SolicitacoesCadastroEmbarcacoes() {
                 </div>
 
                 <div className="p-5">
-                {rascunho.fotoOriginalUrl && <img src={rascunho.fotoOriginalUrl} alt="" className="h-44 w-full rounded-2xl object-cover sm:h-56" />}
-                {rascunho.fotoOriginalUrl && (
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <a href={rascunho.fotoOriginalUrl} target="_blank" rel="noreferrer"
-                      className="rounded-xl bg-slate-100 p-2 text-center text-xs font-black text-slate-700">Ver original</a>
-                    <a href={rascunho.fotoOriginalUrl} download
-                      target="_blank" rel="noreferrer"
-                      className="rounded-xl bg-sky-100 p-2 text-center text-xs font-black text-sky-800">Baixar imagem</a>
-                  </div>
-                )}
-                <div className={`mt-3 rounded-2xl p-3 text-sm font-bold ${
-                  rascunho.imagemValidada ? "bg-emerald-50 text-emerald-800" :
-                    rascunho.fotoOriginalUrl ? "bg-sky-50 text-sky-900" : "bg-red-50 text-red-800"
-                }`}>
-                  {rascunho.imagemValidada
-                    ? "✓ Imagem conferida e validada pela equipe."
-                    : rascunho.fotoOriginalUrl
-                    ? `Imagem declarada como: ${rascunho.tipoImagem === "logo_oficial" ? "logomarca oficial" : "foto da embarcação"}. Confira se corresponde ao cadastro.`
-                    : "Nenhuma imagem foi enviada. Solicite uma foto da embarcação ou logomarca oficial antes de aprovar."}
-                </div>
-                {rascunho.fotoOriginalUrl && !rascunho.imagemValidada && (
-                  <button type="button" disabled={ocupado} onClick={confirmarImagem}
-                    className="mt-2 min-h-11 w-full rounded-xl bg-emerald-600 px-4 text-sm font-black text-white">
-                    Confirmar que a imagem é válida
-                  </button>
-                )}
-                <div className="mt-5 grid gap-4 lg:grid-cols-2">
-                  <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-700">
-                          1. Embarcação
-                        </p>
-                        <h3 className="mt-1 font-black text-[#0f2240]">
-                          Identidade e apresentação
-                        </h3>
-                      </div>
-                      <span className="rounded-xl bg-[#0f2240] px-3 py-2 font-mono text-xs font-black text-white">
-                        {normalizarIdEmbarcacao(
-                          rascunho.idEmbarcacaoSugerido || rascunho.nomeEmbarcacao,
-                        )}
-                      </span>
-                    </div>
+                  <section className="mb-4 rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-700">
+                      Imagem que será publicada no aplicativo
+                    </p>
+                    <label className="mt-2 block text-xs font-black uppercase tracking-wide text-slate-500">
+                      Link público da imagem
+                      <input
+                        type="url"
+                        inputMode="url"
+                        placeholder="https://..."
+                        value={rascunho.fotoOriginalUrl || ""}
+                        onChange={(e) => editarImagemUrl(e.target.value)}
+                        className="mt-1 w-full rounded-xl border border-sky-200 bg-white px-3 py-3 text-sm font-semibold normal-case text-slate-800 outline-none focus:border-sky-500"
+                      />
+                    </label>
+                    <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+                      Cole um link direto e público. Ao trocar o endereço, a
+                      validação anterior é removida automaticamente.
+                    </p>
+                    {!!rascunho.fotoOriginalUrl && (
+                      <button
+                        type="button"
+                        onClick={() => editarImagemUrl("")}
+                        className="mt-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black text-red-700"
+                      >
+                        Remover link
+                      </button>
+                    )}
+                  </section>
 
-                    <div className="mt-4 grid gap-3">
-                      <CampoEdicao label="Nome da embarcação" value={rascunho.nomeEmbarcacao}
-                        onChange={(v) => editar("nomeEmbarcacao", v)} />
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <CampoEdicao label="Tipo" value={rascunho.tipoEmbarcacao}
-                          onChange={(v) => editar("tipoEmbarcacao", v)} />
-                        <CampoEdicao label="CNPJ — opcional" value={formatarCnpj(rascunho.cnpj)}
-                          onChange={(v) => editar("cnpj", v.replace(/\D/g, "").slice(0, 14))} />
+                  {normalizarUrlImagem(rascunho.fotoOriginalUrl) &&
+                    !erroImagem && (
+                      <img
+                        src={normalizarUrlImagem(rascunho.fotoOriginalUrl)}
+                        alt={`Prévia de ${rascunho.nomeEmbarcacao || "embarcação"}`}
+                        onLoad={() => setErroImagem(false)}
+                        onError={() => setErroImagem(true)}
+                        className="h-44 w-full rounded-2xl object-cover sm:h-56"
+                      />
+                    )}
+                  {erroImagem && (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-bold text-red-800">
+                      Não foi possível carregar a imagem. Verifique se o link é
+                      público, direto e continua disponível.
+                    </div>
+                  )}
+                  {normalizarUrlImagem(rascunho.fotoOriginalUrl) &&
+                    !erroImagem && (
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <a
+                          href={normalizarUrlImagem(rascunho.fotoOriginalUrl)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-xl bg-slate-100 p-2 text-center text-xs font-black text-slate-700"
+                        >
+                          Ver original
+                        </a>
+                        <a
+                          href={normalizarUrlImagem(rascunho.fotoOriginalUrl)}
+                          download
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-xl bg-sky-100 p-2 text-center text-xs font-black text-sky-800"
+                        >
+                          Baixar imagem
+                        </a>
                       </div>
-                      <CampoEdicao label="Descrição pública" value={rascunho.descricao} multiline
-                        onChange={(v) => editar("descricao", v)} />
-                      <div>
-                        <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">
-                          Tipo da imagem
-                        </p>
-                        <EscolhaTipoImagem
-                          claro
-                          valor={rascunho.tipoImagem || "foto_embarcacao"}
-                          onChange={(valor) => editar("tipoImagem", valor)}
+                    )}
+                  <div
+                    className={`mt-3 rounded-2xl p-3 text-sm font-bold ${
+                      rascunho.imagemValidada
+                        ? "bg-emerald-50 text-emerald-800"
+                        : rascunho.fotoOriginalUrl
+                          ? "bg-sky-50 text-sky-900"
+                          : "bg-red-50 text-red-800"
+                    }`}
+                  >
+                    {rascunho.imagemValidada
+                      ? "✓ Imagem conferida e validada pela equipe."
+                      : rascunho.fotoOriginalUrl
+                        ? `Imagem declarada como: ${rascunho.tipoImagem === "logo_oficial" ? "logomarca oficial" : "foto da embarcação"}. Confira se corresponde ao cadastro.`
+                        : "Nenhuma imagem foi enviada. Solicite uma foto da embarcação ou logomarca oficial antes de aprovar."}
+                  </div>
+                  {normalizarUrlImagem(rascunho.fotoOriginalUrl) &&
+                    !rascunho.imagemValidada && (
+                      <button
+                        type="button"
+                        disabled={ocupado}
+                        onClick={confirmarImagem}
+                        className="mt-2 min-h-11 w-full rounded-xl bg-emerald-600 px-4 text-sm font-black text-white"
+                      >
+                        Aprovar esta imagem para publicação
+                      </button>
+                    )}
+                  <div className="mt-5 grid gap-4 lg:grid-cols-2">
+                    <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-700">
+                            1. Embarcação
+                          </p>
+                          <h3 className="mt-1 font-black text-[#0f2240]">
+                            Identidade e apresentação
+                          </h3>
+                        </div>
+                        <span className="rounded-xl bg-[#0f2240] px-3 py-2 font-mono text-xs font-black text-white">
+                          {normalizarIdEmbarcacao(
+                            rascunho.idEmbarcacaoSugerido ||
+                              rascunho.nomeEmbarcacao,
+                          )}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3">
+                        <CampoEdicao
+                          label="Nome da embarcação"
+                          value={rascunho.nomeEmbarcacao}
+                          onChange={(v) => editar("nomeEmbarcacao", v)}
+                        />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <CampoEdicao
+                            label="Tipo"
+                            value={rascunho.tipoEmbarcacao}
+                            onChange={(v) => editar("tipoEmbarcacao", v)}
+                          />
+                          <CampoEdicao
+                            label="CNPJ — opcional"
+                            value={formatarCnpj(rascunho.cnpj)}
+                            onChange={(v) =>
+                              editar("cnpj", v.replace(/\D/g, "").slice(0, 14))
+                            }
+                          />
+                        </div>
+                        <CampoEdicao
+                          label="Descrição pública"
+                          value={rascunho.descricao}
+                          multiline
+                          onChange={(v) => editar("descricao", v)}
+                        />
+                        <div>
+                          <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">
+                            Tipo da imagem
+                          </p>
+                          <EscolhaTipoImagem
+                            claro
+                            valor={rascunho.tipoImagem || "foto_embarcacao"}
+                            onChange={(valor) => editar("tipoImagem", valor)}
+                          />
+                        </div>
+                      </div>
+                    </section>
+
+                    <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">
+                        2. Responsável
+                      </p>
+                      <h3 className="mt-1 font-black text-[#0f2240]">
+                        Contato e relacionamento
+                      </h3>
+
+                      <div className="mt-4 grid gap-3">
+                        <CampoEdicao
+                          label="Nome completo do solicitante"
+                          value={rascunho.nomeSolicitante}
+                          onChange={(v) => editar("nomeSolicitante", v)}
+                        />
+                        <CampoEdicao
+                          label="WhatsApp"
+                          value={formatarWhatsApp(rascunho.telefone)}
+                          onChange={(v) =>
+                            editar(
+                              "telefone",
+                              v
+                                .replace(/\D/g, "")
+                                .replace(/^55/, "")
+                                .slice(0, 11),
+                            )
+                          }
+                        />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="block min-w-0 text-xs font-black uppercase tracking-wide text-slate-500">
+                            Relação com a embarcação
+                            <select
+                              value={rascunho.vinculo || ""}
+                              onChange={(e) =>
+                                editar("vinculo", e.target.value)
+                              }
+                              className="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold normal-case text-slate-800"
+                            >
+                              <option value="">Não informado</option>
+                              <option value="dono">Proprietário</option>
+                              <option value="tripulante">Tripulante</option>
+                              <option value="representante">
+                                Representante
+                              </option>
+                              <option value="passageiro">
+                                Passageiro/colaborador
+                              </option>
+                            </select>
+                          </label>
+                          <label className="block min-w-0 text-xs font-black uppercase tracking-wide text-slate-500">
+                            Plano de interesse
+                            <select
+                              value={rascunho.planoInteresse || "basico"}
+                              onChange={(e) =>
+                                editar("planoInteresse", e.target.value)
+                              }
+                              className="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold normal-case text-slate-800"
+                            >
+                              <option value="basico">Básico gratuito</option>
+                              <option value="vitrine">Vitrine</option>
+                              <option value="tempo_real">Tempo Real</option>
+                            </select>
+                          </label>
+                        </div>
+                        <CampoEdicao
+                          label="Observações da solicitação"
+                          value={rascunho.observacoes}
+                          multiline
+                          onChange={(v) => editar("observacoes", v)}
                         />
                       </div>
-                    </div>
-                  </section>
-
-                  <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-700">
-                      2. Responsável
-                    </p>
-                    <h3 className="mt-1 font-black text-[#0f2240]">
-                      Contato e relacionamento
-                    </h3>
-
-                    <div className="mt-4 grid gap-3">
-                      <CampoEdicao label="Nome completo do solicitante" value={rascunho.nomeSolicitante}
-                        onChange={(v) => editar("nomeSolicitante", v)} />
-                      <CampoEdicao label="WhatsApp" value={formatarWhatsApp(rascunho.telefone)}
-                        onChange={(v) => editar("telefone", v.replace(/\D/g, "").replace(/^55/, "").slice(0, 11))} />
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <label className="block min-w-0 text-xs font-black uppercase tracking-wide text-slate-500">
-                          Relação com a embarcação
-                          <select value={rascunho.vinculo || ""} onChange={(e) => editar("vinculo", e.target.value)}
-                            className="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold normal-case text-slate-800">
-                            <option value="">Não informado</option>
-                            <option value="dono">Proprietário</option>
-                            <option value="tripulante">Tripulante</option>
-                            <option value="representante">Representante</option>
-                            <option value="passageiro">Passageiro/colaborador</option>
-                          </select>
-                        </label>
-                        <label className="block min-w-0 text-xs font-black uppercase tracking-wide text-slate-500">
-                          Plano de interesse
-                          <select value={rascunho.planoInteresse || "basico"}
-                            onChange={(e) => editar("planoInteresse", e.target.value)}
-                            className="mt-1 w-full min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold normal-case text-slate-800">
-                            <option value="basico">Básico gratuito</option>
-                            <option value="vitrine">Vitrine</option>
-                            <option value="tempo_real">Tempo Real</option>
-                          </select>
-                        </label>
-                      </div>
-                      <CampoEdicao label="Observações da solicitação" value={rascunho.observacoes} multiline
-                        onChange={(v) => editar("observacoes", v)} />
-                    </div>
-                  </section>
-                </div>
-
-                <p className={`mt-4 rounded-2xl p-3 text-sm font-bold ${selecionada.autorizaMelhoria ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}>
-                  {selecionada.autorizaMelhoria ? "✓ Autorizado melhorar foto, texto e organização dos dados." : "Melhorias não autorizadas. Peça correção para mudanças editoriais."}
-                </p>
-
-                <div className="mt-5 rounded-3xl border border-sky-300/20 bg-[#071a2f] p-4 text-white sm:p-5">
-                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-300">
-                    3. Operação
-                  </p>
-                  <h3 className="mt-1 text-lg font-black">Rotas e escalas para aprovação</h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-400">
-                    Use os mesmos seletores do cadastro. A lista inclui UF, município,
-                    comunidade, portos cadastrados e os novos portos informados pelo usuário.
-                  </p>
-                  <div className="mt-3">
-                    <RotasCadastroPublico
-                      value={rascunho.rotas || []}
-                      onChange={(rotas) => setRascunho((atual) => {
-                        if (!atual) return atual;
-                        const ida = rotas.find((rota) => rota.sentido === "ida");
-                        return {
-                          ...atual,
-                          rotas,
-                          cidade: ida?.origemCidade || atual.cidade || "",
-                          origemCidade: ida?.origemCidade || "",
-                          destinoCidade: ida?.destinoCidade || "",
-                          portoSaida: ida?.portoOrigem || "",
-                        };
-                      })}
-                    />
+                    </section>
                   </div>
-                </div>
 
-                {false && !!rascunho.rotas?.length && (
-                  <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-4">
-                    <h3 className="font-black text-[#0f2240]">Rotas completas para aprovação</h3>
-                    <div className="mt-3 space-y-3">
-                      {rascunho.rotas.map((rota, indice) => (
-                        <div key={indice} className="rounded-2xl border border-sky-100 bg-white p-3 text-sm">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="font-black uppercase text-sky-700">
-                              Programação da {rota.sentido}
-                            </p>
-                            {rota.itinerarioPersonalizado && (
-                              <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">
-                                caminho diferente
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-3 grid grid-cols-2 gap-2">
-                            <CampoEdicao label="UF de origem" value={rota.origemUf}
-                              onChange={(v) => editarRota(indice, {origemUf: v.toUpperCase().slice(0, 2)})} />
-                            <CampoEdicao label="Cidade de origem" value={rota.origemCidade}
-                              onChange={(v) => editarRota(indice, {origemCidade: v})} />
-                            <CampoEdicao label="Porto de origem" value={rota.portoOrigem}
-                              onChange={(v) => editarRota(indice, {portoOrigem: v})} />
-                            <CampoEdicao label="Horário de saída" value={rota.horarioSaida}
-                              onChange={(v) => editarRota(indice, {horarioSaida: v})} />
-                          </div>
+                  <p
+                    className={`mt-4 rounded-2xl p-3 text-sm font-bold ${selecionada.autorizaMelhoria ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`}
+                  >
+                    {selecionada.autorizaMelhoria
+                      ? "✓ Autorizado melhorar foto, texto e organização dos dados."
+                      : "Melhorias não autorizadas. Peça correção para mudanças editoriais."}
+                  </p>
 
-                          <div className="mt-3">
-                            <p className="text-xs font-black uppercase tracking-wide text-slate-500">Dias de saída</p>
-                            <div className="mt-2 grid grid-cols-7 gap-1">
-                              {NOMES_DIAS.map((dia, numero) => {
-                                const ativo = rota.diasSemana.includes(numero);
-                                return (
-                                  <button type="button" key={dia}
-                                    onClick={() => editarRota(indice, {
-                                      diasSemana: ativo
-                                        ? rota.diasSemana.filter((item) => item !== numero)
-                                        : [...rota.diasSemana, numero].sort(),
-                                    })}
-                                    className={`rounded-lg px-1 py-2 text-[10px] font-black ${
-                                      ativo ? "bg-sky-600 text-white" : "bg-slate-100 text-slate-500"
-                                    }`}>
-                                    {dia}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
+                  <div className="mt-5 rounded-3xl border border-sky-300/20 bg-[#071a2f] p-4 text-white sm:p-5">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-sky-300">
+                      3. Operação
+                    </p>
+                    <h3 className="mt-1 text-lg font-black">
+                      Rotas e escalas para aprovação
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">
+                      Use os mesmos seletores do cadastro. A lista inclui UF,
+                      município, comunidade, portos cadastrados e os novos
+                      portos informados pelo usuário.
+                    </p>
+                    <div className="mt-3">
+                      <RotasCadastroPublico
+                        value={rascunho.rotas || []}
+                        onChange={(rotas) =>
+                          setRascunho((atual) => {
+                            if (!atual) return atual;
+                            const ida = rotas.find(
+                              (rota) => rota.sentido === "ida",
+                            );
+                            return {
+                              ...atual,
+                              rotas,
+                              cidade: ida?.origemCidade || atual.cidade || "",
+                              origemCidade: ida?.origemCidade || "",
+                              destinoCidade: ida?.destinoCidade || "",
+                              portoSaida: ida?.portoOrigem || "",
+                            };
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
 
-                          {!!rota.escalas.length && (
-                            <div className="mt-4 space-y-2">
-                              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
-                                Escalas — todos os dados recebidos
+                  {false && !!rascunho.rotas?.length && (
+                    <div className="mt-5 rounded-2xl border border-sky-200 bg-sky-50 p-4">
+                      <h3 className="font-black text-[#0f2240]">
+                        Rotas completas para aprovação
+                      </h3>
+                      <div className="mt-3 space-y-3">
+                        {rascunho.rotas.map((rota, indice) => (
+                          <div
+                            key={indice}
+                            className="rounded-2xl border border-sky-100 bg-white p-3 text-sm"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="font-black uppercase text-sky-700">
+                                Programação da {rota.sentido}
                               </p>
-                              {rota.escalas.map((escala, escalaIndice) => (
-                                <div key={escalaIndice} className="rounded-xl bg-slate-50 p-2">
-                                  <p className="mb-2 text-xs font-black text-slate-700">Escala {escalaIndice + 1}</p>
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <CampoEdicao label="UF" value={escala.uf}
-                                      onChange={(v) => editarEscala(indice, escalaIndice, {uf: v.toUpperCase().slice(0, 2)})} />
-                                    <CampoEdicao label="Cidade/comunidade" value={escala.cidade}
-                                      onChange={(v) => editarEscala(indice, escalaIndice, {cidade: v})} />
-                                    <CampoEdicao label="Porto" value={escala.porto}
-                                      onChange={(v) => editarEscala(indice, escalaIndice, {porto: v})} />
-                                    <CampoEdicao label="Dias após saída" value={String(escala.diaRelativo)}
-                                      onChange={(v) => editarEscala(indice, escalaIndice, {diaRelativo: Number(v) || 0})} />
-                                    <CampoEdicao label="Chegada" value={escala.horarioChegada}
-                                      onChange={(v) => editarEscala(indice, escalaIndice, {horarioChegada: v})} />
-                                    <CampoEdicao label="Nova saída" value={escala.horarioSaida}
-                                      onChange={(v) => editarEscala(indice, escalaIndice, {horarioSaida: v})} />
-                                  </div>
-                                  <div className="mt-2">
-                                    <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">
-                                      Dias previstos de passagem
+                              {rota.itinerarioPersonalizado && (
+                                <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black text-amber-800">
+                                  caminho diferente
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-2">
+                              <CampoEdicao
+                                label="UF de origem"
+                                value={rota.origemUf}
+                                onChange={(v) =>
+                                  editarRota(indice, {
+                                    origemUf: v.toUpperCase().slice(0, 2),
+                                  })
+                                }
+                              />
+                              <CampoEdicao
+                                label="Cidade de origem"
+                                value={rota.origemCidade}
+                                onChange={(v) =>
+                                  editarRota(indice, { origemCidade: v })
+                                }
+                              />
+                              <CampoEdicao
+                                label="Porto de origem"
+                                value={rota.portoOrigem}
+                                onChange={(v) =>
+                                  editarRota(indice, { portoOrigem: v })
+                                }
+                              />
+                              <CampoEdicao
+                                label="Horário de saída"
+                                value={rota.horarioSaida}
+                                onChange={(v) =>
+                                  editarRota(indice, { horarioSaida: v })
+                                }
+                              />
+                            </div>
+
+                            <div className="mt-3">
+                              <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                                Dias de saída
+                              </p>
+                              <div className="mt-2 grid grid-cols-7 gap-1">
+                                {NOMES_DIAS.map((dia, numero) => {
+                                  const ativo =
+                                    rota.diasSemana.includes(numero);
+                                  return (
+                                    <button
+                                      type="button"
+                                      key={dia}
+                                      onClick={() =>
+                                        editarRota(indice, {
+                                          diasSemana: ativo
+                                            ? rota.diasSemana.filter(
+                                                (item) => item !== numero,
+                                              )
+                                            : [
+                                                ...rota.diasSemana,
+                                                numero,
+                                              ].sort(),
+                                        })
+                                      }
+                                      className={`rounded-lg px-1 py-2 text-[10px] font-black ${
+                                        ativo
+                                          ? "bg-sky-600 text-white"
+                                          : "bg-slate-100 text-slate-500"
+                                      }`}
+                                    >
+                                      {dia}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {!!rota.escalas.length && (
+                              <div className="mt-4 space-y-2">
+                                <p className="text-xs font-black uppercase tracking-wide text-slate-500">
+                                  Escalas — todos os dados recebidos
+                                </p>
+                                {rota.escalas.map((escala, escalaIndice) => (
+                                  <div
+                                    key={escalaIndice}
+                                    className="rounded-xl bg-slate-50 p-2"
+                                  >
+                                    <p className="mb-2 text-xs font-black text-slate-700">
+                                      Escala {escalaIndice + 1}
                                     </p>
-                                    <div className="mt-1 grid grid-cols-7 gap-1">
-                                      {NOMES_DIAS.map((dia, numero) => {
-                                        const dias = escala.diasPassagem || [];
-                                        const ativo = dias.includes(numero);
-                                        return (
-                                          <button type="button" key={dia}
-                                            onClick={() => editarEscala(indice, escalaIndice, {
-                                              diasPassagem: ativo
-                                                ? dias.filter((item) => item !== numero)
-                                                : [...dias, numero].sort(),
-                                            })}
-                                            className={`rounded-lg px-0.5 py-2 text-[9px] font-black ${
-                                              ativo ? "bg-amber-400 text-slate-950" : "bg-white text-slate-500"
-                                            }`}>
-                                            {dia}
-                                          </button>
-                                        );
-                                      })}
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <CampoEdicao
+                                        label="UF"
+                                        value={escala.uf}
+                                        onChange={(v) =>
+                                          editarEscala(indice, escalaIndice, {
+                                            uf: v.toUpperCase().slice(0, 2),
+                                          })
+                                        }
+                                      />
+                                      <CampoEdicao
+                                        label="Cidade/comunidade"
+                                        value={escala.cidade}
+                                        onChange={(v) =>
+                                          editarEscala(indice, escalaIndice, {
+                                            cidade: v,
+                                          })
+                                        }
+                                      />
+                                      <CampoEdicao
+                                        label="Porto"
+                                        value={escala.porto}
+                                        onChange={(v) =>
+                                          editarEscala(indice, escalaIndice, {
+                                            porto: v,
+                                          })
+                                        }
+                                      />
+                                      <CampoEdicao
+                                        label="Dias após saída"
+                                        value={String(escala.diaRelativo)}
+                                        onChange={(v) =>
+                                          editarEscala(indice, escalaIndice, {
+                                            diaRelativo: Number(v) || 0,
+                                          })
+                                        }
+                                      />
+                                      <CampoEdicao
+                                        label="Chegada"
+                                        value={escala.horarioChegada}
+                                        onChange={(v) =>
+                                          editarEscala(indice, escalaIndice, {
+                                            horarioChegada: v,
+                                          })
+                                        }
+                                      />
+                                      <CampoEdicao
+                                        label="Nova saída"
+                                        value={escala.horarioSaida}
+                                        onChange={(v) =>
+                                          editarEscala(indice, escalaIndice, {
+                                            horarioSaida: v,
+                                          })
+                                        }
+                                      />
+                                    </div>
+                                    <div className="mt-2">
+                                      <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+                                        Dias previstos de passagem
+                                      </p>
+                                      <div className="mt-1 grid grid-cols-7 gap-1">
+                                        {NOMES_DIAS.map((dia, numero) => {
+                                          const dias =
+                                            escala.diasPassagem || [];
+                                          const ativo = dias.includes(numero);
+                                          return (
+                                            <button
+                                              type="button"
+                                              key={dia}
+                                              onClick={() =>
+                                                editarEscala(
+                                                  indice,
+                                                  escalaIndice,
+                                                  {
+                                                    diasPassagem: ativo
+                                                      ? dias.filter(
+                                                          (item) =>
+                                                            item !== numero,
+                                                        )
+                                                      : [
+                                                          ...dias,
+                                                          numero,
+                                                        ].sort(),
+                                                  },
+                                                )
+                                              }
+                                              className={`rounded-lg px-0.5 py-2 text-[9px] font-black ${
+                                                ativo
+                                                  ? "bg-amber-400 text-slate-950"
+                                                  : "bg-white text-slate-500"
+                                              }`}
+                                            >
+                                              {dia}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
+                              <CampoEdicao
+                                label="UF do destino"
+                                value={rota.destinoUf}
+                                onChange={(v) =>
+                                  editarRota(indice, {
+                                    destinoUf: v.toUpperCase().slice(0, 2),
+                                  })
+                                }
+                              />
+                              <CampoEdicao
+                                label="Cidade de destino"
+                                value={rota.destinoCidade}
+                                onChange={(v) =>
+                                  editarRota(indice, { destinoCidade: v })
+                                }
+                              />
+                              <CampoEdicao
+                                label="Porto de destino"
+                                value={rota.portoDestino}
+                                onChange={(v) =>
+                                  editarRota(indice, { portoDestino: v })
+                                }
+                              />
+                              <CampoEdicao
+                                label="Dia de chegada"
+                                value={String(rota.destinoDiaRelativo || 0)}
+                                onChange={(v) =>
+                                  editarRota(indice, {
+                                    destinoDiaRelativo: Number(v) || 0,
+                                  })
+                                }
+                              />
+                              <CampoEdicao
+                                label="Horário de chegada"
+                                value={rota.destinoHorarioChegada}
+                                onChange={(v) =>
+                                  editarRota(indice, {
+                                    destinoHorarioChegada: v,
+                                  })
+                                }
+                              />
+                              <CampoEdicao
+                                label="Duração aproximada (horas)"
+                                value={
+                                  rota.duracaoNaoInformada
+                                    ? "Não informada"
+                                    : String(rota.duracaoHoras || 0)
+                                }
+                                onChange={(v) =>
+                                  editarRota(indice, {
+                                    duracaoNaoInformada:
+                                      normalizarIdEmbarcacao(v) ===
+                                      "NAO_INFORMADA",
+                                    duracaoHoras: Number(v) || 0,
+                                  })
+                                }
+                              />
                             </div>
-                          )}
-
-                          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3">
-                            <CampoEdicao label="UF do destino" value={rota.destinoUf}
-                              onChange={(v) => editarRota(indice, {destinoUf: v.toUpperCase().slice(0, 2)})} />
-                            <CampoEdicao label="Cidade de destino" value={rota.destinoCidade}
-                              onChange={(v) => editarRota(indice, {destinoCidade: v})} />
-                            <CampoEdicao label="Porto de destino" value={rota.portoDestino}
-                              onChange={(v) => editarRota(indice, {portoDestino: v})} />
-                            <CampoEdicao label="Dia de chegada" value={String(rota.destinoDiaRelativo || 0)}
-                              onChange={(v) => editarRota(indice, {destinoDiaRelativo: Number(v) || 0})} />
-                            <CampoEdicao label="Horário de chegada" value={rota.destinoHorarioChegada}
-                              onChange={(v) => editarRota(indice, {destinoHorarioChegada: v})} />
-                            <CampoEdicao label="Duração aproximada (horas)"
-                              value={rota.duracaoNaoInformada ? "Não informada" : String(rota.duracaoHoras || 0)}
-                              onChange={(v) => editarRota(indice, {
-                                duracaoNaoInformada: normalizarIdEmbarcacao(v) === "NAO_INFORMADA",
-                                duracaoHoras: Number(v) || 0,
-                              })} />
                           </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                      <p className="mt-3 text-xs font-semibold text-sky-900">
+                        O Plano Básico mostra a saída da origem e a chegada ao
+                        destino. Horários intermediários das escalas continuam
+                        reservados aos planos pagos.
+                      </p>
                     </div>
-                    <p className="mt-3 text-xs font-semibold text-sky-900">
-                      O Plano Básico mostra a saída da origem e a chegada ao destino.
-                      Horários intermediários das escalas continuam reservados aos planos pagos.
-                    </p>
-                  </div>
-                )}
-
-                <dl className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-4">
-                  <div><dt className="font-bold text-slate-400">Solicitante</dt><dd className="font-bold">{rascunho.nomeSolicitante}</dd></div>
-                  <div><dt className="font-bold text-slate-400">Vínculo</dt><dd className="font-bold">{nomeVinculo(rascunho.vinculo)}</dd></div>
-                  <div><dt className="font-bold text-slate-400">Plano desejado</dt><dd className="font-bold">{nomePlano(rascunho.planoInteresse)}</dd></div>
-                  <div><dt className="font-bold text-slate-400">Status</dt><dd className="font-bold">{chip(selecionada.status)}</dd></div>
-                </dl>
-
-                <div className="sticky bottom-0 z-20 -mx-5 mt-5 grid gap-2 border-t border-slate-200 bg-white/95 px-5 pb-1 pt-4 shadow-[0_-14px_30px_rgba(15,34,64,0.08)] backdrop-blur">
-                  <button disabled={ocupado} onClick={salvarRevisao}
-                    className="min-h-12 rounded-2xl border border-sky-600 bg-white font-black text-sky-700">Salvar revisão</button>
-                  {!selecionada.telefoneValidado && (
-                    <button disabled={ocupado} onClick={() => alterarStatus("em_analise", {telefoneValidado: true, telefoneValidadoEm: serverTimestamp()})}
-                      className="min-h-12 rounded-2xl bg-emerald-500 font-black text-white">Confirmar WhatsApp</button>
                   )}
-                  {selecionada.status !== "aprovado" && (
-                    <button disabled={ocupado} onClick={aprovar}
-                      className="min-h-12 rounded-2xl bg-sky-600 font-black text-white disabled:opacity-40">
-                      Salvar e aprovar no plano Básico
+
+                  <dl className="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm sm:grid-cols-4">
+                    <div>
+                      <dt className="font-bold text-slate-400">Solicitante</dt>
+                      <dd className="font-bold">{rascunho.nomeSolicitante}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold text-slate-400">Vínculo</dt>
+                      <dd className="font-bold">
+                        {nomeVinculo(rascunho.vinculo)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold text-slate-400">
+                        Plano desejado
+                      </dt>
+                      <dd className="font-bold">
+                        {nomePlano(rascunho.planoInteresse)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-bold text-slate-400">Status</dt>
+                      <dd className="font-bold">{chip(selecionada.status)}</dd>
+                    </div>
+                  </dl>
+
+                  <div className="sticky bottom-0 z-20 -mx-5 mt-5 grid gap-2 border-t border-slate-200 bg-white/95 px-5 pb-1 pt-4 shadow-[0_-14px_30px_rgba(15,34,64,0.08)] backdrop-blur">
+                    <button
+                      disabled={ocupado}
+                      onClick={() => void salvarRevisao()}
+                      className="min-h-12 rounded-2xl border border-sky-600 bg-white font-black text-sky-700"
+                    >
+                      Salvar revisão
                     </button>
-                  )}
-                  {selecionada.status === "aprovado" &&
-                    idEhAleatorio(selecionada.embarcacaoId) && (
-                    <button disabled={ocupado} onClick={corrigirIdEmbarcacaoAprovada}
-                      className="min-h-12 rounded-2xl border border-amber-400 bg-amber-50 px-4 font-black text-amber-900 disabled:opacity-40">
-                      Sincronizar dados e corrigir ID para {normalizarIdEmbarcacao(
-                        rascunho.idEmbarcacaoSugerido || rascunho.nomeEmbarcacao,
+                    {!selecionada.telefoneValidado && (
+                      <button
+                        disabled={ocupado}
+                        onClick={() =>
+                          alterarStatus("em_analise", {
+                            telefoneValidado: true,
+                            telefoneValidadoEm: serverTimestamp(),
+                          })
+                        }
+                        className="min-h-12 rounded-2xl bg-emerald-500 font-black text-white"
+                      >
+                        Confirmar WhatsApp
+                      </button>
+                    )}
+                    {selecionada.status !== "aprovado" && (
+                      <button
+                        disabled={ocupado}
+                        onClick={aprovar}
+                        className="min-h-12 rounded-2xl bg-sky-600 font-black text-white disabled:opacity-40"
+                      >
+                        Salvar e aprovar no plano Básico
+                      </button>
+                    )}
+                    {selecionada.status === "aprovado" &&
+                      idEhAleatorio(selecionada.embarcacaoId) && (
+                        <button
+                          disabled={ocupado}
+                          onClick={corrigirIdEmbarcacaoAprovada}
+                          className="min-h-12 rounded-2xl border border-amber-400 bg-amber-50 px-4 font-black text-amber-900 disabled:opacity-40"
+                        >
+                          Sincronizar dados e corrigir ID para{" "}
+                          {normalizarIdEmbarcacao(
+                            rascunho.idEmbarcacaoSugerido ||
+                              rascunho.nomeEmbarcacao,
+                          )}
+                        </button>
                       )}
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        disabled={ocupado}
+                        onClick={() => alterarStatus("correcao_solicitada")}
+                        className="rounded-xl bg-amber-100 p-3 text-xs font-black text-amber-900"
+                      >
+                        Pedir correção
+                      </button>
+                      <button
+                        disabled={ocupado}
+                        onClick={() => alterarStatus("duplicado")}
+                        className="rounded-xl bg-violet-100 p-3 text-xs font-black text-violet-900"
+                      >
+                        Duplicado
+                      </button>
+                      <button
+                        disabled={ocupado}
+                        onClick={() => alterarStatus("rejeitado")}
+                        className="rounded-xl bg-red-100 p-3 text-xs font-black text-red-900"
+                      >
+                        Rejeitar
+                      </button>
+                    </div>
+                    <button
+                      disabled={ocupado}
+                      onClick={excluirRegistroValidacao}
+                      className="min-h-11 rounded-xl border border-red-200 bg-white px-4 text-xs font-black text-red-700 hover:bg-red-50 disabled:opacity-40"
+                    >
+                      Excluir este registro de Todos/Aprovados
                     </button>
-                  )}
-                  <div className="grid grid-cols-3 gap-2">
-                    <button disabled={ocupado} onClick={() => alterarStatus("correcao_solicitada")} className="rounded-xl bg-amber-100 p-3 text-xs font-black text-amber-900">Pedir correção</button>
-                    <button disabled={ocupado} onClick={() => alterarStatus("duplicado")} className="rounded-xl bg-violet-100 p-3 text-xs font-black text-violet-900">Duplicado</button>
-                    <button disabled={ocupado} onClick={() => alterarStatus("rejeitado")} className="rounded-xl bg-red-100 p-3 text-xs font-black text-red-900">Rejeitar</button>
                   </div>
-                  <button disabled={ocupado} onClick={excluirRegistroValidacao}
-                    className="min-h-11 rounded-xl border border-red-200 bg-white px-4 text-xs font-black text-red-700 hover:bg-red-50 disabled:opacity-40">
-                    Excluir este registro de Todos/Aprovados
-                  </button>
                 </div>
               </div>
+            ) : (
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center font-bold text-slate-500">
+                Selecione um cadastro para analisar.
               </div>
-            ) : <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-8 text-center font-bold text-slate-500">Selecione um cadastro para analisar.</div>}
+            )}
           </aside>
         </div>
       </div>

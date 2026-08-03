@@ -107,18 +107,20 @@ service cloud.firestore {
     }
 
     match /passagens/{docId} {
-      allow read, write: if estaLogado();
-      allow delete: if isAdminSistema();
+      // Compatibilidade temporária: o passageiro ainda consulta por pagamentoId.
+      // Toda gravação oficial é feita pelas Cloud Functions com Admin SDK.
+      allow read: if estaLogado();
+      allow create, update, delete: if isAdminSistema();
     }
 
     match /passagens_vendidas/{docId} {
-      allow read, write: if estaLogado();
+      allow read: if estaLogado();
+      allow create, update, delete: if isAdminSistema();
     }
 
     match /pagamentos/{docId} {
-      allow read, create: if estaLogado();
-      allow update: if true;
-      allow delete: if isAdminSistema();
+      allow read: if estaLogado();
+      allow create, update, delete: if isAdminSistema();
     }
 
     match /chaves_mestras/{docId} {
@@ -130,15 +132,17 @@ service cloud.firestore {
     match /embarcacoes/{docId} {
       allow read: if true;
 
+      // Um usuário só cria uma embarcação vinculada ao próprio UID.
       allow create: if estaLogado() && (
         isAdminSistema() ||
         request.auth.uid == request.resource.data.ownerId
       );
 
+      // A autorização usa o proprietário já salvo. Isso impede alguém de
+      // assumir uma embarcação alterando ownerId no mesmo pedido.
       allow update, delete: if estaLogado() && (
         isAdminSistema() ||
-        request.auth.uid == resource.data.ownerId ||
-        request.auth.uid == request.resource.data.ownerId
+        request.auth.uid == resource.data.ownerId
       );
     }
 
@@ -183,7 +187,8 @@ service cloud.firestore {
 
     match /grades_viagens/{docId} {
       allow read: if true;
-      allow write: if estaLogado();
+      allow create, update, delete: if isAdminSistema() ||
+        funcionarioTemPermissao("rotas");
     }
 
     match /programacoes_viagem/{docId} {

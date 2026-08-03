@@ -70,6 +70,12 @@ export default function GestaoPortalArmadores() {
       setBarcos(
         snapshot.docs
           .map((item) => ({ id: item.id, ...item.data() }) as Embarcacao)
+          .filter(
+            (barco) =>
+              !["CF_CONECT", "CADE_MEU_BARCO"].includes(
+                String(barco.id).toUpperCase(),
+              ),
+          )
           .sort((a, b) => String(a.nome || a.id).localeCompare(String(b.nome || b.id))),
       ),
     );

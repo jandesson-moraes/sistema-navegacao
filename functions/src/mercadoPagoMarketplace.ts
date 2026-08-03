@@ -56,9 +56,13 @@ export type TokenMarketplaceVenda = {
  * de uma Cloud Function. A função chamadora também deve validar preço,
  * disponibilidade, prazo da viagem e feature flag antes de criar pagamento.
  */
-export async function obterTokenMarketplaceVenda(
-  barcoId: string,
-): Promise<TokenMarketplaceVenda> {
+async function obterTokenMarketplace({
+  barcoId,
+  exigirVendaLiberada,
+}: {
+  barcoId: string;
+  exigirVendaLiberada: boolean;
+}): Promise<TokenMarketplaceVenda> {
   const id = texto(barcoId);
 
   if (!id) throw new Error("EMBARCACAO_INVALIDA");
@@ -76,10 +80,14 @@ export async function obterTokenMarketplaceVenda(
   const sellerEsperado = texto(financeiro.vendedorMercadoPagoId);
   const sellerConectado = texto(conexao.sellerUserId);
 
+  if (financeiro.contaConectada !== true) {
+    throw new Error("CONTA_MERCADO_PAGO_NAO_CONECTADA");
+  }
+
   if (
-    financeiro.contaConectada !== true ||
-    financeiro.status !== "ativo" ||
-    financeiro.vendaPassagemHabilitada !== true
+    exigirVendaLiberada &&
+    (financeiro.status !== "ativo" ||
+      financeiro.vendaPassagemHabilitada !== true)
   ) {
     throw new Error("EMBARCACAO_NAO_LIBERADA_PARA_VENDA");
   }
@@ -158,4 +166,23 @@ export async function obterTokenMarketplaceVenda(
     sellerUserId: sellerRenovado,
     renovado: true,
   };
+}
+
+/** Usado somente antes de criar uma nova venda. */
+export function obterTokenMarketplaceVenda(barcoId: string) {
+  return obterTokenMarketplace({
+    barcoId,
+    exigirVendaLiberada: true,
+  });
+}
+
+/**
+ * Usado por webhook, consulta, cancelamento e reembolso de venda existente.
+ * Não exige que novas vendas continuem habilitadas.
+ */
+export function obterTokenMarketplaceOperacao(barcoId: string) {
+  return obterTokenMarketplace({
+    barcoId,
+    exigirVendaLiberada: false,
+  });
 }

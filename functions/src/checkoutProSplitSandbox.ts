@@ -1,9 +1,12 @@
 import * as admin from "firebase-admin";
-import {createHash} from "node:crypto";
-import {defineSecret} from "firebase-functions/params";
-import {onRequest} from "firebase-functions/v2/https";
+import { createHash } from "node:crypto";
+import { defineSecret } from "firebase-functions/params";
+import { onRequest } from "firebase-functions/v2/https";
 
 if (!admin.apps.length) admin.initializeApp();
+
+const URL_WEBHOOK_MARKETPLACE =
+  "https://us-central1-sistema-navegacao.cloudfunctions.net/webhookMercadoPagoMarketplace";
 
 const db = admin.firestore();
 const sellerTestUserId = defineSecret("MERCADO_PAGO_SELLER_TEST_USER_ID");
@@ -25,7 +28,7 @@ function hash(valor: string) {
   return createHash("sha256").update(valor).digest("hex");
 }
 
-async function autenticarAdmin(req: {headers: {authorization?: string}}) {
+async function autenticarAdmin(req: { headers: { authorization?: string } }) {
   const cabecalho = texto(req.headers.authorization);
   if (!cabecalho.startsWith("Bearer ")) throw new Error("UNAUTHENTICATED");
 
@@ -50,7 +53,7 @@ export const criarCheckoutProSplitSandbox = onRequest(
   },
   async (req, res) => {
     if (req.method !== "POST") {
-      res.status(405).json({erro: "METHOD_NOT_ALLOWED"});
+      res.status(405).json({ erro: "METHOD_NOT_ALLOWED" });
       return;
     }
 
@@ -60,11 +63,11 @@ export const criarCheckoutProSplitSandbox = onRequest(
       const chaveCliente = texto(req.body?.chaveIdempotencia);
 
       if (barcoId !== BARCO_TESTE) {
-        res.status(403).json({erro: "TESTE_RESTRITO_A_AGUIA_DOURADA"});
+        res.status(403).json({ erro: "TESTE_RESTRITO_A_AGUIA_DOURADA" });
         return;
       }
       if (!/^[a-zA-Z0-9_-]{20,150}$/.test(chaveCliente)) {
-        res.status(400).json({erro: "CHAVE_IDEMPOTENCIA_INVALIDA"});
+        res.status(400).json({ erro: "CHAVE_IDEMPOTENCIA_INVALIDA" });
         return;
       }
 
@@ -79,12 +82,16 @@ export const criarCheckoutProSplitSandbox = onRequest(
       ]);
 
       const financeiro = barcoSnap.data()?.financeiroMercadoPago || {};
-      if (!barcoSnap.exists || financeiro.contaConectada !== true || financeiro.status !== "pendente") {
-        res.status(409).json({erro: "EMBARCACAO_NAO_ESTA_PENDENTE_PARA_TESTE"});
+      if (
+        !barcoSnap.exists ||
+        financeiro.contaConectada !== true ||
+        financeiro.status !== "pendente"
+      ) {
+        res.status(409).json({ erro: "EMBARCACAO_NAO_ESTA_PENDENTE_PARA_TESTE" });
         return;
       }
       if (financeiro.vendaPassagemHabilitada === true) {
-        res.status(409).json({erro: "DESABILITE_A_VENDA_ANTES_DO_TESTE"});
+        res.status(409).json({ erro: "DESABILITE_A_VENDA_ANTES_DO_TESTE" });
         return;
       }
       if (!conexaoSnap.exists) throw new Error("CONTA_NAO_CONECTADA");
@@ -117,16 +124,19 @@ export const criarCheckoutProSplitSandbox = onRequest(
           "X-Idempotency-Key": testeId,
         },
         body: JSON.stringify({
-          items: [{
-            id: testeId,
-            title: "Teste controlado split Cadê Meu Barco",
-            description: "Ambiente sandbox - sem dinheiro real",
-            currency_id: "BRL",
-            quantity: 1,
-            unit_price: VALOR_TESTE,
-          }],
+          items: [
+            {
+              id: testeId,
+              title: "Teste controlado split Cadê Meu Barco",
+              description: "Ambiente sandbox - sem dinheiro real",
+              currency_id: "BRL",
+              quantity: 1,
+              unit_price: VALOR_TESTE,
+            },
+          ],
           marketplace_fee: TAXA_MARKETPLACE_TESTE,
           external_reference: testeId,
+          notification_url: `${URL_WEBHOOK_MARKETPLACE}?barcoId=${encodeURIComponent(barcoId)}`,
           statement_descriptor: "CADE MEU BARCO",
           metadata: {
             ambiente: "sandbox",
@@ -136,18 +146,25 @@ export const criarCheckoutProSplitSandbox = onRequest(
         }),
       });
 
-      const preferencia = await resposta.json() as Record<string, unknown>;
-      if (!resposta.ok || !texto(preferencia.id) || !texto(preferencia.sandbox_init_point)) {
+      const preferencia = (await resposta.json()) as Record<string, unknown>;
+      if (
+        !resposta.ok ||
+        !texto(preferencia.id) ||
+        !texto(preferencia.sandbox_init_point)
+      ) {
         const detalhe = texto(preferencia.message || preferencia.error);
-        await testeRef.set({
-          testeId,
-          barcoId,
-          tipo: "checkout_pro_split_sandbox",
-          status: "rejeitado_pela_api",
-          httpStatus: resposta.status,
-          erroDetalhe: detalhe,
-          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
-        }, {merge: true});
+        await testeRef.set(
+          {
+            testeId,
+            barcoId,
+            tipo: "checkout_pro_split_sandbox",
+            status: "rejeitado_pela_api",
+            httpStatus: resposta.status,
+            erroDetalhe: detalhe,
+            atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
         res.status(422).json({
           erro: "MERCADO_PAGO_REJEITOU_PREFERENCIA_SANDBOX",
           detalhe,
@@ -170,27 +187,31 @@ export const criarCheckoutProSplitSandbox = onRequest(
         aviso: "Use somente Buyer Test User e cartão oficial de teste.",
       };
 
-      await testeRef.set({
-        testeId,
-        barcoId,
-        tipo: "checkout_pro_split_sandbox",
-        preferenciaId: texto(preferencia.id),
-        status: "preferencia_criada",
-        valor: VALOR_TESTE,
-        marketplaceFee: TAXA_MARKETPLACE_TESTE,
-        criadoPorUid: usuario.uid,
-        criadoPorEmail: texto(usuario.email).toLowerCase(),
-        respostaPublica,
-        criadoEm: admin.firestore.FieldValue.serverTimestamp(),
-        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
-      }, {merge: true});
+      await testeRef.set(
+        {
+          testeId,
+          barcoId,
+          tipo: "checkout_pro_split_sandbox",
+          preferenciaId: texto(preferencia.id),
+          status: "preferencia_criada",
+          valor: VALOR_TESTE,
+          marketplaceFee: TAXA_MARKETPLACE_TESTE,
+          criadoPorUid: usuario.uid,
+          criadoPorEmail: texto(usuario.email).toLowerCase(),
+          respostaPublica,
+          criadoEm: admin.firestore.FieldValue.serverTimestamp(),
+          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
 
       res.status(200).json(respostaPublica);
     } catch (erro) {
       const codigo = erro instanceof Error ? erro.message : "ERRO_INTERNO";
       console.error("Erro em criarCheckoutProSplitSandbox", codigo);
-      const httpStatus = codigo === "UNAUTHENTICATED" ? 401 : codigo === "FORBIDDEN" ? 403 : 500;
-      res.status(httpStatus).json({erro: codigo});
+      const httpStatus =
+        codigo === "UNAUTHENTICATED" ? 401 : codigo === "FORBIDDEN" ? 403 : 500;
+      res.status(httpStatus).json({ erro: codigo });
     }
   },
 );

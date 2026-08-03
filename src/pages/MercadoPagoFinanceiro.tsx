@@ -116,6 +116,8 @@ const URL_CHECKOUT_PRO_SPLIT_SANDBOX =
   "https://us-central1-sistema-navegacao.cloudfunctions.net/criarCheckoutProSplitSandbox";
 const URL_CONSULTAR_CHECKOUT_SPLIT_SANDBOX =
   "https://us-central1-sistema-navegacao.cloudfunctions.net/consultarCheckoutSplitSandbox";
+const URL_GERENCIAR_PAGAMENTO_MARKETPLACE_SANDBOX =
+  "https://us-central1-sistema-navegacao.cloudfunctions.net/gerenciarPagamentoMarketplaceSandbox";
 
 type ResultadoCheckoutSandbox = {
   testeId: string;
@@ -221,6 +223,7 @@ export default function MercadoPagoFinanceiro() {
     useState<ResultadoCheckoutSandbox | null>(null);
   const [resultadoConsultaSandbox, setResultadoConsultaSandbox] =
     useState<ResultadoConsultaSandbox | null>(null);
+  const [operandoPagamentoSandbox, setOperandoPagamentoSandbox] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "embarcacoes"), (snapshot) => {
@@ -499,6 +502,87 @@ export default function MercadoPagoFinanceiro() {
       );
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const gerenciarPagamentoSandbox = async (acao: "cancelar" | "reembolsar") => {
+    if (
+      !selecionado ||
+      selecionado.id !== "AGUIA_DOURADA" ||
+      !resultadoCheckoutSandbox ||
+      !resultadoConsultaSandbox?.encontrado ||
+      !resultadoConsultaSandbox.pagamentoId
+    ) {
+      return;
+    }
+
+    const cancelamento = acao === "cancelar";
+    const frase = cancelamento ? "CANCELAR TESTE" : "REEMBOLSAR TESTE";
+    const confirmou = await modal.confirmar({
+      tipo: "warning",
+      titulo: cancelamento ? "Cancelar pagamento sandbox?" : "Reembolsar pagamento sandbox?",
+      mensagem: cancelamento
+        ? "O cancelamento só será enviado se o pagamento estiver pendente, em processamento ou autorizado."
+        : "Será solicitado o reembolso integral do pagamento sandbox aprovado.",
+      confirmarTexto: cancelamento ? "Continuar cancelamento" : "Continuar reembolso",
+      cancelarTexto: "Voltar",
+    });
+    if (!confirmou) return;
+
+    const confirmacaoDigitada = window.prompt(
+      `Para confirmar a operação técnica, digite exatamente: ${frase}`,
+    );
+    if (confirmacaoDigitada?.trim().toUpperCase() !== frase) {
+      await modal.aviso("Operação cancelada", "A frase de confirmação não corresponde.");
+      return;
+    }
+
+    setOperandoPagamentoSandbox(true);
+    try {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("Faça login novamente antes da operação.");
+      const idToken = await user.getIdToken();
+      const chaveIdempotencia =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `operacao_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+
+      const resposta = await fetch(URL_GERENCIAR_PAGAMENTO_MARKETPLACE_SANDBOX, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          embarcacaoId: selecionado.id,
+          testeId: resultadoCheckoutSandbox.testeId,
+          pagamentoId: resultadoConsultaSandbox.pagamentoId,
+          acao,
+          confirmacao: frase,
+          chaveIdempotencia,
+        }),
+      });
+      const dados = await resposta.json();
+      if (!resposta.ok) {
+        throw new Error(
+          [dados?.erro, dados?.statusAtual, dados?.codigo].filter(Boolean).join(": "),
+        );
+      }
+
+      await modal.sucesso(
+        cancelamento ? "Pagamento sandbox cancelado" : "Pagamento sandbox reembolsado",
+        cancelamento
+          ? "O Mercado Pago confirmou o cancelamento técnico."
+          : "O Mercado Pago confirmou o reembolso integral técnico.",
+      );
+      await consultarCheckoutSplitSandbox();
+    } catch (error: any) {
+      await modal.erro(
+        "Operação financeira não concluída",
+        error?.message || "O Mercado Pago não concluiu a operação sandbox.",
+      );
+    } finally {
+      setOperandoPagamentoSandbox(false);
     }
   };
 
@@ -1015,6 +1099,34 @@ export default function MercadoPagoFinanceiro() {
                           {resultadoConsultaSandbox.mensagem && (
                             <p className="mt-1 text-amber-200">{resultadoConsultaSandbox.mensagem}</p>
                           )}
+                          {resultadoConsultaSandbox.encontrado &&
+                            ["pending", "in_process", "authorized"].includes(
+                              resultadoConsultaSandbox.status,
+                            ) && (
+                              <button
+                                type="button"
+                                onClick={() => gerenciarPagamentoSandbox("cancelar")}
+                                disabled={operandoPagamentoSandbox || salvando}
+                                className="mt-3 w-full rounded-lg border border-amber-300/30 bg-amber-400/10 px-3 py-2 text-xs font-black uppercase text-amber-200 transition hover:bg-amber-400/20 disabled:opacity-50"
+                              >
+                                {operandoPagamentoSandbox
+                                  ? "Processando..."
+                                  : "Cancelar pagamento sandbox"}
+                              </button>
+                            )}
+                          {resultadoConsultaSandbox.encontrado &&
+                            resultadoConsultaSandbox.status === "approved" && (
+                              <button
+                                type="button"
+                                onClick={() => gerenciarPagamentoSandbox("reembolsar")}
+                                disabled={operandoPagamentoSandbox || salvando}
+                                className="mt-3 w-full rounded-lg border border-red-300/30 bg-red-400/10 px-3 py-2 text-xs font-black uppercase text-red-200 transition hover:bg-red-400/20 disabled:opacity-50"
+                              >
+                                {operandoPagamentoSandbox
+                                  ? "Processando..."
+                                  : "Reembolsar pagamento sandbox"}
+                              </button>
+                            )}
                         </div>
                       )}
                     </div>

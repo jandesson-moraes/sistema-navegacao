@@ -17,6 +17,7 @@ export { gerarPixSplitTeste } from "./splitMercadoPagoTeste";
 export { criarCheckoutProSplitSandbox } from "./checkoutProSplitSandbox";
 export { consultarCheckoutSplitSandbox } from "./consultarCheckoutSplitSandbox";
 export { webhookMercadoPagoMarketplace } from "./webhookMercadoPagoMarketplace";
+export { gerenciarPagamentoMarketplaceSandbox } from "./gerenciarPagamentoMarketplaceSandbox";
 
 if (!admin.apps.length) {
   admin.initializeApp();

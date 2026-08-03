@@ -615,7 +615,12 @@ service cloud.firestore {
         colecao != "mercado_pago_conexoes" &&
         colecao != "mercado_pago_oauth_states" &&
         colecao != "testes_split_mercado_pago" &&
-        colecao != "mercado_pago_webhook_eventos";
+        colecao != "mercado_pago_webhook_eventos" &&
+        colecao != "mercado_pago_operacoes_financeiras";
+    }
+
+    match /mercado_pago_operacoes_financeiras/{document=**} {
+      allow read, write: if false;
     }
 
     match /mercado_pago_webhook_eventos/{document=**} {

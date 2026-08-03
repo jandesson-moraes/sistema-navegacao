@@ -1,5 +1,6 @@
 import * as admin from "firebase-admin";
 import { createHash } from "node:crypto";
+import { defineSecret } from "firebase-functions/params";
 import { onRequest } from "firebase-functions/v2/https";
 import { calcularVendaNoServidor, type RegraTaxaVenda } from "./motorVendas";
 import {
@@ -19,6 +20,7 @@ const db = admin.firestore();
 const REGIAO = "us-central1";
 const PROJETO_ID = "sistema-navegacao";
 const BARCO_PILOTO = "AGUIA_DOURADA";
+const pilotoCompradorUid = defineSecret("CMB_PILOT_BUYER_UID");
 const URL_WEBHOOK =
   `https://${REGIAO}-${PROJETO_ID}.cloudfunctions.net/webhookVendaMarketplace`;
 
@@ -165,6 +167,7 @@ export const criarCheckoutVendaMarketplace = onRequest(
     secrets: [
       mercadoPagoMarketplaceClientId,
       mercadoPagoMarketplaceClientSecret,
+      pilotoCompradorUid,
     ],
     timeoutSeconds: 60,
   },
@@ -207,6 +210,11 @@ export const criarCheckoutVendaMarketplace = onRequest(
       }
       if (barcoId !== BARCO_PILOTO) {
         res.status(403).json({ erro: "PILOTO_RESTRITO_A_AGUIA_DOURADA" });
+        return;
+      }
+      const uidPiloto = texto(pilotoCompradorUid.value());
+      if (!uidPiloto || usuario.uid !== uidPiloto) {
+        res.status(403).json({ erro: "PILOTO_RESTRITO_A_USUARIO_AUTORIZADO" });
         return;
       }
       if (passageiros.length < 1 || passageiros.length > 20) {

@@ -29,7 +29,33 @@ type PassageiroRecebido = {
   documento?: string;
   nacionalidade?: string;
   nascimento?: string;
+  beneficioId?: string;
+  aceiteComprovacao?: boolean;
 };
+
+type RegraBeneficio = {
+  id: string;
+  nome: string;
+  ativo: boolean;
+  modo: "desconto_percentual" | "valor_fixo" | "gratuidade";
+  valor: number;
+  vagasPorSaida: number | null;
+  idadeMinima: number | null;
+  idadeMaxima: number | null;
+  exigeComprovante: boolean;
+  tiposVaga: TipoVagaVenda[];
+  observacao: string;
+};
+
+const BENEFICIOS_PERMITIDOS = new Set([
+  "crianca",
+  "idoso",
+  "pcd",
+  "acompanhante_pcd",
+  "jovem_baixa_renda",
+  "estudante",
+  "outro",
+]);
 
 function texto(valor: unknown) {
   return String(valor ?? "").trim();
@@ -58,6 +84,100 @@ function primeiroNumero(objeto: Record<string, unknown>, campos: string[]) {
     if (Number.isFinite(valor)) return valor;
   }
   return 0;
+}
+
+function regrasBeneficios(tarifa: Record<string, unknown> | undefined) {
+  const origem = Array.isArray(tarifa?.beneficios) ? tarifa.beneficios : [];
+  return origem
+    .map((item) => {
+      const regra = (item || {}) as Record<string, unknown>;
+      const id = texto(regra.id).toLowerCase();
+      const modo = texto(regra.modo) as RegraBeneficio["modo"];
+      const tiposVaga = Array.isArray(regra.tiposVaga)
+        ? regra.tiposVaga
+            .map((tipo) => texto(tipo).toLowerCase() as TipoVagaVenda)
+            .filter((tipo) => ["rede", "poltrona", "suite"].includes(tipo))
+        : [];
+      return {
+        id,
+        nome: texto(regra.nome || id),
+        ativo: regra.ativo === true,
+        modo: ["desconto_percentual", "valor_fixo", "gratuidade"].includes(modo)
+          ? modo
+          : "desconto_percentual",
+        valor: Math.max(0, numero(regra.valor)),
+        vagasPorSaida: regra.vagasPorSaida === null || regra.vagasPorSaida === undefined
+          ? null
+          : Math.max(0, Math.floor(numero(regra.vagasPorSaida))),
+        idadeMinima: regra.idadeMinima === null || regra.idadeMinima === undefined
+          ? null
+          : Math.max(0, Math.floor(numero(regra.idadeMinima))),
+        idadeMaxima: regra.idadeMaxima === null || regra.idadeMaxima === undefined
+          ? null
+          : Math.max(0, Math.floor(numero(regra.idadeMaxima))),
+        exigeComprovante: regra.exigeComprovante !== false,
+        tiposVaga,
+        observacao: texto(regra.observacao),
+      } as RegraBeneficio;
+    })
+    .filter((regra) => regra.ativo && BENEFICIOS_PERMITIDOS.has(regra.id));
+}
+
+function idadeEmAnos(dataNascimento: unknown) {
+  const partes = texto(dataNascimento).split("/").map(Number);
+  if (partes.length !== 3) return null;
+  const [dia, mes, ano] = partes;
+  const nascimento = new Date(ano, mes - 1, dia);
+  if (
+    !Number.isFinite(nascimento.getTime()) ||
+    nascimento.getDate() !== dia ||
+    nascimento.getMonth() !== mes - 1 ||
+    nascimento.getFullYear() !== ano
+  ) return null;
+  const hoje = new Date();
+  let idade = hoje.getFullYear() - ano;
+  if (
+    hoje.getMonth() < mes - 1 ||
+    (hoje.getMonth() === mes - 1 && hoje.getDate() < dia)
+  ) idade -= 1;
+  return idade;
+}
+
+function aplicarBeneficio(
+  valorIntegral: number,
+  passageiro: PassageiroRecebido,
+  regras: RegraBeneficio[],
+  tipoVaga: TipoVagaVenda,
+) {
+  const beneficioId = texto(passageiro.beneficioId || "integral").toLowerCase();
+  if (!beneficioId || beneficioId === "integral") {
+    return { valor: valorIntegral, beneficio: null as RegraBeneficio | null };
+  }
+  const beneficio = regras.find((regra) => regra.id === beneficioId);
+  if (!beneficio) throw new Error("BENEFICIO_NAO_DISPONIVEL_NESTE_TRECHO");
+  if (beneficio.tiposVaga.length > 0 && !beneficio.tiposVaga.includes(tipoVaga)) {
+    throw new Error("BENEFICIO_NAO_DISPONIVEL_NESTA_ACOMODACAO");
+  }
+  if (beneficio.exigeComprovante && passageiro.aceiteComprovacao !== true) {
+    throw new Error("COMPROVACAO_DO_BENEFICIO_NAO_CONFIRMADA");
+  }
+  const idade = idadeEmAnos(passageiro.nascimento);
+  if (idade === null) throw new Error("DATA_NASCIMENTO_INVALIDA");
+  if (beneficio.idadeMinima !== null && idade < beneficio.idadeMinima) {
+    throw new Error("IDADE_NAO_ATENDE_AO_BENEFICIO");
+  }
+  if (beneficio.idadeMaxima !== null && idade > beneficio.idadeMaxima) {
+    throw new Error("IDADE_NAO_ATENDE_AO_BENEFICIO");
+  }
+  const valor = beneficio.modo === "gratuidade"
+    ? 0
+    : beneficio.modo === "valor_fixo"
+      ? Math.min(valorIntegral, beneficio.valor)
+      : valorIntegral * (1 - Math.min(100, beneficio.valor) / 100);
+  return {
+    valor: Math.round(Math.max(0, valor) * 100) / 100,
+    beneficio,
+  };
 }
 
 async function autenticar(req: { headers: { authorization?: string | string[] } }) {
@@ -336,12 +456,34 @@ export const criarCheckoutVendaMarketplace = onRequest(
             "precoRefeicao",
           ])
         : 0;
+      const beneficiosDisponiveis = regrasBeneficios(tarifaTrecho);
+      const precosPassageiros = passageiros.map((passageiro) =>
+        aplicarBeneficio(
+          valorUnitarioPassagem,
+          passageiro,
+          beneficiosDisponiveis,
+          tipoVaga,
+        ),
+      );
+      for (const regra of beneficiosDisponiveis) {
+        if (regra.vagasPorSaida === null) continue;
+        const solicitadas = precosPassageiros.filter(
+          (item) => item.beneficio?.id === regra.id,
+        ).length;
+        if (solicitadas > regra.vagasPorSaida) {
+          throw new Error("LIMITE_DE_VAGAS_DO_BENEFICIO_EXCEDIDO");
+        }
+      }
       const calculo = calcularVendaNoServidor({
         regra: config.regra,
         quantidade: passageiros.length,
         valorUnitarioPassagem,
+        valoresPassagens: precosPassageiros.map((item) => item.valor),
         valorAdicionais: valorUnitarioRefeicao * passageiros.length,
       });
+      if (calculo.valorPassagens < 0.01) {
+        throw new Error("GRATUIDADE_INTEGRAL_REQUER_VALIDACAO_DA_EQUIPE");
+      }
       if (calculo.receitaBrutaPlataforma < 0.01) {
         throw new Error("TAXA_MARKETPLACE_NAO_CONFIGURADA");
       }
@@ -391,6 +533,16 @@ export const criarCheckoutVendaMarketplace = onRequest(
         tipoVaga,
         quantidade: passageiros.length,
         capacidade: capacidadeOficial,
+        beneficios: beneficiosDisponiveis
+          .filter((regra) => regra.vagasPorSaida !== null)
+          .map((regra) => ({
+            id: regra.id,
+            quantidade: precosPassageiros.filter(
+              (item) => item.beneficio?.id === regra.id,
+            ).length,
+            limitePorSaida: regra.vagasPorSaida || 0,
+          }))
+          .filter((item) => item.quantidade > 0 && item.limitePorSaida > 0),
         duracaoMinutos: 15,
       });
       if (!reserva.expiraEm) throw new Error("EXPIRACAO_RESERVA_NAO_DEFINIDA");
@@ -420,6 +572,15 @@ export const criarCheckoutVendaMarketplace = onRequest(
             incluiRefeicao,
             quantidadePassageiros: passageiros.length,
             valorUnitarioRefeicao,
+            beneficiosResumo: precosPassageiros
+              .filter((item) => item.beneficio)
+              .map((item) => ({
+                id: item.beneficio?.id,
+                nome: item.beneficio?.nome,
+                modo: item.beneficio?.modo,
+                valorPassagem: item.valor,
+                comprovacaoNoEmbarque: item.beneficio?.exigeComprovante === true,
+              })),
             ...calculo,
             valorTotalCobrado: calculo.totalPagoPassageiro,
             taxaPlataformaValor: calculo.receitaBrutaPlataforma,
@@ -441,6 +602,8 @@ export const criarCheckoutVendaMarketplace = onRequest(
             documento: cpf(item.documento),
             nacionalidade: texto(item.nacionalidade || "Brasileira"),
             nascimento: texto(item.nascimento),
+            beneficioId: texto(item.beneficioId || "integral"),
+            aceiteComprovacao: item.aceiteComprovacao === true,
           })),
           criadoEm: admin.firestore.FieldValue.serverTimestamp(),
           atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
@@ -519,7 +682,13 @@ export const criarCheckoutVendaMarketplace = onRequest(
       console.error("Erro em criarCheckoutVendaMarketplace", codigo);
       const status = codigo === "UNAUTHENTICATED" ? 401 :
         codigo.includes("NAO_LIBERADA") || codigo.includes("PILOTO") ? 403 :
-          codigo.includes("VAGAS_INSUFICIENTES") ? 409 : 500;
+          codigo.includes("VAGAS_INSUFICIENTES") ||
+          codigo.includes("LIMITE_DE_VAGAS") ||
+          codigo.includes("GRATUIDADE_INTEGRAL") ? 409 :
+            codigo.includes("BENEFICIO") ||
+            codigo.includes("COMPROVACAO") ||
+            codigo.includes("IDADE_") ||
+            codigo.includes("DATA_NASCIMENTO") ? 400 : 500;
       res.status(status).json({ erro: codigo });
     }
   },

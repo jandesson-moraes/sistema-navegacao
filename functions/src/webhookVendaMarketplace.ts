@@ -39,9 +39,9 @@ function texto(valor: unknown) {
   return String(valor ?? "").trim();
 }
 
-function numero(valor: unknown) {
+function numero(valor: unknown, padrao = 0) {
   const resultado = Number(valor);
-  return Number.isFinite(resultado) ? resultado : 0;
+  return Number.isFinite(resultado) ? resultado : padrao;
 }
 
 function moeda(valor: number) {
@@ -314,8 +314,18 @@ export const webhookVendaMarketplace = onRequest(
 
         if (podeEmitir && Number(vendaAtual.bilhetesEmitidos) === 0) {
           const rateio = passageiros.length || 1;
+          const valoresPassagens = Array.isArray(vendaAtual.valoresPassagens)
+            ? vendaAtual.valoresPassagens
+            : [];
+          const beneficiosResumo = Array.isArray(vendaAtual.beneficiosResumo)
+            ? vendaAtual.beneficiosResumo
+            : [];
           passageiros.forEach((passageiro, indice) => {
             const ticketId = `TKT-${vendaId}-${indice}`;
+            const beneficioId = texto(passageiro.beneficioId || "integral");
+            const beneficio = beneficiosResumo.find(
+              (item: Record<string, unknown>) => texto(item.id) === beneficioId,
+            ) as Record<string, unknown> | undefined;
             transacao.set(
               db.collection("passagens").doc(ticketId),
               {
@@ -346,8 +356,17 @@ export const webhookVendaMarketplace = onRequest(
                 status: "APROVADO",
                 pagamentoStatus: "approved",
                 tipoVaga: texto(vendaAtual.tipoVaga),
+                beneficioId,
+                beneficioNome: texto(beneficio?.nome || "Tarifa integral"),
+                comprovacaoBeneficioPendente:
+                  beneficio?.comprovacaoNoEmbarque === true,
                 refeicao: vendaAtual.incluiRefeicao === true,
-                valorPassagem: moeda(numero(vendaAtual.valorPassagens) / rateio),
+                valorPassagem: moeda(
+                  numero(
+                    valoresPassagens[indice],
+                    numero(vendaAtual.valorPassagens) / rateio,
+                  ),
+                ),
                 valorRefeicao: moeda(numero(vendaAtual.valorAdicionais) / rateio),
                 taxaPlataformaRateada: moeda(
                   numero(vendaAtual.receitaBrutaPlataforma) / rateio,

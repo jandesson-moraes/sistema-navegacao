@@ -58,7 +58,33 @@ type TarifaTrechoFormulario = {
   precoPoltrona: string;
   precoSuite: string;
   precoRefeicao: string;
+  beneficios: BeneficioTarifaFormulario[];
 };
+
+type ModoBeneficio = "desconto_percentual" | "valor_fixo" | "gratuidade";
+
+type BeneficioTarifaFormulario = {
+  id: string;
+  nome: string;
+  ativo: boolean;
+  modo: ModoBeneficio;
+  valor: string;
+  vagasPorSaida: string;
+  idadeMinima: string;
+  idadeMaxima: string;
+  exigeComprovante: boolean;
+  observacao: string;
+};
+
+const BENEFICIOS_PADRAO = [
+  { id: "crianca", nome: "Criança", idadeMinima: "", idadeMaxima: "5" },
+  { id: "idoso", nome: "Pessoa idosa", idadeMinima: "60", idadeMaxima: "" },
+  { id: "pcd", nome: "Pessoa com deficiência (PCD)", idadeMinima: "", idadeMaxima: "" },
+  { id: "acompanhante_pcd", nome: "Acompanhante de PCD", idadeMinima: "", idadeMaxima: "" },
+  { id: "jovem_baixa_renda", nome: "Jovem de baixa renda", idadeMinima: "15", idadeMaxima: "29" },
+  { id: "estudante", nome: "Estudante", idadeMinima: "", idadeMaxima: "" },
+  { id: "outro", nome: "Outro benefício", idadeMinima: "", idadeMaxima: "" },
+] as const;
 
 type FormProgramacao = {
   id: string;
@@ -340,6 +366,37 @@ function precoFormulario(valor: any) {
   return resultado > 0 ? String(resultado) : "";
 }
 
+function beneficiosDoDocumento(valor: any): BeneficioTarifaFormulario[] {
+  const cadastrados = Array.isArray(valor) ? valor : [];
+  return BENEFICIOS_PADRAO.map((padrao) => {
+    const existente = cadastrados.find((item: any) => texto(item?.id) === padrao.id) || {};
+    return {
+      id: padrao.id,
+      nome: texto(existente.nome || padrao.nome),
+      ativo: existente.ativo === true,
+      modo: ["desconto_percentual", "valor_fixo", "gratuidade"].includes(
+        texto(existente.modo),
+      )
+        ? (existente.modo as ModoBeneficio)
+        : "desconto_percentual",
+      valor: existente.valor === null || existente.valor === undefined
+        ? ""
+        : String(existente.valor),
+      vagasPorSaida: existente.vagasPorSaida === null || existente.vagasPorSaida === undefined
+        ? ""
+        : String(existente.vagasPorSaida),
+      idadeMinima: existente.idadeMinima === null || existente.idadeMinima === undefined
+        ? padrao.idadeMinima
+        : String(existente.idadeMinima),
+      idadeMaxima: existente.idadeMaxima === null || existente.idadeMaxima === undefined
+        ? padrao.idadeMaxima
+        : String(existente.idadeMaxima),
+      exigeComprovante: existente.exigeComprovante !== false,
+      observacao: texto(existente.observacao),
+    };
+  });
+}
+
 function tarifasDoDocumento(fonte: any, itinerario: any[]) {
   const cadastradas = Array.isArray(fonte?.tarifasTrechos)
     ? fonte.tarifasTrechos
@@ -369,6 +426,7 @@ function tarifasDoDocumento(fonte: any, itinerario: any[]) {
         precoRefeicao: precoFormulario(
           tarifa.precoRefeicao ?? tarifa.preco_refeicao,
         ),
+        beneficios: beneficiosDoDocumento(tarifa.beneficios),
       } as TarifaTrechoFormulario;
     });
   }
@@ -395,6 +453,7 @@ function tarifasDoDocumento(fonte: any, itinerario: any[]) {
       precoRefeicao: precoFormulario(
         destino.precoRefeicao ?? destino.preco_refeicao,
       ),
+      beneficios: beneficiosDoDocumento(destino.beneficios),
     } as TarifaTrechoFormulario;
   });
 }
@@ -1134,6 +1193,29 @@ export default function ProgramacaoViagens() {
         precoPoltrona: Math.max(0, numero(preenchida?.precoPoltrona, 0)),
         precoSuite: Math.max(0, numero(preenchida?.precoSuite, 0)),
         precoRefeicao: Math.max(0, numero(preenchida?.precoRefeicao, 0)),
+        beneficios: (preenchida?.beneficios || beneficiosDoDocumento([])).map(
+          (beneficio) => ({
+            id: beneficio.id,
+            nome: texto(beneficio.nome),
+            ativo: beneficio.ativo === true,
+            modo: beneficio.modo,
+            valor: beneficio.modo === "gratuidade"
+              ? 0
+              : Math.max(0, numero(beneficio.valor, 0)),
+            vagasPorSaida: beneficio.vagasPorSaida.trim()
+              ? Math.max(0, Math.floor(numero(beneficio.vagasPorSaida, 0)))
+              : null,
+            idadeMinima: beneficio.idadeMinima.trim()
+              ? Math.max(0, Math.floor(numero(beneficio.idadeMinima, 0)))
+              : null,
+            idadeMaxima: beneficio.idadeMaxima.trim()
+              ? Math.max(0, Math.floor(numero(beneficio.idadeMaxima, 0)))
+              : null,
+            exigeComprovante: beneficio.exigeComprovante,
+            tiposVaga: ["rede", "poltrona", "suite"],
+            observacao: texto(beneficio.observacao),
+          }),
+        ),
         ativo: true,
       };
     });
@@ -1617,6 +1699,7 @@ export default function ProgramacaoViagens() {
         precoPoltrona: existente?.precoPoltrona || "",
         precoSuite: existente?.precoSuite || "",
         precoRefeicao: existente?.precoRefeicao || "",
+        beneficios: existente?.beneficios || beneficiosDoDocumento([]),
         [campo]: valor,
       };
       return {
@@ -1625,6 +1708,44 @@ export default function ProgramacaoViagens() {
           ...atual.tarifasTrechos.filter(
             (item) => item.chave !== trecho.chave,
           ),
+          tarifa,
+        ],
+      };
+    });
+  };
+
+  const atualizarBeneficio = (
+    trecho: (typeof trechosTarifarios)[number],
+    beneficioId: string,
+    campo: keyof BeneficioTarifaFormulario,
+    valor: string | boolean,
+  ) => {
+    setForm((atual) => {
+      const existente = atual.tarifasTrechos.find(
+        (tarifa) => tarifa.chave === trecho.chave,
+      );
+      const beneficios = existente?.beneficios || beneficiosDoDocumento([]);
+      const atualizados = beneficios.map((beneficio) =>
+        beneficio.id === beneficioId
+          ? { ...beneficio, [campo]: valor }
+          : beneficio,
+      );
+      const tarifa: TarifaTrechoFormulario = {
+        chave: trecho.chave,
+        origemPortoId: trecho.origemPortoId,
+        origemNome: trecho.origemNome,
+        destinoPortoId: trecho.destinoPortoId,
+        destinoNome: trecho.destinoNome,
+        precoRede: existente?.precoRede || "",
+        precoPoltrona: existente?.precoPoltrona || "",
+        precoSuite: existente?.precoSuite || "",
+        precoRefeicao: existente?.precoRefeicao || "",
+        beneficios: atualizados,
+      };
+      return {
+        ...atual,
+        tarifasTrechos: [
+          ...atual.tarifasTrechos.filter((item) => item.chave !== trecho.chave),
           tarifa,
         ],
       };
@@ -1982,6 +2103,156 @@ export default function ProgramacaoViagens() {
                             atualizarTarifa(trecho, "precoRefeicao", valor)
                           }
                         />
+                      </div>
+
+                      <div className="mt-5 border-t border-white/10 pt-4">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-black uppercase tracking-wide text-sky-200">
+                              Benefícios e tarifas especiais
+                            </p>
+                            <p className="mt-1 text-[11px] leading-5 text-slate-400">
+                              Ative somente as regras oferecidas nesta saída. O passageiro verá apenas o valor final.
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-[10px] font-bold text-amber-100">
+                            Comprovação no embarque
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                          {BENEFICIOS_PADRAO.map((padrao) => {
+                            const beneficio =
+                              tarifa?.beneficios?.find((item) => item.id === padrao.id) ||
+                              beneficiosDoDocumento([]).find((item) => item.id === padrao.id)!;
+                            return (
+                              <div
+                                key={padrao.id}
+                                className={`rounded-xl border p-3 ${
+                                  beneficio.ativo
+                                    ? "border-sky-300/25 bg-sky-400/10"
+                                    : "border-white/10 bg-white/[0.03]"
+                                }`}
+                              >
+                                <label className="flex cursor-pointer items-center gap-2 text-sm font-black text-white">
+                                  <input
+                                    type="checkbox"
+                                    checked={beneficio.ativo}
+                                    onChange={(evento) =>
+                                      atualizarBeneficio(
+                                        trecho,
+                                        padrao.id,
+                                        "ativo",
+                                        evento.target.checked,
+                                      )
+                                    }
+                                  />
+                                  {beneficio.nome}
+                                </label>
+
+                                {beneficio.ativo && (
+                                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                                    {padrao.id === "outro" && (
+                                      <Input
+                                        label="Nome do benefício"
+                                        value={beneficio.nome}
+                                        onChange={(valor) =>
+                                          atualizarBeneficio(trecho, padrao.id, "nome", valor)
+                                        }
+                                      />
+                                    )}
+                                    <label className="text-[10px] font-bold uppercase text-slate-400">
+                                      Regra de preço
+                                      <select
+                                        value={beneficio.modo}
+                                        onChange={(evento) =>
+                                          atualizarBeneficio(
+                                            trecho,
+                                            padrao.id,
+                                            "modo",
+                                            evento.target.value,
+                                          )
+                                        }
+                                        className="mt-1 w-full rounded-lg border border-white/10 bg-[#17113a] px-3 py-2 text-xs text-white"
+                                      >
+                                        <option value="desconto_percentual">Desconto percentual</option>
+                                        <option value="valor_fixo">Valor especial</option>
+                                        <option value="gratuidade">
+                                          Gratuidade — validação manual se total R$ 0
+                                        </option>
+                                      </select>
+                                    </label>
+                                    {beneficio.modo !== "gratuidade" && (
+                                      <Input
+                                        label={beneficio.modo === "valor_fixo" ? "Valor (R$)" : "Desconto (%)"}
+                                        type="number"
+                                        value={beneficio.valor}
+                                        onChange={(valor) =>
+                                          atualizarBeneficio(trecho, padrao.id, "valor", valor)
+                                        }
+                                      />
+                                    )}
+                                    <Input
+                                      label="Limite por saída"
+                                      type="number"
+                                      value={beneficio.vagasPorSaida}
+                                      onChange={(valor) =>
+                                        atualizarBeneficio(trecho, padrao.id, "vagasPorSaida", valor)
+                                      }
+                                    />
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <Input
+                                        label="Idade mínima"
+                                        type="number"
+                                        value={beneficio.idadeMinima}
+                                        onChange={(valor) =>
+                                          atualizarBeneficio(trecho, padrao.id, "idadeMinima", valor)
+                                        }
+                                      />
+                                      <Input
+                                        label="Idade máxima"
+                                        type="number"
+                                        value={beneficio.idadeMaxima}
+                                        onChange={(valor) =>
+                                          atualizarBeneficio(trecho, padrao.id, "idadeMaxima", valor)
+                                        }
+                                      />
+                                    </div>
+                                    <label className="flex items-center gap-2 text-xs text-slate-300 sm:col-span-2">
+                                      <input
+                                        type="checkbox"
+                                        checked={beneficio.exigeComprovante}
+                                        onChange={(evento) =>
+                                          atualizarBeneficio(
+                                            trecho,
+                                            padrao.id,
+                                            "exigeComprovante",
+                                            evento.target.checked,
+                                          )
+                                        }
+                                      />
+                                      Exigir documento comprobatório no embarque
+                                    </label>
+                                    <div className="sm:col-span-2">
+                                      <Input
+                                        label="Orientação ao passageiro (opcional)"
+                                        value={beneficio.observacao}
+                                        onChange={(valor) =>
+                                          atualizarBeneficio(
+                                            trecho,
+                                            padrao.id,
+                                            "observacao",
+                                            valor,
+                                          )
+                                        }
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     </article>
                   );

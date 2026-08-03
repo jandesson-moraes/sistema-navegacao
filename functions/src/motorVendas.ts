@@ -62,18 +62,29 @@ export function calcularVendaNoServidor({
   regra,
   quantidade,
   valorUnitarioPassagem,
+  valoresPassagens,
   valorAdicionais,
   taxaProcessadorValor = 0,
 }: {
   regra: RegraTaxaVenda;
   quantidade: number;
   valorUnitarioPassagem: number;
+  valoresPassagens?: number[];
   valorAdicionais: number;
   taxaProcessadorValor?: number;
 }) {
-  const quantidadePassagens = Math.max(1, Math.floor(numero(quantidade, 1)));
+  const valoresIndividuais = Array.isArray(valoresPassagens)
+    ? valoresPassagens.map((valor) => moeda(Math.max(0, numero(valor))))
+    : [];
+  const quantidadePassagens = valoresIndividuais.length > 0
+    ? valoresIndividuais.length
+    : Math.max(1, Math.floor(numero(quantidade, 1)));
   const valorUnitario = Math.max(0, numero(valorUnitarioPassagem));
-  const valorPassagens = moeda(quantidadePassagens * valorUnitario);
+  const valorPassagens = moeda(
+    valoresIndividuais.length > 0
+      ? valoresIndividuais.reduce((total, valor) => total + valor, 0)
+      : quantidadePassagens * valorUnitario,
+  );
   const adicionais = moeda(Math.max(0, numero(valorAdicionais)));
 
   const baseCalculoTaxa = moeda(
@@ -144,6 +155,9 @@ export function calcularVendaNoServidor({
   return {
     quantidadePassagens,
     valorUnitarioPassagem: valorUnitario,
+    valoresPassagens: valoresIndividuais.length > 0
+      ? valoresIndividuais
+      : Array.from({ length: quantidadePassagens }, () => valorUnitario),
     valorPassagens,
     valorAdicionais: adicionais,
     baseCalculoTaxa,

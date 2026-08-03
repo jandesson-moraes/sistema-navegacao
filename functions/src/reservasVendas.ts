@@ -16,6 +16,12 @@ const STATUS_NAO_OCUPAM = new Set([
 
 export type TipoVagaVenda = "rede" | "poltrona" | "suite";
 
+export type ReservaBeneficioVenda = {
+  id: string;
+  quantidade: number;
+  limitePorSaida: number;
+};
+
 export type CriarReservaVagasParams = {
   reservaId: string;
   vendaId: string;
@@ -26,6 +32,7 @@ export type CriarReservaVagasParams = {
   tipoVaga: TipoVagaVenda;
   quantidade: number;
   capacidade: number;
+  beneficios?: ReservaBeneficioVenda[];
   duracaoMinutos?: number;
 };
 
@@ -104,6 +111,13 @@ export async function criarReservaVagasTransacional(
     30,
     Math.max(5, Math.floor(Number(params.duracaoMinutos) || 15)),
   );
+  const beneficios = (params.beneficios || [])
+    .map((item) => ({
+      id: texto(item.id).toLowerCase(),
+      quantidade: inteiroPositivo(item.quantidade, "QUANTIDADE_BENEFICIO"),
+      limitePorSaida: inteiroPositivo(item.limitePorSaida, "LIMITE_BENEFICIO"),
+    }))
+    .filter((item) => item.id);
   const reservaRef = db.collection("reservas_vendas").doc(texto(params.reservaId));
   const inventarioRef = db
     .collection("inventarios_vagas")
@@ -124,7 +138,8 @@ export async function criarReservaVagasTransacional(
         texto(existente.vendaId) !== params.vendaId ||
         texto(existente.idViagem) !== params.idViagem ||
         texto(existente.tipoVaga) !== params.tipoVaga ||
-        Number(existente.quantidade) !== quantidade
+        Number(existente.quantidade) !== quantidade ||
+        JSON.stringify(existente.beneficios || []) !== JSON.stringify(beneficios)
       ) {
         throw new Error("CHAVE_RESERVA_JA_UTILIZADA");
       }
@@ -186,6 +201,31 @@ export async function criarReservaVagasTransacional(
 
       return ativa ? total + Math.max(0, Number(dados.quantidade) || 0) : total;
     }, 0);
+
+    for (const beneficio of beneficios) {
+      const ocupadasBeneficio = passagensSnap.docs.filter((documento) => {
+        const dados = documento.data();
+        return passagemOcupaVaga(dados, params.tipoVaga) &&
+          texto(dados.beneficioId).toLowerCase() === beneficio.id;
+      }).length;
+      const reservadasBeneficio = reservasSnap.docs.reduce((total, documento) => {
+        if (documento.id === reservaRef.id) return total;
+        const dados = documento.data();
+        const expiraEm = dados.expiraEm?.toMillis?.() || 0;
+        if (dados.status !== "ativa" || expiraEm <= agoraMs) return total;
+        const item = (Array.isArray(dados.beneficios) ? dados.beneficios : [])
+          .find((valor: Record<string, unknown>) =>
+            texto(valor.id).toLowerCase() === beneficio.id,
+          );
+        return total + Math.max(0, Number(item?.quantidade) || 0);
+      }, 0);
+      if (
+        ocupadasBeneficio + reservadasBeneficio + beneficio.quantidade >
+        beneficio.limitePorSaida
+      ) {
+        throw new Error("LIMITE_DE_VAGAS_DO_BENEFICIO_EXCEDIDO");
+      }
+    }
     const disponiveis = capacidade - ocupadas - reservadas;
 
     if (quantidade > disponiveis) {
@@ -222,6 +262,7 @@ export async function criarReservaVagasTransacional(
         tipoVaga: params.tipoVaga,
         quantidade,
         capacidade,
+        beneficios,
         status: "ativa",
         ocupadasNoMomento: ocupadas,
         reservadasNoMomento: reservadas,

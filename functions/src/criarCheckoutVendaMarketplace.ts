@@ -134,11 +134,14 @@ function configuracao(barco: Record<string, unknown>) {
   const vendas = (barco.vendasPassagens as Record<string, unknown>) || {};
   const financeiro = (barco.financeiroMercadoPago as Record<string, unknown>) || {};
   const regra = (vendas.regraTaxa as RegraTaxaVenda) || {};
+  const modoPilotoMarketplace = vendas.modoPilotoMarketplace === true;
   return {
     ativa:
-      vendas.ativa === true &&
       financeiro.status === "ativo" &&
-      financeiro.vendaPassagemHabilitada === true,
+      (
+        modoPilotoMarketplace ||
+        (vendas.ativa === true && financeiro.vendaPassagemHabilitada === true)
+      ),
     regra: {
       ...regra,
       percentual: regra.percentual ?? numero(financeiro.taxaPlataformaPercentual),

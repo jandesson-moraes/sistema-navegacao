@@ -621,7 +621,9 @@ service cloud.firestore {
         colecao != "mercado_pago_oauth_states" &&
         colecao != "testes_split_mercado_pago" &&
         colecao != "mercado_pago_webhook_eventos" &&
-        colecao != "mercado_pago_operacoes_financeiras";
+        colecao != "mercado_pago_operacoes_financeiras" &&
+        colecao != "reservas_vendas" &&
+        colecao != "inventarios_vagas";
     }
 
     match /mercado_pago_operacoes_financeiras/{document=**} {
@@ -633,6 +635,14 @@ service cloud.firestore {
     }
 
     match /testes_split_mercado_pago/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /reservas_vendas/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /inventarios_vagas/{document=**} {
       allow read, write: if false;
     }
   }

@@ -52,6 +52,15 @@ function hash(valor: string) {
   return createHash("sha256").update(valor).digest("hex");
 }
 
+function cpfLimpo(valor: unknown) {
+  return texto(valor).replace(/\D/g, "");
+}
+
+function cpfMascarado(valor: unknown) {
+  const cpf = cpfLimpo(valor);
+  return cpf.length === 11 ? `***.***.***-${cpf.slice(-2)}` : "***.***.***-**";
+}
+
 function valorCabecalho(valor: string | string[] | undefined) {
   return Array.isArray(valor) ? texto(valor[0]) : texto(valor);
 }
@@ -231,21 +240,60 @@ export const webhookVendaMarketplace = onRequest(
         `${pagamentoId}|${statusPagamento}|${texto(req.headers["x-request-id"])}`,
       );
 
+      let emissaoConcluida = false;
+      let auditoriaNecessaria = !aprovadoParaProcessar;
+
       await db.runTransaction(async (transacao) => {
-        const atual = await transacao.get(vendaRef);
+        const reservaId = texto(venda.reservaId);
+        const privadaRef = db.collection("vendas_dados_privados").doc(vendaId);
+        const reservaRef = db.collection("reservas_vendas").doc(reservaId || "INVALIDA");
+        const [atual, privadaSnap, reservaSnap] = await Promise.all([
+          transacao.get(vendaRef),
+          transacao.get(privadaRef),
+          transacao.get(reservaRef),
+        ]);
 
         if (!atual.exists) return;
+
+        const vendaAtual = atual.data() || {};
+        const privada = privadaSnap.data() || {};
+        const reserva = reservaSnap.data() || {};
+        const passageiros = Array.isArray(privada.passageiros)
+          ? (privada.passageiros as Array<Record<string, unknown>>)
+          : [];
+        const reservaValida =
+          reservaSnap.exists &&
+          texto(reserva.vendaId) === vendaId &&
+          texto(reserva.compradorUid) === texto(vendaAtual.compradorUid) &&
+          ["ativa", "confirmada"].includes(texto(reserva.status)) &&
+          (texto(reserva.status) === "confirmada" ||
+            (reserva.expiraEm?.toMillis?.() || 0) > Date.now());
+        const dadosPrivadosValidos =
+          privadaSnap.exists &&
+          texto(privada.compradorUid) === texto(vendaAtual.compradorUid) &&
+          passageiros.length === Number(vendaAtual.quantidadePassageiros);
+        const podeEmitir =
+          aprovadoParaProcessar &&
+          statusPagamento === "approved" &&
+          reservaValida &&
+          dadosPrivadosValidos;
+
+        auditoriaNecessaria =
+          !aprovadoParaProcessar ||
+          (statusPagamento === "approved" && !podeEmitir);
+
+        const statusVendaFinal = auditoriaNecessaria
+          ? "auditoria_necessaria"
+          : statusVenda(statusPagamento);
 
         transacao.set(
           vendaRef,
           {
             pagamentoId,
-            statusPagamento: aprovadoParaProcessar
-              ? statusPagamento
-              : "auditoria_necessaria",
-            statusVenda: aprovadoParaProcessar
-              ? statusVenda(statusPagamento)
-              : "auditoria_necessaria",
+            statusPagamento: auditoriaNecessaria
+              ? "auditoria_necessaria"
+              : statusPagamento,
+            statusVenda: statusVendaFinal,
             valorRecebido,
             taxaMarketplaceConfirmada: taxaMarketplace,
             validacoesPagamento: {
@@ -255,12 +303,102 @@ export const webhookVendaMarketplace = onRequest(
               valorConfere,
               taxaConfere,
               pagamentoIdConfere,
+              reservaValida,
+              dadosPrivadosValidos,
             },
             dataAprovacaoMercadoPago: texto(pagamento.date_approved) || null,
             atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
         );
+
+        if (podeEmitir && Number(vendaAtual.bilhetesEmitidos) === 0) {
+          const rateio = passageiros.length || 1;
+          passageiros.forEach((passageiro, indice) => {
+            const ticketId = `TKT-${vendaId}-${indice}`;
+            transacao.set(
+              db.collection("passagens").doc(ticketId),
+              {
+                ticketId,
+                vendaId,
+                pagamentoId,
+                barco: texto(vendaAtual.barcoNome),
+                barcoId,
+                ownerId: texto(vendaAtual.ownerId),
+                ownerEmail: texto(vendaAtual.ownerEmail),
+                compradorUid: texto(vendaAtual.compradorUid),
+                compradorEmail: texto(vendaAtual.compradorEmail),
+                dataCompra: admin.firestore.FieldValue.serverTimestamp(),
+                dataViagem: texto(vendaAtual.dataViagem),
+                horarioSaida: texto(vendaAtual.horarioSaida),
+                gradeId: texto(vendaAtual.gradeId),
+                idViagem: texto(vendaAtual.viagemId),
+                origem: texto(vendaAtual.origem),
+                destino: texto(vendaAtual.destino),
+                passageiro: texto(passageiro.nome),
+                documento: cpfMascarado(passageiro.documento),
+                documentoMascarado: cpfMascarado(passageiro.documento),
+                documentoFinal: cpfLimpo(passageiro.documento).slice(-4),
+                nacionalidade: texto(passageiro.nacionalidade || "Brasileira"),
+                nascimento: "",
+                nascimentoInformado: Boolean(texto(passageiro.nascimento)),
+                dadosSensiveisProtegidos: true,
+                status: "APROVADO",
+                pagamentoStatus: "approved",
+                tipoVaga: texto(vendaAtual.tipoVaga),
+                refeicao: vendaAtual.incluiRefeicao === true,
+                valorPassagem: moeda(numero(vendaAtual.valorPassagens) / rateio),
+                valorRefeicao: moeda(numero(vendaAtual.valorAdicionais) / rateio),
+                taxaPlataformaRateada: moeda(
+                  numero(vendaAtual.receitaBrutaPlataforma) / rateio,
+                ),
+                valorTotalRateado: moeda(
+                  numero(vendaAtual.totalPagoPassageiro) / rateio,
+                ),
+                valor: moeda(numero(vendaAtual.totalPagoPassageiro) / rateio),
+                validado: false,
+                atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: false },
+            );
+          });
+          transacao.set(
+            vendaRef,
+            {
+              bilhetesEmitidos: passageiros.length,
+              statusVenda: "confirmada",
+              pagoEm: admin.firestore.FieldValue.serverTimestamp(),
+              bilhetesEmitidosEm: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+          transacao.set(
+            reservaRef,
+            {
+              status: "confirmada",
+              confirmadaEm: admin.firestore.FieldValue.serverTimestamp(),
+              atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+          emissaoConcluida = true;
+        } else if (
+          aprovadoParaProcessar &&
+          ["rejected", "cancelled", "refunded"].includes(statusPagamento) &&
+          texto(reserva.status) === "ativa"
+        ) {
+          transacao.set(
+            reservaRef,
+            {
+              status: "liberada",
+              motivoLiberacao:
+                statusPagamento === "rejected" ? "pagamento_rejeitado" : "cancelada",
+              liberadaEm: admin.firestore.FieldValue.serverTimestamp(),
+              atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        }
 
         transacao.set(
           db.collection("mercado_pago_webhook_eventos").doc(eventoId),
@@ -271,6 +409,8 @@ export const webhookVendaMarketplace = onRequest(
             pagamentoId,
             statusPagamento,
             aprovadoParaProcessar,
+            auditoriaNecessaria,
+            emissaoConcluida,
             criadoEm: admin.firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -278,7 +418,11 @@ export const webhookVendaMarketplace = onRequest(
       });
 
       res.status(200).send(
-        aprovadoParaProcessar ? "OK_AGUARDANDO_EMISSAO" : "AUDITORIA_NECESSARIA",
+        auditoriaNecessaria
+          ? "AUDITORIA_NECESSARIA"
+          : emissaoConcluida
+            ? "OK_BILHETES_EMITIDOS"
+            : "OK_STATUS_ATUALIZADO",
       );
     } catch (erro) {
       const codigo = erro instanceof Error ? erro.message : "ERRO_INTERNO";

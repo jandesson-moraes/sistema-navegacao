@@ -18,6 +18,8 @@ export { criarCheckoutProSplitSandbox } from "./checkoutProSplitSandbox";
 export { consultarCheckoutSplitSandbox } from "./consultarCheckoutSplitSandbox";
 export { webhookMercadoPagoMarketplace } from "./webhookMercadoPagoMarketplace";
 export { gerenciarPagamentoMarketplaceSandbox } from "./gerenciarPagamentoMarketplaceSandbox";
+export { criarCheckoutVendaMarketplace } from "./criarCheckoutVendaMarketplace";
+export { webhookVendaMarketplace } from "./webhookVendaMarketplace";
 
 if (!admin.apps.length) {
   admin.initializeApp();

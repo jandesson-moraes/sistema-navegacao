@@ -623,7 +623,8 @@ service cloud.firestore {
         colecao != "mercado_pago_webhook_eventos" &&
         colecao != "mercado_pago_operacoes_financeiras" &&
         colecao != "reservas_vendas" &&
-        colecao != "inventarios_vagas";
+        colecao != "inventarios_vagas" &&
+        colecao != "vendas_dados_privados";
     }
 
     match /mercado_pago_operacoes_financeiras/{document=**} {
@@ -643,6 +644,12 @@ service cloud.firestore {
     }
 
     match /inventarios_vagas/{document=**} {
+      allow read, write: if false;
+    }
+
+    // CPF completo e demais dados usados somente para a emissão do bilhete.
+    // O aplicativo recebe apenas a versão mascarada gravada em /passagens.
+    match /vendas_dados_privados/{document=**} {
       allow read, write: if false;
     }
   }

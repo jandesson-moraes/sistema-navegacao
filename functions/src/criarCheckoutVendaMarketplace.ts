@@ -282,18 +282,25 @@ export const criarCheckoutVendaMarketplace = onRequest(
           res.status(403).json({ erro: "VENDA_NAO_PERTENCE_AO_USUARIO" });
           return;
         }
-        if (texto(dados.checkoutInitPoint)) {
+        const reservaAindaValida =
+          (dados.reservaExpiraEm?.toMillis?.() || 0) > Date.now();
+        if (texto(dados.checkoutInitPoint) && reservaAindaValida) {
           res.status(200).json({
             vendaId,
             checkoutUrl: texto(dados.checkoutInitPoint),
             preferenciaId: texto(dados.preferenciaId),
             status: texto(dados.statusVenda),
+            expiraEm: dados.reservaExpiraEm.toDate().toISOString(),
           });
+          return;
+        }
+        if (texto(dados.checkoutInitPoint) && !reservaAindaValida) {
+          res.status(409).json({ erro: "CHECKOUT_EXPIRADO_GERE_NOVA_TENTATIVA" });
           return;
         }
       }
 
-      await criarReservaVagasTransacional({
+      const reserva = await criarReservaVagasTransacional({
         reservaId,
         vendaId,
         compradorUid: usuario.uid,
@@ -305,6 +312,8 @@ export const criarCheckoutVendaMarketplace = onRequest(
         capacidade: capacidadeOficial,
         duracaoMinutos: 15,
       });
+      if (!reserva.expiraEm) throw new Error("EXPIRACAO_RESERVA_NAO_DEFINIDA");
+      const expiraEmIso = reserva.expiraEm.toDate().toISOString();
 
       const nomeBarco = texto(barco.nome || barco.nome_barco || barcoId);
       const emailComprador = texto(usuario.email || corpo.email);
@@ -313,6 +322,7 @@ export const criarCheckoutVendaMarketplace = onRequest(
           {
             vendaId,
             reservaId,
+            reservaExpiraEm: reserva.expiraEm,
             compradorUid: usuario.uid,
             compradorEmail: emailComprador,
             barcoId,
@@ -375,6 +385,9 @@ export const criarCheckoutVendaMarketplace = onRequest(
             unit_price: calculo.totalPagoPassageiro,
           }],
           marketplace_fee: calculo.receitaBrutaPlataforma,
+          expires: true,
+          expiration_date_from: new Date().toISOString(),
+          expiration_date_to: expiraEmIso,
           external_reference: vendaId,
           notification_url: `${URL_WEBHOOK}?barcoId=${encodeURIComponent(barcoId)}`,
           statement_descriptor: "CADE MEU BARCO",
@@ -414,6 +427,7 @@ export const criarCheckoutVendaMarketplace = onRequest(
         checkoutUrl: initPoint,
         status: "aguardando_pagamento",
         expiraReservaEmMinutos: 15,
+        expiraEm: expiraEmIso,
       });
     } catch (erro) {
       const codigo = erro instanceof Error ? erro.message : "ERRO_INTERNO";

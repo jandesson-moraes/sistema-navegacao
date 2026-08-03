@@ -185,7 +185,6 @@ export const mercadoPagoOAuthCallback = onRequest(
           grant_type: "authorization_code",
           code,
           redirect_uri: REDIRECT_URI,
-          test_token: embarcacaoId === "AGUIA_DOURADA" ? "true" : "false",
         }),
       });
       const token = (await resposta.json()) as Record<string, unknown>;

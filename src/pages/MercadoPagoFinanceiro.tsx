@@ -114,6 +114,8 @@ const URL_CALLBACK_OAUTH =
   "https://us-central1-sistema-navegacao.cloudfunctions.net/mercadoPagoOAuthCallback";
 const URL_CHECKOUT_PRO_SPLIT_SANDBOX =
   "https://us-central1-sistema-navegacao.cloudfunctions.net/criarCheckoutProSplitSandbox";
+const URL_CONSULTAR_CHECKOUT_SPLIT_SANDBOX =
+  "https://us-central1-sistema-navegacao.cloudfunctions.net/consultarCheckoutSplitSandbox";
 
 type ResultadoCheckoutSandbox = {
   testeId: string;
@@ -125,6 +127,22 @@ type ResultadoCheckoutSandbox = {
   sellerTestUserValidado: boolean;
   ambiente: "sandbox";
   aviso: string;
+};
+
+type ResultadoConsultaSandbox = {
+  testeId: string;
+  encontrado: boolean;
+  pagamentoId?: string;
+  status: string;
+  statusDetalhe?: string;
+  valorTotal?: number;
+  taxaMarketplace?: number;
+  taxasMercadoPago?: number;
+  valorLiquidoVendedor?: number;
+  criadoEm?: string;
+  aprovadoEm?: string;
+  mensagem?: string;
+  ambiente: "sandbox";
 };
 
 function formatarData(valor: any) {
@@ -201,6 +219,8 @@ export default function MercadoPagoFinanceiro() {
   const [taxaFixa, setTaxaFixa] = useState("0");
   const [resultadoCheckoutSandbox, setResultadoCheckoutSandbox] =
     useState<ResultadoCheckoutSandbox | null>(null);
+  const [resultadoConsultaSandbox, setResultadoConsultaSandbox] =
+    useState<ResultadoConsultaSandbox | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "embarcacoes"), (snapshot) => {
@@ -388,6 +408,7 @@ export default function MercadoPagoFinanceiro() {
 
     setSalvando(true);
     setResultadoCheckoutSandbox(null);
+    setResultadoConsultaSandbox(null);
     try {
       const user = getAuth().currentUser;
       if (!user) throw new Error("Faça login novamente antes do teste.");
@@ -422,6 +443,59 @@ export default function MercadoPagoFinanceiro() {
       await modal.erro(
         "Checkout sandbox não criado",
         error?.message || "A API do Mercado Pago recusou a preferência de teste.",
+      );
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const consultarCheckoutSplitSandbox = async () => {
+    if (!selecionado || selecionado.id !== "AGUIA_DOURADA" || !resultadoCheckoutSandbox) {
+      return;
+    }
+
+    setSalvando(true);
+    setResultadoConsultaSandbox(null);
+    try {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("Faça login novamente antes da consulta.");
+      const idToken = await user.getIdToken();
+
+      const resposta = await fetch(URL_CONSULTAR_CHECKOUT_SPLIT_SANDBOX, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          embarcacaoId: selecionado.id,
+          testeId: resultadoCheckoutSandbox.testeId,
+        }),
+      });
+      const dados = await resposta.json();
+      if (!resposta.ok) {
+        throw new Error([dados?.erro, dados?.detalhe].filter(Boolean).join(": "));
+      }
+
+      const resultado = dados as ResultadoConsultaSandbox;
+      setResultadoConsultaSandbox(resultado);
+
+      if (!resultado.encontrado) {
+        await modal.aviso(
+          "Pagamento não encontrado",
+          "A preferência existe, mas nenhum pagamento sandbox foi concluído. A venda continuará desabilitada.",
+        );
+        return;
+      }
+
+      await modal.sucesso(
+        "Resultado consultado",
+        `Pagamento sandbox localizado com status: ${resultado.status}.`,
+      );
+    } catch (error: any) {
+      await modal.erro(
+        "Consulta não concluída",
+        error?.message || "Não foi possível consultar o pagamento sandbox.",
       );
     } finally {
       setSalvando(false);
@@ -907,6 +981,42 @@ export default function MercadoPagoFinanceiro() {
                       >
                         Abrir checkout sandbox
                       </a>
+                      <button
+                        type="button"
+                        onClick={consultarCheckoutSplitSandbox}
+                        disabled={salvando}
+                        className="mt-2 w-full rounded-lg border border-sky-300/30 bg-sky-400/15 px-3 py-2 text-center text-xs font-black uppercase text-sky-200 transition hover:bg-sky-400/25 disabled:opacity-50"
+                      >
+                        {salvando ? "Consultando..." : "Consultar resultado do teste"}
+                      </button>
+
+                      {resultadoConsultaSandbox && (
+                        <div className="mt-2 rounded-lg border border-white/10 bg-slate-950/30 p-3 text-[11px]">
+                          <p className="font-black uppercase text-sky-200">
+                            Resultado da consulta
+                          </p>
+                          <p>Pagamento encontrado: {resultadoConsultaSandbox.encontrado ? "Sim" : "Não"}</p>
+                          <p>Status: {resultadoConsultaSandbox.status}</p>
+                          {resultadoConsultaSandbox.pagamentoId && (
+                            <p>Pagamento: {resultadoConsultaSandbox.pagamentoId}</p>
+                          )}
+                          {resultadoConsultaSandbox.valorTotal !== undefined && (
+                            <p>Valor: {moeda(resultadoConsultaSandbox.valorTotal)}</p>
+                          )}
+                          {resultadoConsultaSandbox.taxaMarketplace !== undefined && (
+                            <p>Taxa CMB confirmada: {moeda(resultadoConsultaSandbox.taxaMarketplace)}</p>
+                          )}
+                          {resultadoConsultaSandbox.taxasMercadoPago !== undefined && (
+                            <p>Tarifas Mercado Pago: {moeda(resultadoConsultaSandbox.taxasMercadoPago)}</p>
+                          )}
+                          {resultadoConsultaSandbox.valorLiquidoVendedor !== undefined && (
+                            <p>Valor líquido do vendedor: {moeda(resultadoConsultaSandbox.valorLiquidoVendedor)}</p>
+                          )}
+                          {resultadoConsultaSandbox.mensagem && (
+                            <p className="mt-1 text-amber-200">{resultadoConsultaSandbox.mensagem}</p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

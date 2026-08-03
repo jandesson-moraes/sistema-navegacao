@@ -15,6 +15,7 @@ export {
 } from "./alteracoesPublicasEmbarcacoes";
 export { gerarPixSplitTeste } from "./splitMercadoPagoTeste";
 export { criarCheckoutProSplitSandbox } from "./checkoutProSplitSandbox";
+export { consultarCheckoutSplitSandbox } from "./consultarCheckoutSplitSandbox";
 
 if (!admin.apps.length) {
   admin.initializeApp();

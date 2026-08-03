@@ -1,7 +1,7 @@
 import * as admin from "firebase-admin";
-import {createHash, createHmac, timingSafeEqual} from "node:crypto";
-import {defineSecret} from "firebase-functions/params";
-import {onRequest} from "firebase-functions/v2/https";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { defineSecret } from "firebase-functions/params";
+import { onRequest } from "firebase-functions/v2/https";
 
 if (!admin.apps.length) admin.initializeApp();
 
@@ -56,7 +56,8 @@ function validarAssinatura(req: {
   }
 
   const timestampNumero = Number(timestamp);
-  const timestampMs = timestampNumero < 1_000_000_000_000 ? timestampNumero * 1000 : timestampNumero;
+  const timestampMs =
+    timestampNumero < 1_000_000_000_000 ? timestampNumero * 1000 : timestampNumero;
   if (Math.abs(Date.now() - timestampMs) > TOLERANCIA_ASSINATURA_MS) return false;
 
   const manifesto = `id:${dataId};request-id:${requestId};ts:${timestamp};`;
@@ -64,8 +65,10 @@ function validarAssinatura(req: {
   const recebidoBuffer = Buffer.from(assinaturaRecebida, "hex");
   const calculadoBuffer = Buffer.from(calculada, "hex");
 
-  return recebidoBuffer.length === calculadoBuffer.length &&
-    timingSafeEqual(recebidoBuffer, calculadoBuffer);
+  return (
+    recebidoBuffer.length === calculadoBuffer.length &&
+    timingSafeEqual(recebidoBuffer, calculadoBuffer)
+  );
 }
 
 type ConexaoMercadoPago = {
@@ -93,7 +96,7 @@ async function obterTokenSandboxValido(barcoId: string) {
   const accessTokenAtual = texto(conexao.accessToken);
   const expiraEm = conexao.expiresAt?.toMillis() || 0;
   if (accessTokenAtual.startsWith("TEST-") && expiraEm > Date.now() + 5 * 60 * 1000) {
-    return {accessToken: accessTokenAtual, sellerUserId: sellerEsperado};
+    return { accessToken: accessTokenAtual, sellerUserId: sellerEsperado };
   }
 
   const refreshToken = texto(conexao.refreshToken);
@@ -101,7 +104,7 @@ async function obterTokenSandboxValido(barcoId: string) {
 
   const resposta = await fetch("https://api.mercadopago.com/oauth/token", {
     method: "POST",
-    headers: {"Content-Type": "application/x-www-form-urlencoded"},
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: clientId.value(),
       client_secret: clientSecret.value(),
@@ -122,17 +125,20 @@ async function obterTokenSandboxValido(barcoId: string) {
   }
 
   const expiresIn = Math.max(60, numero(token.expires_in) || 15552000);
-  await ref.set({
-    accessToken: texto(token.access_token),
-    refreshToken: texto(token.refresh_token) || refreshToken,
-    sellerUserId: sellerRenovado,
-    scope: texto(token.scope),
-    expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + expiresIn * 1000),
-    renovadoEm: admin.firestore.FieldValue.serverTimestamp(),
-    atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
-  }, {merge: true});
+  await ref.set(
+    {
+      accessToken: texto(token.access_token),
+      refreshToken: texto(token.refresh_token) || refreshToken,
+      sellerUserId: sellerRenovado,
+      scope: texto(token.scope),
+      expiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + expiresIn * 1000),
+      renovadoEm: admin.firestore.FieldValue.serverTimestamp(),
+      atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
 
-  return {accessToken: texto(token.access_token), sellerUserId: sellerRenovado};
+  return { accessToken: texto(token.access_token), sellerUserId: sellerRenovado };
 }
 
 type TaxaPagamento = {
@@ -149,7 +155,7 @@ type PagamentoMercadoPago = {
   external_reference?: string;
   transaction_amount?: number;
   fee_details?: TaxaPagamento[];
-  transaction_details?: {net_received_amount?: number};
+  transaction_details?: { net_received_amount?: number };
   date_created?: string;
   date_approved?: string;
 };
@@ -199,7 +205,7 @@ export const webhookMercadoPagoMarketplace = onRequest(
         return;
       }
 
-      const {accessToken, sellerUserId} = await obterTokenSandboxValido(barcoId);
+      const { accessToken, sellerUserId } = await obterTokenSandboxValido(barcoId);
       const resposta = await fetch(
         `https://api.mercadopago.com/v1/payments/${encodeURIComponent(pagamentoId)}`,
         {
@@ -209,10 +215,24 @@ export const webhookMercadoPagoMarketplace = onRequest(
           },
         },
       );
-      const pagamento = (await resposta.json()) as PagamentoMercadoPago & Record<string, unknown>;
+      const pagamento = (await resposta.json()) as PagamentoMercadoPago &
+        Record<string, unknown>;
+
+      if (resposta.status === 404) {
+        console.warn(
+          "Webhook assinado recebido para pagamento não localizado",
+          pagamentoId,
+        );
+        res.status(200).send("PAGAMENTO_NAO_LOCALIZADO");
+        return;
+      }
 
       if (!resposta.ok) {
-        console.error("Pagamento sandbox não consultado", resposta.status, texto(pagamento.message));
+        console.error(
+          "Pagamento sandbox não consultado",
+          resposta.status,
+          texto(pagamento.message),
+        );
         res.status(502).send("PAGAMENTO_NAO_CONSULTADO");
         return;
       }
@@ -222,7 +242,10 @@ export const webhookMercadoPagoMarketplace = onRequest(
         res.status(200).send("REFERENCIA_FORA_DOS_TESTES_CONTROLADOS");
         return;
       }
-      if (pagamento.live_mode !== false || texto(pagamento.collector_id) !== sellerUserId) {
+      if (
+        pagamento.live_mode !== false ||
+        texto(pagamento.collector_id) !== sellerUserId
+      ) {
         res.status(403).send("PAGAMENTO_NAO_PERTENCE_AO_SELLER_SANDBOX");
         return;
       }
@@ -236,12 +259,18 @@ export const webhookMercadoPagoMarketplace = onRequest(
 
       const taxas = Array.isArray(pagamento.fee_details) ? pagamento.fee_details : [];
       const taxaMarketplace = taxas
-        .filter((taxa) => ["application_fee", "marketplace_fee"].includes(texto(taxa.type)))
+        .filter((taxa) =>
+          ["application_fee", "marketplace_fee"].includes(texto(taxa.type)),
+        )
         .reduce((total, taxa) => total + numero(taxa.amount), 0);
       const taxasMercadoPago = taxas
-        .filter((taxa) => !["application_fee", "marketplace_fee"].includes(texto(taxa.type)))
+        .filter(
+          (taxa) => !["application_fee", "marketplace_fee"].includes(texto(taxa.type)),
+        )
         .reduce((total, taxa) => total + numero(taxa.amount), 0);
-      const eventoId = hash(`${pagamentoId}|${texto(pagamento.status)}|${texto(req.headers["x-request-id"])}`);
+      const eventoId = hash(
+        `${pagamentoId}|${texto(pagamento.status)}|${texto(req.headers["x-request-id"])}`,
+      );
 
       const resultadoSeguro = {
         pagamentoId,
@@ -260,24 +289,32 @@ export const webhookMercadoPagoMarketplace = onRequest(
       };
 
       const batch = db.batch();
-      batch.set(testeRef, {
-        status: `pagamento_${resultadoSeguro.status}`,
-        pagamentoId,
-        resultadoWebhook: resultadoSeguro,
-        webhookRecebidoEm: admin.firestore.FieldValue.serverTimestamp(),
-        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
-      }, {merge: true});
-      batch.set(db.collection("mercado_pago_webhook_eventos").doc(eventoId), {
-        eventoId,
-        barcoId,
-        testeId,
-        pagamentoId,
-        status: resultadoSeguro.status,
-        ambiente: "sandbox",
-        processado: true,
-        assinaturaValidada: true,
-        criadoEm: admin.firestore.FieldValue.serverTimestamp(),
-      }, {merge: true});
+      batch.set(
+        testeRef,
+        {
+          status: `pagamento_${resultadoSeguro.status}`,
+          pagamentoId,
+          resultadoWebhook: resultadoSeguro,
+          webhookRecebidoEm: admin.firestore.FieldValue.serverTimestamp(),
+          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      batch.set(
+        db.collection("mercado_pago_webhook_eventos").doc(eventoId),
+        {
+          eventoId,
+          barcoId,
+          testeId,
+          pagamentoId,
+          status: resultadoSeguro.status,
+          ambiente: "sandbox",
+          processado: true,
+          assinaturaValidada: true,
+          criadoEm: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
       await batch.commit();
 
       res.status(200).send("OK");

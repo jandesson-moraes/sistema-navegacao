@@ -614,7 +614,12 @@ service cloud.firestore {
       allow read, write: if isAdminSistema() &&
         colecao != "mercado_pago_conexoes" &&
         colecao != "mercado_pago_oauth_states" &&
-        colecao != "testes_split_mercado_pago";
+        colecao != "testes_split_mercado_pago" &&
+        colecao != "mercado_pago_webhook_eventos";
+    }
+
+    match /mercado_pago_webhook_eventos/{document=**} {
+      allow read, write: if false;
     }
 
     match /testes_split_mercado_pago/{document=**} {

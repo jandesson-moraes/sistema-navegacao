@@ -1,6 +1,5 @@
 import * as admin from "firebase-admin";
 import { createHash } from "node:crypto";
-import { defineSecret } from "firebase-functions/params";
 import { onRequest } from "firebase-functions/v2/https";
 import { calcularVendaNoServidor, type RegraTaxaVenda } from "./motorVendas";
 import {
@@ -19,10 +18,7 @@ if (!admin.apps.length) admin.initializeApp();
 const db = admin.firestore();
 const REGIAO = "us-central1";
 const PROJETO_ID = "sistema-navegacao";
-const BARCO_PILOTO = "AGUIA_DOURADA";
-const pilotoCompradorUid = defineSecret("CMB_PILOT_BUYER_UID");
-const URL_WEBHOOK =
-  `https://${REGIAO}-${PROJETO_ID}.cloudfunctions.net/webhookVendaMarketplace`;
+const URL_WEBHOOK = `https://${REGIAO}-${PROJETO_ID}.cloudfunctions.net/webhookVendaMarketplace`;
 
 type PassageiroRecebido = {
   nome?: string;
@@ -106,15 +102,18 @@ function regrasBeneficios(tarifa: Record<string, unknown> | undefined) {
           ? modo
           : "desconto_percentual",
         valor: Math.max(0, numero(regra.valor)),
-        vagasPorSaida: regra.vagasPorSaida === null || regra.vagasPorSaida === undefined
-          ? null
-          : Math.max(0, Math.floor(numero(regra.vagasPorSaida))),
-        idadeMinima: regra.idadeMinima === null || regra.idadeMinima === undefined
-          ? null
-          : Math.max(0, Math.floor(numero(regra.idadeMinima))),
-        idadeMaxima: regra.idadeMaxima === null || regra.idadeMaxima === undefined
-          ? null
-          : Math.max(0, Math.floor(numero(regra.idadeMaxima))),
+        vagasPorSaida:
+          regra.vagasPorSaida === null || regra.vagasPorSaida === undefined
+            ? null
+            : Math.max(0, Math.floor(numero(regra.vagasPorSaida))),
+        idadeMinima:
+          regra.idadeMinima === null || regra.idadeMinima === undefined
+            ? null
+            : Math.max(0, Math.floor(numero(regra.idadeMinima))),
+        idadeMaxima:
+          regra.idadeMaxima === null || regra.idadeMaxima === undefined
+            ? null
+            : Math.max(0, Math.floor(numero(regra.idadeMaxima))),
         exigeComprovante: regra.exigeComprovante !== false,
         tiposVaga,
         observacao: texto(regra.observacao),
@@ -133,13 +132,12 @@ function idadeEmAnos(dataNascimento: unknown) {
     nascimento.getDate() !== dia ||
     nascimento.getMonth() !== mes - 1 ||
     nascimento.getFullYear() !== ano
-  ) return null;
+  )
+    return null;
   const hoje = new Date();
   let idade = hoje.getFullYear() - ano;
-  if (
-    hoje.getMonth() < mes - 1 ||
-    (hoje.getMonth() === mes - 1 && hoje.getDate() < dia)
-  ) idade -= 1;
+  if (hoje.getMonth() < mes - 1 || (hoje.getMonth() === mes - 1 && hoje.getDate() < dia))
+    idade -= 1;
   return idade;
 }
 
@@ -169,11 +167,12 @@ function aplicarBeneficio(
   if (beneficio.idadeMaxima !== null && idade > beneficio.idadeMaxima) {
     throw new Error("IDADE_NAO_ATENDE_AO_BENEFICIO");
   }
-  const valor = beneficio.modo === "gratuidade"
-    ? 0
-    : beneficio.modo === "valor_fixo"
-      ? Math.min(valorIntegral, beneficio.valor)
-      : valorIntegral * (1 - Math.min(100, beneficio.valor) / 100);
+  const valor =
+    beneficio.modo === "gratuidade"
+      ? 0
+      : beneficio.modo === "valor_fixo"
+        ? Math.min(valorIntegral, beneficio.valor)
+        : valorIntegral * (1 - Math.min(100, beneficio.valor) / 100);
   return {
     valor: Math.round(Math.max(0, valor) * 100) / 100,
     beneficio,
@@ -217,9 +216,7 @@ function localizarTarifaTrecho(
   origem: string,
   destino: string,
 ) {
-  const tarifas = Array.isArray(grade.tarifasTrechos)
-    ? grade.tarifasTrechos
-    : [];
+  const tarifas = Array.isArray(grade.tarifasTrechos) ? grade.tarifasTrechos : [];
   if (tarifas.length === 0) return undefined;
 
   const itinerario = Array.isArray(grade.itinerario)
@@ -275,12 +272,7 @@ function preco(
   if (tipo === "suite") {
     return primeiroNumero(tarifa, ["preco_suite", "precoSuite"]);
   }
-  return primeiroNumero(tarifa, [
-    "preco_da_origem",
-    "precoRede",
-    "preco_rede",
-    "preco",
-  ]);
+  return primeiroNumero(tarifa, ["preco_da_origem", "precoRede", "preco_rede", "preco"]);
 }
 
 function capacidade(grade: Record<string, unknown>, tipo: TipoVagaVenda) {
@@ -293,7 +285,13 @@ function capacidade(grade: Record<string, unknown>, tipo: TipoVagaVenda) {
       "vagas_poltrona",
       "totalPoltronas",
     ],
-    suite: ["capacidadeSuite", "capacidade_suite", "vagasSuite", "vagas_suite", "totalSuites"],
+    suite: [
+      "capacidadeSuite",
+      "capacidade_suite",
+      "vagasSuite",
+      "vagas_suite",
+      "totalSuites",
+    ],
   };
   const especifica = primeiroNumero(grade, campos[tipo]);
   const geral = primeiroNumero(grade, [
@@ -314,10 +312,8 @@ function configuracao(barco: Record<string, unknown>) {
   return {
     ativa:
       financeiro.status === "ativo" &&
-      (
-        modoPilotoMarketplace ||
-        (vendas.ativa === true && financeiro.vendaPassagemHabilitada === true)
-      ),
+      (modoPilotoMarketplace ||
+        (vendas.ativa === true && financeiro.vendaPassagemHabilitada === true)),
     regra: {
       ...regra,
       percentual: regra.percentual ?? numero(financeiro.taxaPlataformaPercentual),
@@ -333,7 +329,8 @@ function validarPrazo(data: string, horario: string, limiteHoras: number) {
     throw new Error("DATA_HORARIO_VIAGEM_INVALIDOS");
   }
   const instante = new Date(`${partes.join("-")}T${horario.slice(0, 5)}:00-04:00`);
-  if (!Number.isFinite(instante.getTime())) throw new Error("DATA_HORARIO_VIAGEM_INVALIDOS");
+  if (!Number.isFinite(instante.getTime()))
+    throw new Error("DATA_HORARIO_VIAGEM_INVALIDOS");
   if (instante.getTime() <= Date.now() + limiteHoras * 60 * 60 * 1000) {
     throw new Error("PRAZO_DE_COMPRA_ENCERRADO");
   }
@@ -343,11 +340,7 @@ export const criarCheckoutVendaMarketplace = onRequest(
   {
     region: REGIAO,
     cors: true,
-    secrets: [
-      mercadoPagoMarketplaceClientId,
-      mercadoPagoMarketplaceClientSecret,
-      pilotoCompradorUid,
-    ],
+    secrets: [mercadoPagoMarketplaceClientId, mercadoPagoMarketplaceClientSecret],
     timeoutSeconds: 60,
   },
   async (req, res) => {
@@ -387,22 +380,15 @@ export const criarCheckoutVendaMarketplace = onRequest(
         res.status(400).json({ erro: "DADOS_DA_COMPRA_INVALIDOS" });
         return;
       }
-      if (barcoId !== BARCO_PILOTO) {
-        res.status(403).json({ erro: "PILOTO_RESTRITO_A_AGUIA_DOURADA" });
-        return;
-      }
-      const uidPiloto = texto(pilotoCompradorUid.value());
-      if (!uidPiloto || usuario.uid !== uidPiloto) {
-        res.status(403).json({ erro: "PILOTO_RESTRITO_A_USUARIO_AUTORIZADO" });
-        return;
-      }
+
       if (passageiros.length < 1 || passageiros.length > 20) {
         res.status(400).json({ erro: "QUANTIDADE_PASSAGEIROS_INVALIDA" });
         return;
       }
       if (
         passageiros.some(
-          (item) => texto(item.nome).split(/\s+/).length < 2 || cpf(item.documento).length !== 11,
+          (item) =>
+            texto(item.nome).split(/\s+/).length < 2 || cpf(item.documento).length !== 11,
         )
       ) {
         res.status(400).json({ erro: "DADOS_DOS_PASSAGEIROS_INVALIDOS" });
@@ -439,22 +425,13 @@ export const criarCheckoutVendaMarketplace = onRequest(
       const parada = localizarDestino(grade, destino);
       if (!parada) throw new Error("DESTINO_FORA_DO_ITINERARIO");
       const tarifaTrecho = localizarTarifaTrecho(grade, origem, destino);
-      const valorUnitarioPassagem = preco(
-        grade,
-        parada,
-        tipoVaga,
-        origem,
-        destino,
-      );
+      const valorUnitarioPassagem = preco(grade, parada, tipoVaga, origem, destino);
       const capacidadeOficial = capacidade(grade, tipoVaga);
       if (valorUnitarioPassagem <= 0) throw new Error("PRECO_OFICIAL_NAO_CONFIGURADO");
       if (capacidadeOficial <= 0) throw new Error("CAPACIDADE_OFICIAL_NAO_CONFIGURADA");
 
       const valorUnitarioRefeicao = incluiRefeicao
-        ? primeiroNumero(tarifaTrecho || parada, [
-            "preco_refeicao",
-            "precoRefeicao",
-          ])
+        ? primeiroNumero(tarifaTrecho || parada, ["preco_refeicao", "precoRefeicao"])
         : 0;
       const beneficiosDisponiveis = regrasBeneficios(tarifaTrecho);
       const precosPassageiros = passageiros.map((passageiro) =>
@@ -620,14 +597,16 @@ export const criarCheckoutVendaMarketplace = onRequest(
           "X-Idempotency-Key": vendaId,
         },
         body: JSON.stringify({
-          items: [{
-            id: vendaId,
-            title: `Passagem ${nomeBarco}`,
-            description: `${origem} para ${destino}`,
-            currency_id: "BRL",
-            quantity: 1,
-            unit_price: calculo.totalPagoPassageiro,
-          }],
+          items: [
+            {
+              id: vendaId,
+              title: `Passagem ${nomeBarco}`,
+              description: `${origem} para ${destino}`,
+              currency_id: "BRL",
+              quantity: 1,
+              unit_price: calculo.totalPagoPassageiro,
+            },
+          ],
           marketplace_fee: calculo.receitaBrutaPlataforma,
           expires: true,
           expiration_date_from: new Date().toISOString(),
@@ -644,26 +623,32 @@ export const criarCheckoutVendaMarketplace = onRequest(
       const initPoint = texto(preferencia.init_point);
       if (!resposta.ok || !preferenciaId || !initPoint) {
         await liberarReservaVagasTransacional({ reservaId, motivo: "erro_pagamento" });
-        await vendaRef.set({
-          statusPagamento: "erro_ao_criar_checkout",
-          statusVenda: "erro_ao_criar_checkout",
-          erroPagamentoCodigo: texto(preferencia.error || preferencia.message),
-          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
+        await vendaRef.set(
+          {
+            statusPagamento: "erro_ao_criar_checkout",
+            statusVenda: "erro_ao_criar_checkout",
+            erroPagamentoCodigo: texto(preferencia.error || preferencia.message),
+            atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
         res.status(502).json({ erro: "MERCADO_PAGO_NAO_CRIOU_CHECKOUT" });
         return;
       }
 
       checkoutCriado = true;
 
-      await vendaRef.set({
-        sellerUserId,
-        preferenciaId,
-        checkoutInitPoint: initPoint,
-        statusPagamento: "pending",
-        statusVenda: "aguardando_pagamento",
-        atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
+      await vendaRef.set(
+        {
+          sellerUserId,
+          preferenciaId,
+          checkoutInitPoint: initPoint,
+          statusPagamento: "pending",
+          statusVenda: "aguardando_pagamento",
+          atualizadoEm: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
 
       res.status(200).json({
         vendaId,
@@ -676,19 +661,27 @@ export const criarCheckoutVendaMarketplace = onRequest(
     } catch (erro) {
       const codigo = erro instanceof Error ? erro.message : "ERRO_INTERNO";
       if (reservaId && !checkoutCriado) {
-        await liberarReservaVagasTransacional({ reservaId, motivo: "erro_pagamento" })
-          .catch(() => undefined);
+        await liberarReservaVagasTransacional({
+          reservaId,
+          motivo: "erro_pagamento",
+        }).catch(() => undefined);
       }
       console.error("Erro em criarCheckoutVendaMarketplace", codigo);
-      const status = codigo === "UNAUTHENTICATED" ? 401 :
-        codigo.includes("NAO_LIBERADA") || codigo.includes("PILOTO") ? 403 :
-          codigo.includes("VAGAS_INSUFICIENTES") ||
-          codigo.includes("LIMITE_DE_VAGAS") ||
-          codigo.includes("GRATUIDADE_INTEGRAL") ? 409 :
-            codigo.includes("BENEFICIO") ||
-            codigo.includes("COMPROVACAO") ||
-            codigo.includes("IDADE_") ||
-            codigo.includes("DATA_NASCIMENTO") ? 400 : 500;
+      const status =
+        codigo === "UNAUTHENTICATED"
+          ? 401
+          : codigo.includes("NAO_LIBERADA") || codigo.includes("PILOTO")
+            ? 403
+            : codigo.includes("VAGAS_INSUFICIENTES") ||
+                codigo.includes("LIMITE_DE_VAGAS") ||
+                codigo.includes("GRATUIDADE_INTEGRAL")
+              ? 409
+              : codigo.includes("BENEFICIO") ||
+                  codigo.includes("COMPROVACAO") ||
+                  codigo.includes("IDADE_") ||
+                  codigo.includes("DATA_NASCIMENTO")
+                ? 400
+                : 500;
       res.status(status).json({ erro: codigo });
     }
   },

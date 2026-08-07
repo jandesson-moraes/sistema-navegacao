@@ -1307,7 +1307,8 @@ export default function MapaTatico() {
               </div>
             </div>
 
-            <div className="cmb-scroll-clean min-h-0 flex-1 space-y-1.5 overflow-hidden p-2.5">
+            <div className="cmb-scroll-clean min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2.5">
+              {" "}
               {barcosOrdenados.map((barco) => {
                 const s = statusBarco(barco, agora);
                 const cfg = statusConfig(s);
@@ -1344,7 +1345,6 @@ export default function MapaTatico() {
                   </button>
                 );
               })}
-
               {barcosOrdenados.length === 0 && (
                 <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500">
                   Nenhum barco encontrado.

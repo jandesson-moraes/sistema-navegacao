@@ -3,6 +3,10 @@
     {
       "source": "/b/:path*",
       "destination": "/"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }

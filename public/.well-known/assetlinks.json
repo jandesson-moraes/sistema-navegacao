@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.cademeubarco.passageiro",
+      "sha256_cert_fingerprints": [
+        "3A:DD:07:05:99:16:4E:83:F2:93:92:E5:F4:BD:93:19:7C:C5:47:75:FB:91:A4:D3:90:F2:00:D1:BB:19:68:C4"
+      ]
+    }
+  }
+]
